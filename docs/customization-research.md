@@ -1,0 +1,22 @@
+# Customization research and design rationale
+
+Reviewed 30 September 2026. Sources below are original research, author guidance or official project/specification documentation. This is a focused architecture study; no runtime, library, performance or integration has been validated by reading these sources. Stack choices remain open. Recommendations in [the architecture contract](customization-architecture.md) are our synthesis, not requirements asserted by every source.
+
+| Primary source | What supports the design | Application and limit |
+| --- | --- | --- |
+| D. L. Parnas, [On the Criteria To Be Used in Decomposing Systems into Modules](https://www.cs.lafayette.edu/~gexia/cs301/resources/parnas.html), Communications of the ACM, 1972, DOI 10.1145/361598.361623 | Demonstrates how hiding likely-to-change design decisions can reduce changes elsewhere. | Separate providers, representation and rendering. The linked university transcription warns it may not exactly reproduce the original; this is architectural evidence, not a chosen implementation. |
+| Martin Fowler, [Inversion of Control Containers and the Dependency Injection pattern](https://martinfowler.com/articles/injection.html), 2004 | Explains assembling implementations separately from their use. | Host composition selects explicit providers; modules consume interfaces. This does not require a large dependency-injection container or a particular language. |
+| TanStack, [Table overview](https://tanstack.com/table/v8/docs/overview), official v8 documentation | A headless core supplies logic without prescribing DOM markup or styles, with framework adapters. | Use this separation for collection/reveal controllers. Table is an example of the pattern, not a proposed pack-opening dependency or proof our core supports every framework. |
+| Backstage, [Frontend extensions](https://backstage.io/docs/frontend-system/architecture/extensions/) | Documents extension identities, attachment contracts, typed data and enablement. | Design named composition slots, validated inputs and deterministic assembly. We do not need to install Backstage to adopt these ideas. |
+| Backstage, [Frontend extension overrides](https://backstage.io/docs/frontend-system/architecture/extension-overrides/) | Provides both configuration and deeper wrapping/replacement, recommending ordinary configuration for common changes. | Give small customizations simple routes and larger changes an explicit replacement contract. Our ordering/conflict policy is a project proposal, not a claim to mirror Backstage's resolver. |
+| Microsoft, [VS Code extension manifest](https://code.visualstudio.com/api/references/extension-manifest) | Describes contribution declarations, dependencies and engine compatibility ranges. | Require module manifests and compatibility declarations. This does not promise VS Code's sandbox or plugin runtime semantics. |
+| [Semantic Versioning 2.0.0](https://semver.org/) | Defines versions in relation to a declared public API and distinguishes incompatible changes. | Declare extension interfaces as public APIs, with release and migration policies. Version numbers alone do not verify compatibility. |
+| Design Tokens Community Group, [Format Module 2025.10](https://www.w3.org/community/reports/design-tokens/CG-FINAL-format-20251028/) | Specifies a JSON interchange format for tokens. | Consider portable theme token packages and explicit types. This is a Community Group specification, not a W3C Recommendation; token import support is a future implementation choice. |
+
+## Decisions supported by this study
+
+Use a headless domain/client boundary, a separately composable default UI, explicit provider injection, named slots and replacement contracts, versioned module declarations, diagnostic conflict resolution and repeatable customization examples. Keep authoritative transaction behavior separate from visual choreography. Prefer a small working implementation that demonstrates those seams over a speculative universal abstraction layer.
+
+## Remaining work
+
+Select stack and initial API shapes through the first implementation slice. Verify actual mount/unmount behavior, composition conflicts, migration compatibility, accessibility and host adapter conformance with executable examples. A second substantially different composition must challenge the first design. Research does not establish that the current planning scaffold already passes these requirements.

@@ -12,6 +12,8 @@ Creators can make or import whatever card content they choose, including art pro
 
 ## Separate the reusable system from the host
 
+Customization is a primary requirement in every phase. Hosts and mod authors can rearrange UI, replace individual or complete views, change policies and add modules through documented public contracts. The default application is one composition. See [customization architecture](customization-architecture.md) and its [primary-source research](customization-research.md). Each feature must demonstrate its customization path; a generic extensibility claim is insufficient.
+
 - **Core:** catalog identities, pack rules and persisted outcomes, ownership, albums, transfer state, extension contracts and transaction history.
 - **Presentation:** configurable pack opening, card rendering, effects, collection and album views. Card art and effects are data-driven assets with optional presentation profiles.
 - **Content packages:** any card subject, line taxonomy, tags, rarity/variant definitions, pack pools, display fields, albums and policies. No universal MapleStory mob fields, class list or combat stats.
