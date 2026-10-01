@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Digital Card Framework",
-    "version": "0.1.0",
-    "description": "Host resolves a verified session to a framework principal; no user identity is accepted from JSON commands. Same-origin writes are required. The demo cookie name is illustrative."
+    "version": "0.2.0",
+    "description": "Headless card framework. Production host uses verified OIDC sessions, exact-origin JSON writes, X-DC-Principal account binding and immutable trade review. Operator routes are opt-in and require server-derived authority."
   },
   "servers": [
     {
@@ -28,6 +28,14 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; verified principal binding."
           }
         ],
         "requestBody": {
@@ -83,6 +91,14 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; verified principal binding."
           }
         ],
         "requestBody": {
@@ -138,6 +154,14 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; verified principal binding."
           }
         ],
         "requestBody": {
@@ -193,6 +217,14 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; verified principal binding."
           }
         ],
         "requestBody": {
@@ -248,6 +280,14 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; verified principal binding."
           }
         ],
         "requestBody": {
@@ -303,6 +343,14 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; verified principal binding."
           }
         ],
         "requestBody": {
@@ -390,6 +438,14 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; verified principal binding."
           }
         ],
         "requestBody": {
@@ -477,6 +533,14 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; verified principal binding."
           }
         ],
         "requestBody": {
@@ -532,6 +596,14 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; verified principal binding."
           }
         ],
         "requestBody": {
@@ -587,6 +659,14 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; verified principal binding."
           }
         ],
         "requestBody": {
@@ -655,30 +735,44 @@
     "/me": {
       "get": {
         "operationId": "me",
+        "description": "Verified account API",
         "security": [
           {
             "hostSession": []
           }
         ],
+        "parameters": [],
         "responses": {
           "200": {
-            "description": "Detached view; private fields are filtered for the viewer",
+            "description": "Validated result",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Me"
                 }
               }
             }
           },
+          "400": {
+            "description": "Invalid bounded input"
+          },
           "401": {
-            "description": "Identity required"
+            "description": "Verified account required"
           },
           "403": {
-            "description": "Optional feature disabled"
+            "description": "Origin, authority or feature rejected"
           },
-          "404": {
-            "description": "Unknown or inaccessible resource"
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
           }
         }
       }
@@ -762,10 +856,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object"
-                  }
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Copy"
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/Page"
+                    }
+                  ]
                 }
               }
             }
@@ -779,7 +880,44 @@
           "404": {
             "description": "Unknown or inaccessible resource"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          }
+        ]
       }
     },
     "/packs": {
@@ -959,6 +1097,824 @@
           }
         }
       }
+    },
+    "/availability": {
+      "get": {
+        "operationId": "availability",
+        "description": "Verified account API",
+        "security": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/pity": {
+      "get": {
+        "operationId": "pityProgress",
+        "description": "Verified account API",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "operationId": "directory",
+        "description": "Verified account API",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/users/{userId}/inventory": {
+      "get": {
+        "operationId": "tradeInventory",
+        "description": "Respects inventory visibility, blocks and transfer policies; filters owner-only bindings.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Page"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "owner"
+                      ],
+                      "properties": {
+                        "owner": {
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/preferences": {
+      "post": {
+        "operationId": "setPreferences",
+        "description": "Verified account API",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preferences"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "operationId": "notifications",
+        "description": "Verified account API",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/notifications/read": {
+      "post": {
+        "operationId": "readNotifications",
+        "description": "Verified account API",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadNotifications"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/trades/counter": {
+      "post": {
+        "operationId": "counterTrade",
+        "description": "Atomically closes original escrow and creates a reverse offer; failure leaves the original pending.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CounterTrade"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/catalog": {
+      "get": {
+        "operationId": "operatorCatalog",
+        "description": "Opt-in operator route. Contains protected binding definitions; never expose to players.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogManifest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/audit": {
+      "get": {
+        "operationId": "audit",
+        "description": "Opt-in operator invariant diagnosis, read-only.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/import/preview": {
+      "post": {
+        "operationId": "previewImport",
+        "description": "Opt-in operator route. Validation only; 8 MiB limit. Rejects stale base revision.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/import/commit": {
+      "post": {
+        "operationId": "commitImport",
+        "description": "Opt-in operator route. Revalidates manifest and digest and publishes one atomic revision.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportCommit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -966,8 +1922,8 @@
       "hostSession": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "host_session",
-        "description": "Replace with your verified host session; this adapter does not implement login."
+        "name": "__Host-dc_session",
+        "description": "Opaque HttpOnly/Secure cookie issued by the production OIDC host; adapters may replace the session resolver."
       }
     },
     "schemas": {
@@ -1214,6 +2170,17 @@
             "minimum": 1,
             "maximum": 604800,
             "default": 86400
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "versions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         }
       },
@@ -1232,6 +2199,10 @@
           "tradeId": {
             "type": "string",
             "minLength": 1
+          },
+          "expectedDigest": {
+            "type": "string",
+            "description": "Required by production review policy; SHA-256 digest of the immutable offer."
           }
         }
       },
@@ -1503,6 +2474,605 @@
             "items": {
               "$ref": "#/components/schemas/Copy"
             }
+          }
+        }
+      },
+      "Page": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "next"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "object"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "next": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Preferences": {
+        "type": "object",
+        "properties": {
+          "inventoryVisibility": {
+            "enum": [
+              "private",
+              "traders",
+              "public"
+            ]
+          },
+          "favoriteCopyIds": {
+            "type": "array",
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "wishlistCardIds": {
+            "type": "array",
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "blockedUserIds": {
+            "type": "array",
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PreferencesCommand": {
+        "type": "object",
+        "properties": {
+          "inventoryVisibility": {
+            "enum": [
+              "private",
+              "traders",
+              "public"
+            ]
+          },
+          "favoriteCopyIds": {
+            "type": "array",
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "wishlistCardIds": {
+            "type": "array",
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "blockedUserIds": {
+            "type": "array",
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "Me": {
+        "type": "object",
+        "required": [
+          "userId",
+          "displayName",
+          "preferences",
+          "role"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/Preferences"
+          },
+          "role": {
+            "enum": [
+              "player",
+              "admin"
+            ]
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "at",
+          "read"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          }
+        }
+      },
+      "ReadNotifications": {
+        "type": "object",
+        "required": [
+          "key",
+          "ids"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "maxItems": 200,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CatalogManifest": {
+        "type": "object",
+        "required": [
+          "version",
+          "currencies",
+          "lines",
+          "rarities",
+          "cards",
+          "variants",
+          "products"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "features": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "currencies": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "lines": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "rarities": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "cards": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "variants": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "products": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "recipes": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "combinations": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "displayFields": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "metadataSchemas": {
+            "type": "object",
+            "description": "Bounded local schema subset for card metadata, variant metadata and stats; no external refs, regex or executable tags."
+          }
+        }
+      },
+      "ImportPreviewRequest": {
+        "type": "object",
+        "required": [
+          "source",
+          "expectedVersion"
+        ],
+        "properties": {
+          "source": {
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 8388608
+              },
+              {
+                "type": "object"
+              }
+            ]
+          },
+          "format": {
+            "enum": [
+              "json",
+              "yaml"
+            ],
+            "default": "json"
+          },
+          "mode": {
+            "enum": [
+              "merge",
+              "replace"
+            ],
+            "default": "merge"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ImportPreview": {
+        "type": "object",
+        "required": [
+          "manifest",
+          "digest",
+          "expectedVersion",
+          "changes",
+          "counts",
+          "warnings"
+        ],
+        "properties": {
+          "manifest": {
+            "$ref": "#/components/schemas/CatalogManifest"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expectedVersion": {
+            "type": "integer"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "section",
+                "id",
+                "action"
+              ],
+              "properties": {
+                "section": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "action": {
+                  "enum": [
+                    "add",
+                    "update",
+                    "remove"
+                  ]
+                }
+              }
+            }
+          },
+          "counts": {
+            "type": "object"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "message"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ImportCommit": {
+        "type": "object",
+        "required": [
+          "key",
+          "manifest",
+          "digest",
+          "expectedVersion"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/CatalogManifest"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "CounterTrade": {
+        "type": "object",
+        "required": [
+          "key",
+          "tradeId",
+          "give",
+          "receive"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "toUserId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "give": {
+            "type": "object",
+            "required": [
+              "copyIds",
+              "currencies"
+            ],
+            "properties": {
+              "copyIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "maxItems": 100
+              },
+              "currencies": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "currencyId",
+                    "amount"
+                  ],
+                  "properties": {
+                    "currencyId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                },
+                "maxItems": 20
+              }
+            }
+          },
+          "receive": {
+            "type": "object",
+            "required": [
+              "copyIds",
+              "currencies"
+            ],
+            "properties": {
+              "copyIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "maxItems": 100
+              },
+              "currencies": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "currencyId",
+                    "amount"
+                  ],
+                  "properties": {
+                    "currencyId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                },
+                "maxItems": 20
+              }
+            }
+          },
+          "expiresInSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 604800,
+            "default": 86400
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "versions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "tradeId": {
+            "type": "string"
+          },
+          "expectedDigest": {
+            "type": "string"
           }
         }
       }

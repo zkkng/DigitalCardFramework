@@ -33,5 +33,7 @@ artwork/
 sprites/
 game-data/
 data/
+secrets/
+content/
 *.sqlite-wal
 *.sqlite-shm

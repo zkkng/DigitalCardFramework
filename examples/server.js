@@ -7,6 +7,8 @@ import {CardFramework} from '../src/index.js';
 import {SQLiteStore} from '../src/sqlite.js';
 import {createApiHandler} from '../src/http.js';
 import {sampleCatalog} from './catalog.js';
+import {demoArt} from './art.js';
+import {serveReference,securityHeaders} from '../src/static.js';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 mkdirSync(resolve(root,'data'),{recursive:true});
@@ -23,16 +25,19 @@ const users=['Rowan','Morgan'].map(name=>{
 const sessions=new Map();
 function identity(request) {
   const token=(request.headers.cookie??'').split(';').map(x=>x.trim()).find(x=>x.startsWith('dc_demo='))?.slice(8);
-  const userId=token&&sessions.get(token);return userId?{userId}:null;
+  const userId=token&&sessions.get(token);return userId?{userId,role:userId===users[0].id?'admin':'player'}:null;
 }
-const api=createApiHandler({framework,resolveIdentity:identity,allowedOrigin:origin});
+const api=createApiHandler({framework,resolveIdentity:identity,allowedOrigin:origin,exposeOperators:true,requireTradeReview:true});
 const allowedFiles=new Map([
   ['/','examples/index.html'],['/alternate','examples/alternate.html'],['/app.js','examples/app.js'],['/alternate.js','examples/alternate.js'],
   ...['ui','client','styles'].map(name=>['/src/'+name+'.js','src/'+name+'.js'])
 ]);
 const server=createServer(async(request,response)=>{
+  securityHeaders(response);
   try {
     const url=new URL(request.url,origin);
+    const generated=demoArt(url.pathname);if(request.method==='GET'&&generated){response.setHeader('Content-Type','image/svg+xml');response.end(generated);return;}
+    if(url.pathname==='/host/config'&&request.method==='GET'){response.setHeader('Content-Type','application/json');response.setHeader('Cache-Control','no-store');response.end(JSON.stringify({mode:'demo',brand:'Card Atelier',users}));return;}
     if(request.method==='GET' && ['/demo/layers/sky.svg','/demo/layers/orb.svg'].includes(url.pathname)) {
       const background=url.pathname.endsWith('sky.svg');
       const drawing=background
@@ -52,6 +57,7 @@ const server=createServer(async(request,response)=>{
       response.setHeader('Content-Type','application/json');response.end('{"ok":true}');return;
     }
     if(await api(request,response))return;
+    if(await serveReference(request,response))return;
     const file=allowedFiles.get(url.pathname);
     if(!file){response.statusCode=404;response.end('Not found');return;}
     response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript; charset=utf-8':'text/html; charset=utf-8');

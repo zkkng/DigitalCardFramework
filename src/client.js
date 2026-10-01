@@ -2,16 +2,17 @@ export class ApiError extends Error {
   constructor(code,message,status) {super(message);this.code=code;this.status=status;}
 }
 export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={}) {
+  let principal=null;
   const query=options=>'?' + new URLSearchParams(Object.entries(options??{}).filter(([,value])=>value!==undefined&&value!==null)).toString();
   async function call(path,body,method=body===undefined?'GET':'POST') {
     const response=await request(baseUrl+path,{method,credentials:'same-origin',
-      headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+      headers:body===undefined?{}:{'Content-Type':'application/json',...(principal?{'X-DC-Principal':principal}: {})},body:body===undefined?undefined:JSON.stringify(body)});
     const data=await response.json();
     if(!response.ok) throw new ApiError(data.code,data.message,response.status);
     return data;
   }
   return {
-    catalog:()=>call('/catalog'), me:()=>call('/me'), wallet:()=>call('/wallet'), history:()=>call('/history'),
+    catalog:()=>call('/catalog'), me:async()=>{const me=await call('/me');principal=me.userId;return me;}, wallet:()=>call('/wallet'), history:()=>call('/history'),
     inventory:()=>call('/inventory'), packs:()=>call('/packs'), quote:input=>call('/quote',input),
     inventoryPage:options=>call('/inventory'+query({limit:50,...options})),directory:options=>call('/users'+query(options)),
     tradeInventory:(userId,options)=>call('/users/'+encodeURIComponent(userId)+'/inventory'+query(options)),
@@ -58,9 +59,10 @@ export function createRevealController({open,key=()=>globalThis.crypto.randomUUI
  */
 export function createCommandRunner({client,storage,namespace='default'}) {
   const storageKey='digital-card.commands.v1:'+namespace;
-  let pending=storage?.getItem(storageKey)?JSON.parse(storage.getItem(storageKey)):{};
+  let pending=Object.create(null);
+  try{const value=JSON.parse(storage?.getItem(storageKey)??'null');if(value&&typeof value==='object'&&!Array.isArray(value))pending=Object.assign(Object.create(null),value);}catch{}
   const active=new Map();
-  const persist=()=>storage?.setItem(storageKey,JSON.stringify(pending));
+  const persist=()=>{try{storage?.setItem(storageKey,JSON.stringify(pending));}catch{/* Blocked storage keeps retry keys for this mounted session. */}};
   const stable=x=>Array.isArray(x)?x.map(stable):x && typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,stable(x[k])])):x;
   const allowed=new Set(['purchase','openPack','convert','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','consumeBinding','counterTrade','preferences','readNotifications','commitImport']);
   return function run(command,input) {

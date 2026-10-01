@@ -3,7 +3,7 @@ import {mountFramework,mountOpener,installStyles,renderCard,element} from '/src/
 const client=createClient();
 const users=await (await fetch('/demo/users')).json();
 await fetch('/demo/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:users[0].id})});
-const theme={'--dc-bg':'#ede9df','--dc-panel':'#faf8f1','--dc-text':'#243f33','--dc-muted':'#596a5f','--dc-accent':'#a8c4a7','--dc-border':'#c1cbba','--dc-font':'Georgia,serif'};
+const theme={'--dc-bg':'#ede9df','--dc-panel':'#faf8f1','--dc-text':'#243f33','--dc-muted':'#596a5f','--dc-accent':'#3c6849','--dc-button-text':'#f7fff5','--dc-border':'#c1cbba','--dc-font':'Georgia,serif'};
 const backRenderer=()=>element('span','dc-back-mark','ATLAS');
 function metadataRenderer(copy) {const node=element('div');node.append(element('p','','Collected by '+(copy.openedByName??'you')),element('p','',copy.definition.metadata['artist.credit']??'Independent collection'));return node;}
 function albumRenderer(model,{cardRenderer,onSelect}) {

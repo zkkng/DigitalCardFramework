@@ -2,10 +2,12 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {CardFramework} from '../src/index.js';
 import {SQLiteStore} from '../src/sqlite.js';
 import {exportContent} from '../src/importer.js';
+import {keyFromHex} from '../src/encryption.js';
 const [command,...args]=process.argv.slice(2),options={};
 for(let i=0;i<args.length;i+=2){if(!args[i].startsWith('--')||args[i+1]===undefined)throw new Error('Options must use --name value');options[args[i].slice(2)]=args[i+1];}
 if(!['preview','apply','export'].includes(command)||!options.database)throw new Error('Usage: node tools/content.js preview|apply|export --database data/cards.sqlite --file content.yaml [--mode merge|replace] [--format json|yaml] [--digest preview-digest]');
-const core=new CardFramework({store:new SQLiteStore(options.database)}),operator={role:'admin'};
+const rawKey=process.env.STATE_ENCRYPTION_KEY_FILE?readFileSync(process.env.STATE_ENCRYPTION_KEY_FILE,'utf8').trim():process.env.STATE_ENCRYPTION_KEY;
+const core=new CardFramework({store:new SQLiteStore(options.database,{encryptionKey:keyFromHex(rawKey)})}),operator={role:'admin'};
 try{
   const format=options.format??(options.file?.endsWith('.yaml')||options.file?.endsWith('.yml')?'yaml':'json');
   if(command==='export'){if(!options.file)throw new Error('Export requires --file');writeFileSync(options.file,exportContent(core.operatorCatalog(operator),{format}));console.log('Catalog exported to '+options.file);}

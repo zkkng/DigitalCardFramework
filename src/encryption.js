@@ -6,4 +6,4 @@ export function createStateCodec(key){
     decode(body){const value=JSON.parse(body);if(value.encrypted!==1){if(key)throw new Error('Refusing plaintext state with encryption enabled; migrate into a fresh encrypted database');return value;}if(!key)throw new Error('An encryption key is required for this database');try{const cipher=createDecipheriv('aes-256-gcm',key,Buffer.from(value.iv,'base64'));cipher.setAAD(Buffer.from('digital-card.state.v1'));cipher.setAuthTag(Buffer.from(value.tag,'base64'));return JSON.parse(Buffer.concat([cipher.update(Buffer.from(value.data,'base64')),cipher.final()]).toString('utf8'));}catch{throw new Error('Encrypted state authentication failed');}}
   };
 }
-export function keyFromHex(value){if(typeof value!=='string'||!/^[a-f0-9]{64}$/i.test(value))throw new Error('STATE_ENCRYPTION_KEY must be 64 hexadecimal characters');return Buffer.from(value,'hex');}
+export function keyFromHex(value){if(value===undefined)return undefined;if(typeof value!=='string'||!/^[a-f0-9]{64}$/i.test(value))throw new Error('STATE_ENCRYPTION_KEY must be 64 hexadecimal characters');return Buffer.from(value,'hex');}

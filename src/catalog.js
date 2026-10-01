@@ -40,7 +40,7 @@ function validateSchema(schema,label) {
   safeData(schema,{maxBytes:16384,maxDepth:12,maxNodes:2000});
   const allowed=new Set(['type','properties','additionalProperties','required','items','enum','minimum','maximum','minLength','maxLength','minItems','maxItems','description','title']);
   function walk(x){check(x&&typeof x==='object'&&!Array.isArray(x),'INVALID_CATALOG','Invalid '+label+' schema');for(const key of Object.keys(x))check(allowed.has(key),'INVALID_CATALOG','Unsupported schema keyword '+key);if(x.properties)for(const sub of Object.values(x.properties))walk(sub);if(x.items)walk(x.items);if(x.additionalProperties&&typeof x.additionalProperties==='object')walk(x.additionalProperties);}
-  walk(schema);try{return ajv.compile(schema);}catch(error){throw new FrameworkError('INVALID_CATALOG','Invalid '+label+' schema: '+error.message);}
+  walk(schema);try{return new Ajv({allErrors:true,strict:true,validateFormats:false}).compile(schema);}catch(error){throw new FrameworkError('INVALID_CATALOG','Invalid '+label+' schema: '+error.message);}
 }
 export function validateCatalog(input) {
   check(input && typeof input==='object' && !Array.isArray(input),'INVALID_CATALOG','Catalog must be an object');

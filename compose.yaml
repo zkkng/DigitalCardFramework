@@ -1,0 +1,44 @@
+services:
+  cards:
+    build: .
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      SITE_ORIGIN: ${SITE_ORIGIN:?Set SITE_ORIGIN}
+      SITE_NAME: ${SITE_NAME:-Card Atelier}
+      OIDC_ISSUER: ${OIDC_ISSUER:?Set OIDC_ISSUER}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_secret
+      STATE_ENCRYPTION_KEY_FILE: /run/secrets/state_key
+      OPERATOR_SUBJECTS: ${OPERATOR_SUBJECTS:-[]}
+      CATALOG_FILE: /content/catalog.json
+      ASSET_ORIGINS: ${ASSET_ORIGINS:-}
+    volumes:
+      - cards_data:/app/data
+      - ./content:/content:ro
+    secrets: [state_key, oidc_secret]
+  edge:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SITE_HOST: ${SITE_HOST:?Set SITE_HOST}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      cards:
+        condition: service_healthy
+secrets:
+  state_key:
+    file: ./secrets/state-key.txt
+  oidc_secret:
+    file: ./secrets/oidc-client-secret.txt
+volumes:
+  cards_data:
+  caddy_data:
+  caddy_config:

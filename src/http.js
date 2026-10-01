@@ -12,7 +12,7 @@ async function body(request,maxBytes) {
   try {const value=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');if(!value||typeof value!=='object'||Array.isArray(value))throw new Error();return safeData(value,{maxBytes});}
   catch(error){if(error instanceof FrameworkError)throw error;throw new FrameworkError('INVALID_JSON','JSON request must be an object');}
 }
-export function createApiHandler({framework,resolveIdentity,allowedOrigin,exposeOperators=false,requireTradeReview=false,rateLimit,onRequest}={}) {
+export function createApiHandler({framework,resolveIdentity,allowedOrigin,exposeOperators=false,requireTradeReview=false,requirePrincipal=false,rateLimit,onRequest}={}) {
   if(typeof resolveIdentity!=='function') throw new Error('A trusted identity resolver is required');
   return async (request,response) => {
     const url=new URL(request.url,'http://localhost'), path=url.pathname;
@@ -26,9 +26,10 @@ export function createApiHandler({framework,resolveIdentity,allowedOrigin,expose
       if(method!=='GET' && method!=='POST') throw new FrameworkError('METHOD_NOT_ALLOWED','Unsupported method',405);
       if(method==='POST') {
         if(!allowedOrigin || request.headers.origin!==allowedOrigin) throw new FrameworkError('ORIGIN_REJECTED','Mutation requires the configured host origin',403);
-        if(!(request.headers['content-type']??'').startsWith('application/json')) throw new FrameworkError('INVALID_CONTENT_TYPE','Use application/json',415);
+        if((request.headers['content-type']??'').split(';')[0].trim().toLowerCase()!=='application/json') throw new FrameworkError('INVALID_CONTENT_TYPE','Use application/json',415);
       }
       const actor=await resolveIdentity(request);
+      if(method==='POST'&&(requirePrincipal||request.headers['x-dc-principal'])&&request.headers['x-dc-principal']!==actor?.userId)throw new FrameworkError('PRINCIPAL_CHANGED','Signed-in account changed. Reload before continuing.',409);
       if(rateLimit&&!rateLimit({actor,request,mutation:method==='POST'}))throw new FrameworkError('RATE_LIMITED','Too many requests; try again shortly',429);
       const publicGet=method==='GET' && (path==='/api/catalog' || path==='/api/availability' || path==='/api/public-albums' || /^\/api\/albums\/[^/]+$/.test(path));
       if(!publicGet && !actor?.userId) throw new FrameworkError('UNAUTHENTICATED','Sign in to continue',401);
@@ -67,10 +68,10 @@ export function createApiHandler({framework,resolveIdentity,allowedOrigin,expose
       }
       response.end(JSON.stringify(result));
     } catch(error) {
-      response.statusCode=error instanceof FrameworkError?error.status:500;
+      response.statusCode=error instanceof FrameworkError?error.status:error instanceof URIError?400:500;
       if(response.statusCode===429)response.setHeader('Retry-After','60');
-      response.end(JSON.stringify({code:error instanceof FrameworkError?error.code:'INTERNAL_ERROR',
-        message:error instanceof FrameworkError?error.message:'The server could not complete this request'}));
+      response.end(JSON.stringify({code:error instanceof FrameworkError?error.code:error instanceof URIError?'INVALID_PATH':'INTERNAL_ERROR',
+        message:error instanceof FrameworkError?error.message:error instanceof URIError?'Malformed path encoding':'The server could not complete this request'}));
     }
     try{onRequest?.({requestId:response.getHeader('X-Request-ID'),method:request.method,path,status:response.statusCode});}catch{}
     return true;

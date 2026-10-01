@@ -1,6 +1,6 @@
 {
   "name": "@digital-card/framework",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Headless digital card collection core and replaceable web presentation",
@@ -14,16 +14,29 @@
     "./client": "./src/client.js",
     "./http": "./src/http.js",
     "./importer": "./src/importer.js",
-    "./trade-client": "./src/trade-client.js"
+    "./trade-client": "./src/trade-client.js",
+    "./trading-ui": "./src/trading-ui.js",
+    "./collection-ui": "./src/collection-ui.js",
+    "./inspector-ui": "./src/inspector-ui.js",
+    "./studio-ui": "./src/studio-ui.js",
+    "./player-ui": "./src/player-ui.js",
+    "./auth": "./src/auth.js",
+    "./encryption": "./src/encryption.js",
+    "./contracts": "./src/contracts.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "start": "node examples/server.js"
+    "start": "node examples/server.js",
+    "production": "node --env-file=.env host/server.js",
+    "contract": "node tools/generate-openapi.js"
   },
   "dependencies": {
     "ajv": "8.20.0",
     "openid-client": "6.8.8",
     "yaml": "2.9.1"
   },
-  "packageManager": "pnpm@11.19.0"
+  "packageManager": "pnpm@11.19.0",
+  "devDependencies": {
+    "happy-dom": "20.14.5"
+  }
 }

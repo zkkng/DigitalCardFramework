@@ -1,0 +1,12 @@
+.git
+node_modules
+data
+secrets
+.env*
+*.sqlite*
+*.db
+*.pem
+*.key
+test
+docs
+coverage

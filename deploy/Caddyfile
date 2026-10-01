@@ -1,0 +1,4 @@
+{$SITE_HOST} {
+  reverse_proxy cards:8080
+  encode zstd gzip
+}

@@ -1,0 +1,64 @@
+{
+  "cards": [
+    {
+      "id": "moonbridge",
+      "lineId": "sky",
+      "name": "Moonbridge",
+      "description": "A crossing between two constellations.",
+      "tags": [
+        "architecture",
+        "night"
+      ],
+      "stats": {
+        "attack": 42,
+        "defense": 18,
+        "element": "starlight"
+      },
+      "metadata": {
+        "creator.credit": "Your studio"
+      },
+      "layers": [
+        {
+          "id": "scenery",
+          "src": "/content/moonbridge/background.webp",
+          "depth": 0
+        },
+        {
+          "id": "bridge",
+          "src": "/content/moonbridge/bridge.webp",
+          "depth": 18
+        },
+        {
+          "id": "particles",
+          "src": "/content/moonbridge/particles.webp",
+          "depth": 35,
+          "blend": "screen",
+          "effect": "emissive"
+        }
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "id": "moonbridge.foil",
+      "cardId": "moonbridge",
+      "rarityId": "rare",
+      "finish": "foil",
+      "supplyLimit": 250
+    }
+  ],
+  "displayFields": [
+    {
+      "id": "combat.attack",
+      "path": "stats.attack",
+      "label": "Attack",
+      "type": "number"
+    },
+    {
+      "id": "combat.defense",
+      "path": "stats.defense",
+      "label": "Defense",
+      "type": "number"
+    }
+  ]
+}

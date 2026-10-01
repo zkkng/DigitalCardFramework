@@ -5,12 +5,13 @@ export function createTradeDraft({client,userId,catalog,storage,namespace=userId
     inventory:[],partnerInventory:[],give:[],receive:[],giveCurrencies:[],receiveCurrencies:[],message:'',reviewed:false,error:null,
     ownNext:null,partnerNext:null};
   let restored=initial;try{restored??=JSON.parse(storage?.getItem(storageKey)??'null');}catch{}
+  state.recipientId=restored?.toUserId??state.recipientId;
   const copyMaps={give:new Map(),receive:new Map()};
   const publicState=()=>structuredClone({...state,selectedGive:state.give.map(id=>copyMaps.give.get(id)).filter(Boolean),selectedReceive:state.receive.map(id=>copyMaps.receive.get(id)).filter(Boolean)});
   function publish(change,edit=false){if(disposed)return;state={...state,...change,...(edit?{reviewed:false}: {})};
     if(edit)try{storage?.setItem(storageKey,JSON.stringify({toUserId:state.recipientId,give:{copyIds:state.give,currencies:state.giveCurrencies},receive:{copyIds:state.receive,currencies:state.receiveCurrencies},message:state.message,parentTradeId}));}catch{}
     for(const fn of listeners)fn(publicState());}
-  function eligible(copy){return copy?.tradable||parentTradeId&&copy?.lockedBy===parentTradeId;}
+  function eligible(copy){return catalog.features.cardTrading&&(copy?.tradable||parentTradeId&&copy?.lockedBy===parentTradeId);}
   function sideFields(side){if(!['give','receive'].includes(side))throw new Error('Invalid trade side');return side==='give'?{list:'inventory',cursor:'ownNext',owner:userId}:{list:'partnerInventory',cursor:'partnerNext',owner:state.recipientId};}
   function select(side,copyId){sideFields(side);const copy=copyMaps[side].get(copyId);if(!eligible(copy))throw new Error(copy?.untradableReason??'Card is not available');if(state[side].includes(copyId))return;if(state[side].length>=100)throw new Error('An offer can contain at most 100 cards per side');publish({[side]:[...state[side],copyId]},true);}
   async function load(recipientId){const current=++generation;publish({phase:'loading',recipientId,reviewed:false,error:null});

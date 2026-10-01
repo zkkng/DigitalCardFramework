@@ -18,7 +18,10 @@ export class CardFramework {
   #store; #clock; #random; #bindings; #policies; #limits;
   constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={}}={}) {
     this.#store=store; this.#clock=clock; this.#random=random;
-    this.#bindings=bindings; this.#policies=policies;this.#limits=limits;
+    const allowedLimits=['users','copies','packs','requests','albums','trades','copiesPerUser','packsPerUser'];
+    check(limits&&typeof limits==='object'&&!Array.isArray(limits),'INVALID_INPUT','Limits must be an object');
+    for(const [name,value]of Object.entries(limits)){check(allowedLimits.includes(name),'INVALID_INPUT','Unknown installation limit '+name);integer(value,'Installation limit '+name,1,10000000);}
+    this.#bindings=bindings; this.#policies=policies;this.#limits={...limits};
   }
   close() { this.#store.close(); }
   audit(actor){this.#admin(actor);return this.#store.read(auditState);}
@@ -61,7 +64,9 @@ export class CardFramework {
       if (previous) {check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409); return previous.result;}
       const result=fn(s,user);
       for(const field of ['copies','packs','requests','albums','trades'])if(this.#limits[field]!==undefined)
-        check(Object.keys(s[field]).length<this.#limits[field]||field!=='requests'&&Object.keys(s[field]).length===this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
+        check(field==='requests'?Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length<this.#limits.requests:Object.keys(s[field]).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
+      if(this.#limits.copiesPerUser!==undefined){const counts={};for(const c of Object.values(s.copies))if(c.state!=='consumed')counts[c.ownerId]=(counts[c.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.copiesPerUser,'INVENTORY_CAPACITY','Collector inventory capacity reached',507);}
+      if(this.#limits.packsPerUser!==undefined)check(Object.values(s.packs).filter(p=>p.ownerId===user.id).length<=this.#limits.packsPerUser,'PACK_CAPACITY','Collector pack capacity reached',507);
       s.requests[token]={hash,result:clone(result)};
       this.#event(s,type,{userId:user.id});
       return result;
@@ -97,6 +102,7 @@ export class CardFramework {
     return this.#store.transact(s=>{
       s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,inputHash=contentDigest({manifest,digest,expectedVersion});
       if(s.operatorRequests[token]){check(s.operatorRequests[token].hash===inputHash,'IDEMPOTENCY_CONFLICT','Import key already used',409);return s.operatorRequests[token].result;}
+      if(this.#limits.requests!==undefined)check(Object.keys(s.requests).length+Object.keys(s.operatorRequests).length<this.#limits.requests,'INSTALLATION_CAPACITY','Installation requests capacity reached',507);
       check((s.catalog?.version??0)===expectedVersion,'STALE_IMPORT','Catalog changed; preview again',409);
       const catalog=validateCatalog(manifest);check(contentDigest(catalog)===digest,'IMPORT_CHANGED','Preview differs from the submitted catalog',409);
       this.#validateRevision(catalog,s.catalog);s.catalog=catalog;
@@ -248,7 +254,7 @@ export class CardFramework {
       return pack.receipt;
     });
   }
-  inventory(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return Object.values(s.copies).filter(x=>x.ownerId===u.id && x.state==='owned').map(x=>this.#copyView(s,x,u.id));});}
+  inventory(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return Object.values(s.copies).filter(x=>x.ownerId===u.id && x.state==='owned').map(x=>{const reason=this.#tradeReason(x,u.id);return {...this.#copyView(s,x,u.id),tradable:!reason,untradableReason:reason};});});}
   inspectCard(actor,copyId) {
     return this.#store.read(s=>{
       const user=this.#user(s,actor), copy=s.copies[copyId];
@@ -366,8 +372,9 @@ export class CardFramework {
   #expire(s) {
     for(const trade of Object.values(s.trades)) if(trade.status==='pending' && Date.parse(trade.expiresAt)<=Date.parse(this.#clock())) this.#release(s,trade,'expired');
   }
-  sweepExpiredTrades(actor) {this.#admin(actor); return this.#store.transact(s=>{this.#expire(s); return {ok:true};});}
+  sweepExpiredTrades(actor) {this.#admin(actor);if(!this.#store.read(s=>Object.values(s.trades).some(t=>t.status==='pending'&&Date.parse(t.expiresAt)<=Date.parse(this.#clock()))))return {ok:true};return this.#store.transact(s=>{this.#expire(s); return {ok:true};});}
   trades(actor) {
+    const current=this.#store.read(s=>{const u=this.#user(s,actor);return {expired:Object.values(s.trades).some(t=>t.status==='pending'&&Date.parse(t.expiresAt)<=Date.parse(this.#clock())),items:Object.values(s.trades).filter(t=>t.fromUserId===u.id||t.toUserId===u.id).map(t=>({...t,digest:this.#tradeDigest(t),fromName:s.users[t.fromUserId].displayName,toName:s.users[t.toUserId].displayName}))};});if(!current.expired)return current.items;
     return this.#store.transact(s=>{const u=this.#user(s,actor); this.#expire(s); return Object.values(s.trades).filter(t=>t.fromUserId===u.id || t.toUserId===u.id).map(t=>({...t,digest:this.#tradeDigest(t),fromName:s.users[t.fromUserId].displayName,toName:s.users[t.toUserId].displayName}));});
   }
   #transfer(s,copyId,from,to,tradeId) {
