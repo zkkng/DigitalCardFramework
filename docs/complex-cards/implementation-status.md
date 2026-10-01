@@ -1,6 +1,6 @@
-# Runtime implementation coverage — 1 October 2026
+# Supported portable card capabilities
 
-The portable implementation is under `src/presentation`. The broader design is a roadmap, not a claim that every media standard or production integration is complete.
+The portable implementation is under `src/presentation`. The supported profiles and limitations below define its scope.
 
 ## Implemented
 
@@ -13,13 +13,6 @@ The portable implementation is under `src/presentation`. The broader design is a
 - Durable bounded import jobs, authorization callback, scanner boundary, atomic content publication, quarantine and retention review.
 - Granular server administrative permissions, replaceable identity/access mapping, default collector restrictions and current-session permission revocation.
 - Two companion cards migrated using approved artwork outside Git; accurate renderer-generated face posters. Generic source stays separate from the host-specific integration tools and media.
-
-## Verification
-
-Repeatable tests live in `test/presentation*.test.js`, `test/access.test.js`, and the existing core suite. They cover archive integrity/bombs, schema references, idempotent storage, failed policy decisions, signatures, bounded motion, real catalog acquisition/trade pinning, custom effects and headless publication. Browser scripts exercise migrated visuals, studio export/drafts/masks, three real optional adapters, a video back, early disposal, context recovery, reduced motion, PSD/ORA/ZIP import and separate-origin program rejection.
-
-The resumed audit expanded verification from 95 to 137 Node tests, added a standalone synthetic browser suite and CI matrix, and found/fixed lifecycle, budget, mask, import and creator races. See the [full audit, requirement matrix, remaining gaps and repeatable commands](audit-2026-10-01.md). Edge, Firefox and WebKit pass the tested WebGL2 subset; physical iPhone qualification remains open. Reports and screenshots live outside source Git in `outputs/PortableCardQA`.
-
 
 ## Explicit limits
 

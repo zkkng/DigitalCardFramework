@@ -1,6 +1,6 @@
 # Complex cards: customization, mobile warnings and external currencies
 
-Implemented 1 October 2026. This supplements the original format spec and the earlier audit. The framework repository contains code and synthetic tests; game integration and artwork remain separate.
+This guide describes custom effects, performance controls and external service integration. Game integration and artwork remain separate.
 
 ## Defaults and extension contracts
 
@@ -109,14 +109,4 @@ Production `HOST_MODULE` can export `currencyProviders`. The optional authentica
 
 Direct `settleExternalCredit` requires the separate trusted `currency.settle` permission; ordinary users and grant-only operators cannot call it. As with `currency.grant`, never deserialize trusted principals from JSON. Reference [external-currency-provider.mjs](../../examples/external-currency-provider.mjs) is an executable fake-service composition demonstrating the API, not a live financial service.
 
-This is sufficient to integrate settled game points, rewards or externally purchased credit into all existing pack/trade systems. External balance display, withdrawals, reversible card payments/chargebacks, cross-service trade escrow and chain reorganizations require provider-specific policies and orchestration. Their state belongs to the external integration; do not credit merely because a transaction exists or a browser says payment succeeded. Live providers require real credentials and end-to-end provider tests before enabling. No actual external account was charged in this audit.
-
-## Research-informed choices
-
-- [MDN WebGL best practices](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices): device memory cannot be queried reliably; use explicit allocation budgets, smaller surfaces and resource cleanup. Our static warnings complement runtime budgets and measured lifecycle tests.
-- [OWASP authorization guidance](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html): deny by default and check authority on every protected operation. Permissions and ownership are enforced server-side, independently of hidden editor controls.
-- [OWASP transaction authorization](https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html): transaction terms and state transitions remain authoritative. Quote versions, ownership versions, immutable review, atomic allocation and settlement receipts are tested under replay and failure.
-- [Stripe idempotency](https://docs.stripe.com/api/idempotent_requests) and [webhook delivery](https://docs.stripe.com/webhooks): network retries and duplicate/out-of-order delivery are expected. We use provider transaction identity and durable reconciliation instead of trusting notification order or client keys.
-- [GIF89a specification](https://www.w3.org/Graphics/GIF/spec-gif89a.txt) and [gifuct-js](https://github.com/matt-way/gifuct-js): decoded frame patches require disposal-aware compositing. The importer normalizes them into the existing portable frame contract.
-
-These references informed specific implementation decisions. They are not a certification of security or iPhone performance. See [release security policy](../../SECURITY.md) for the recurring review gate.
+This is sufficient to integrate settled game points, rewards or externally purchased credit into all existing pack/trade systems. External balance display, withdrawals, reversible card payments/chargebacks, cross-service trade escrow and chain reorganizations require provider-specific policies and orchestration. Their state belongs to the external integration; do not credit merely because a transaction exists or a browser says payment succeeded. Live providers require real credentials and end-to-end provider tests before enabling.

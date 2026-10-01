@@ -1,6 +1,6 @@
 # Portable-card runtime 0.1
 
-This is the implemented contract. The larger specification records direction; features not listed as implemented in [coverage](implementation-status.md) must not be inferred from that design.
+See [supported capabilities and limits](implementation-status.md) before choosing a runtime or media profile.
 
 ## Install and entry points
 

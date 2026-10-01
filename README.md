@@ -81,16 +81,13 @@ The separate production host uses maintained OIDC verification with PKCE/state/n
 
 Real identity-provider configuration, DNS/TLS and protected credentials are required. This repository ships the executable host and deployment template; no live production deployment is claimed. External game wallets, payment/reward delivery, distributed storage and live game integrations remain host extension work. Local binding consumption does not redeem an external reward.
 
-## Documentation and evidence
+## Documentation
 
-- [Future GitHub wiki specification](docs/wiki-spec/README.md): section plan, writing standards, acceptance criteria and feature-change audits.
-
-- [Current coverage and suggestions](docs/implementation-status.md)
-- [Research white paper](docs/white-paper.md)
-- [API](docs/core-api.md) and [generated OpenAPI](docs/openapi.json)
+- [Supported features](docs/implementation-status.md)
+- [Core API](docs/core-api.md) and [HTTP schema](docs/openapi.json)
+- [Content authoring](docs/content-authoring.md)
 - [Customization recipes](docs/customization-recipes.md)
-- [Architecture](docs/customization-architecture.md) and [production decisions](docs/adr-002-production-profile.md)
-- [Release verification](docs/verification-0.2.0.md)
-- [Portable complex-card runtime](docs/complex-cards/README.md), [creator API](docs/complex-cards/creator-api.md), and [access/identity](docs/access-and-identity.md)
+- [Production setup](docs/production.md) and [identity and access](docs/access-and-identity.md)
+- [Portable card runtime](docs/complex-cards/README.md) and [creator API](docs/complex-cards/creator-api.md)
 
-Framework code, generic examples, tests and documentation belong here. Artwork, licensed card data and host-specific integration belong outside this repository.
+Artwork and licensed game data remain in external content storage.
