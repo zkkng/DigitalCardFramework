@@ -1,0 +1,13 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {createTradeDraft} from '../src/trade-client.js';
+const card=(id,ownerId)=>({id,ownerId,version:3,tradable:true,definition:{name:id}});
+const catalog={features:{currencyTrading:true},currencies:[{id:'credits',tradable:true},{id:'stamps',tradable:false}]};
+function fixture(){const a=card('a','alice'),b=card('b','bob'),client={tradeInventory:async id=>({owner:{id,name:id},items:[id==='alice'?a:b],next:null})};return {a,b,client,catalog,userId:'alice'};}
+test('trade draft selection carries copy versions, review resets on edits and nontradable currency fails',async()=>{
+  const x=fixture(),draft=createTradeDraft(x);await draft.load('bob');draft.add('give','a');draft.add('receive','b');assert.throws(()=>draft.buildOffer(),/Review/);draft.review();assert.deepEqual(draft.buildOffer().versions,{a:3,b:3});draft.setCurrency('give','credits',10);assert(!draft.getState().reviewed);assert.throws(()=>draft.setCurrency('give','stamps',10),/not tradable/);draft.review();assert.equal(draft.buildOffer().give.currencies[0].amount,10);draft.remove('give','a');assert(!draft.getState().reviewed);
+});
+test('obsolete recipient inventory loads and disposed controllers cannot publish late results',async()=>{
+  const x=fixture();let resolveOld;const client={tradeInventory:id=>id==='old'?new Promise(resolve=>resolveOld=resolve):x.client.tradeInventory(id)};const draft=createTradeDraft({...x,client});const old=draft.load('old');await draft.load('bob');resolveOld({owner:{id:'old'},items:[card('old','old')]});await old;assert.equal(draft.getState().partner.id,'bob');let calls=0;draft.subscribe(()=>calls++);draft.dispose();draft.review();assert.equal(calls,1);
+});
+test('draft restoration persists only IDs and intentions and never caches attached codes',async()=>{
+  const x=fixture();x.a.bindings={secret:{data:{code:'TOP-SECRET'}}};const data=new Map(),storage={getItem:key=>data.get(key),setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)};const first=createTradeDraft({...x,storage});await first.load('bob');first.add('give','a');first.setMessage('hello');assert(![...data.values()].join('').includes('TOP-SECRET'));first.dispose();const next=createTradeDraft({...x,storage});await next.load('bob');assert.deepEqual(next.getState().give,['a']);assert.equal(next.getState().message,'hello');assert(!next.getState().reviewed);
+});

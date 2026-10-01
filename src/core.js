@@ -1,6 +1,9 @@
 import {randomInt, randomUUID, createHash} from 'node:crypto';
 import {check, integer, text, jsonObject, validateCatalog} from './catalog.js';
 import {MemoryStore} from './store.js';
+import {prepareImport,contentDigest} from './importer.js';
+import {page} from './data.js';
+import {auditState} from './audit.js';
 
 const clone = value => structuredClone(value);
 const id = () => randomUUID();
@@ -12,12 +15,13 @@ function fingerprint(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
 export class CardFramework {
-  #store; #clock; #random; #bindings; #policies;
-  constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={}}={}) {
+  #store; #clock; #random; #bindings; #policies; #limits;
+  constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={}}={}) {
     this.#store=store; this.#clock=clock; this.#random=random;
-    this.#bindings=bindings; this.#policies=policies;
+    this.#bindings=bindings; this.#policies=policies;this.#limits=limits;
   }
   close() { this.#store.close(); }
+  audit(actor){this.#admin(actor);return this.#store.read(auditState);}
   #admin(actor) { check(actor?.role==='admin','FORBIDDEN','Operator authority required',403); }
   #user(s,actor) {
     check(actor?.userId && s.users[actor.userId],'UNAUTHENTICATED','A verified framework user is required',401);
@@ -26,6 +30,29 @@ export class CardFramework {
   #catalog(s) {check(s.catalog,'NO_CATALOG','Publish a catalog first',409); return s.catalog;}
   #feature(s,name) {check(this.#catalog(s).features[name],'FEATURE_DISABLED',name+' is disabled',403);}
   #event(s,type,data) {s.events.push({id:id(),sequence:s.events.length+1,type,data,at:this.#clock()});}
+  #notify(s,userId,type,data){s.notifications??=[];s.notifications.push({id:id(),userId,type,data,at:this.#clock(),read:false});const own=s.notifications.filter(n=>n.userId===userId);if(own.length>2000){const remove=new Set(own.slice(0,own.length-2000).map(n=>n.id));s.notifications=s.notifications.filter(n=>!remove.has(n.id));}}
+  #preferences(user){return {inventoryVisibility:'traders',favoriteCopyIds:[],wishlistCardIds:[],blockedUserIds:[],...user.preferences};}
+  me(actor){return this.#store.read(s=>{const u=this.#user(s,actor);return {userId:u.id,displayName:u.displayName,preferences:this.#preferences(u)};});}
+  setPreferences(actor,{key,inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds}){
+    return this.#command(actor,key,'preferences.updated',{inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds},(s,u)=>{
+      const next=this.#preferences(u);
+      if(inventoryVisibility!==undefined){check(['private','traders','public'].includes(inventoryVisibility),'INVALID_INPUT','Invalid inventory visibility');next.inventoryVisibility=inventoryVisibility;}
+      for(const [field,value]of Object.entries({favoriteCopyIds,wishlistCardIds,blockedUserIds}))if(value!==undefined){check(Array.isArray(value)&&value.length<=1000&&new Set(value).size===value.length&&value.every(id=>typeof id==='string'),'INVALID_INPUT','Invalid '+field);for(const id of value){if(field==='favoriteCopyIds')check(s.copies[id]?.ownerId===u.id&&s.copies[id]?.state==='owned','NOT_OWNED','Favorite must be owned',403);if(field==='wishlistCardIds')check(lookup(this.#catalog(s).cards,id),'INVALID_INPUT','Wishlist card not found');if(field==='blockedUserIds')check(s.users[id]&&id!==u.id,'INVALID_INPUT','Block requires another user');}next[field]=value;}
+      u.preferences=next;return next;
+    });
+  }
+  #blocked(s,a,b){return this.#preferences(s.users[a]).blockedUserIds.includes(b)||this.#preferences(s.users[b]).blockedUserIds.includes(a);}
+  directory(actor,options={}){return this.#store.read(s=>{const viewer=this.#user(s,actor);return page(Object.values(s.users).filter(u=>u.id!==viewer.id&&!this.#blocked(s,viewer.id,u.id)).map(u=>({id:u.id,name:u.displayName,createdAt:u.createdAt,inventoryVisible:this.#catalog(s).features.inventoryBrowsing&&this.#preferences(u).inventoryVisibility!=='private'})),{...options,sort:'name'});});}
+  #tradeReason(copy,userId){if(copy.lockedBy)return 'Reserved in another offer';if(Object.values(copy.bindings).some(b=>b.transfer==='block'))return 'Attached data blocks transfer';if(this.#policies.canTransfer&&this.#policies.canTransfer(clone(copy),userId)!==true)return 'Host policy blocks transfer';return null;}
+  tradeInventory(actor,userId,options={}){return this.#store.read(s=>{
+    const viewer=this.#user(s,actor),owner=s.users[userId];check(owner,'NOT_FOUND','Inventory not available',404);
+    if(owner.id!==viewer.id){this.#feature(s,'inventoryBrowsing');check(!this.#blocked(s,viewer.id,owner.id)&&this.#preferences(owner).inventoryVisibility!=='private','NOT_FOUND','Inventory not available',404);if(this.#preferences(owner).inventoryVisibility==='traders')this.#feature(s,'cardTrading');}
+    const cards=Object.values(s.copies).filter(c=>c.ownerId===owner.id&&c.state==='owned').map(c=>{const reason=this.#tradeReason(c,owner.id);return {...this.#copyView(s,c,viewer.id),tradable:!reason,untradableReason:reason};});
+    return {owner:{id:owner.id,name:owner.displayName},...page(cards,options)};
+  });}
+  inventoryPage(actor,options={}){return page(this.inventory(actor),options);}
+  notifications(actor,options={}){return this.#store.read(s=>{const u=this.#user(s,actor);return page((s.notifications??[]).filter(n=>n.userId===u.id),options);});}
+  readNotifications(actor,{key,ids}){check(Array.isArray(ids)&&ids.length<=200,'INVALID_INPUT','Select at most 200 notifications');return this.#command(actor,key,'notifications.read',{ids},(s,u)=>{for(const n of s.notifications??[])if(n.userId===u.id&&ids.includes(n.id))n.read=true;return {ok:true};});}
   #command(actor,key,type,input,fn) {
     text(key,'idempotency key',128);
     return this.#store.transact(s=>{
@@ -33,19 +60,19 @@ export class CardFramework {
       const previous=s.requests[token];
       if (previous) {check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409); return previous.result;}
       const result=fn(s,user);
+      for(const field of ['copies','packs','requests','albums','trades'])if(this.#limits[field]!==undefined)
+        check(Object.keys(s[field]).length<this.#limits[field]||field!=='requests'&&Object.keys(s[field]).length===this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
       s.requests[token]={hash,result:clone(result)};
       this.#event(s,type,{userId:user.id});
       return result;
     });
   }
-  publishCatalog(actor,manifest) {
-    this.#admin(actor); const catalog=validateCatalog(manifest);
-    return this.#store.transact(s=>{
-      if (s.catalog) {
-        check(catalog.version>s.catalog.version,'CATALOG_CONFLICT','Catalog version must increase',409);
+  #validateRevision(catalog,previous) {
+      if (previous) {
+        check(catalog.version>previous.version,'CATALOG_CONFLICT','Catalog version must increase',409);
         // Published IDs retain identity; retirement uses enabled:false. Old owned copies use snapshots.
         for (const section of ['currencies','lines','rarities','cards','variants','products','recipes']) {
-          for (const old of s.catalog[section]) {
+          for (const old of previous[section]) {
             const next=lookup(catalog[section],old.id);
             check(next,'CATALOG_CONFLICT','Retain published '+section+' id '+old.id,409);
             if (section==='variants') check(next.cardId===old.cardId && next.rarityId===old.rarityId && next.supplyLimit===old.supplyLimit,'CATALOG_CONFLICT','Variant identity/edition limits are immutable',409);
@@ -54,8 +81,27 @@ export class CardFramework {
           }
         }
       }
+  }
+  publishCatalog(actor,manifest) {
+    this.#admin(actor); const catalog=validateCatalog(manifest);
+    return this.#store.transact(s=>{
+      this.#validateRevision(catalog,s.catalog);
       s.catalog=catalog; this.#event(s,'catalog.published',{version:catalog.version});
       return this.#publicCatalog(catalog);
+    });
+  }
+  operatorCatalog(actor){this.#admin(actor);return this.#store.read(s=>this.#catalog(s));}
+  previewImport(actor,input){this.#admin(actor);return this.#store.read(s=>{const preview=prepareImport({...input,base:s.catalog});this.#validateRevision(preview.manifest,s.catalog);return preview;});}
+  commitImport(actor,{key,manifest,digest,expectedVersion}) {
+    this.#admin(actor);text(key,'import key',128);
+    return this.#store.transact(s=>{
+      s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,inputHash=contentDigest({manifest,digest,expectedVersion});
+      if(s.operatorRequests[token]){check(s.operatorRequests[token].hash===inputHash,'IDEMPOTENCY_CONFLICT','Import key already used',409);return s.operatorRequests[token].result;}
+      check((s.catalog?.version??0)===expectedVersion,'STALE_IMPORT','Catalog changed; preview again',409);
+      const catalog=validateCatalog(manifest);check(contentDigest(catalog)===digest,'IMPORT_CHANGED','Preview differs from the submitted catalog',409);
+      this.#validateRevision(catalog,s.catalog);s.catalog=catalog;
+      this.#event(s,'catalog.imported',{version:catalog.version,userId:actor.userId??null,digest});
+      const result={version:catalog.version,digest,importedAt:this.#clock()};s.operatorRequests[token]={hash:inputHash,result};return result;
     });
   }
   #publicCatalog(c) {
@@ -67,10 +113,11 @@ export class CardFramework {
   }
   catalog() {return this.#store.read(s=>this.#publicCatalog(this.#catalog(s)));}
   registerUser(actor,{provider,subject,displayName}) {
-    this.#admin(actor); text(provider,'identity provider',100); text(subject,'identity subject',300); text(displayName,'display name',100);
+    this.#admin(actor); text(provider,'identity provider',2048); text(subject,'identity subject',300); text(displayName,'display name',100);
     return this.#store.transact(s=>{
       const existing=Object.values(s.users).find(u=>u.provider===provider && u.subject===subject);
       if (existing) {existing.displayName=displayName; return existing;}
+      if(this.#limits.users!==undefined)check(Object.keys(s.users).length<this.#limits.users,'INSTALLATION_CAPACITY','Installation user capacity reached',507);
       const user={id:id(),provider,subject,displayName,createdAt:this.#clock()};
       s.users[user.id]=user; s.balances[user.id]={};
       this.#event(s,'user.registered',{userId:user.id});
@@ -134,36 +181,46 @@ export class CardFramework {
     return this.#store.read(s=>{
       this.#user(s,actor); const c=this.#catalog(s), product=lookup(c.products,productId);
       check(product && product.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
+      this.#productTime(product);
       check(quantity<=product.maxQuantity,'INVALID_INPUT','Quantity exceeds product limit');
       const total=product.price.amount*quantity; integer(total,'total price');
       return {productId,quantity,productRevision:product.revision,catalogVersion:c.version,price:{currencyId:product.price.currencyId,amount:total}};
     });
   }
+  #productTime(product){const time=Date.parse(this.#clock());check(!product.availableFrom||time>=Date.parse(product.availableFrom),'NOT_RELEASED','This pack is not available yet',409);check(!product.availableUntil||time<Date.parse(product.availableUntil),'PRODUCT_ENDED','This pack is no longer available',409);}
+  availability(){return this.#store.read(s=>{const c=this.#catalog(s);return {version:c.version,variants:c.variants.map(v=>({id:v.id,issued:s.supply[v.id]??0,remaining:v.supplyLimit===undefined?null:Math.max(0,v.supplyLimit-(s.supply[v.id]??0))})),products:c.products.map(p=>({id:p.id,available:p.enabled!==false&&(!p.availableFrom||Date.parse(this.#clock())>=Date.parse(p.availableFrom))&&(!p.availableUntil||Date.parse(this.#clock())<Date.parse(p.availableUntil)),pity:p.pity??null}))};});}
+  pityProgress(actor){return this.#store.read(s=>{const u=this.#user(s,actor);return s.pity?.[u.id]??{};});}
   purchase(actor,{key,productId,quantity=1,productRevision,catalogVersion}) {
     integer(quantity,'quantity',1,100);
     return this.#command(actor,key,'packs.purchased',{productId,quantity,productRevision,catalogVersion},(s,user)=>{
       const c=this.#catalog(s), product=lookup(c.products,productId);
       check(product && product.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
+      this.#productTime(product);
       check(product.revision===productRevision && c.version===catalogVersion,'STALE_QUOTE','Get a fresh quote before buying',409);
       check(quantity<=product.maxQuantity,'INVALID_INPUT','Quantity exceeds product limit');
       const total=product.price.amount*quantity; integer(total,'total price');
       const purchaseId=id(); this.#adjust(s,user.id,product.price.currencyId,-total,'purchase',purchaseId);
       const packs=[];
+      s.pity??={};s.pity[user.id]??={};
       for (let n=0;n<quantity;n++) {
         const pack={id:id(),ownerId:user.id,productId,productRevision,lineId:product.lineId,catalogVersion:c.version,
           product:clone(product),createdAt:this.#clock(),openedAt:null,copyIds:[],receipt:null};
         const excluded=new Set();
         if(product.duplicatePolicy.scope==='inventory') for(const copy of Object.values(s.copies))
           if(copy.ownerId===user.id && ['owned','sealed'].includes(copy.state)) excluded.add(copy.cardId);
-        for(const slot of product.slots) for(let i=0;i<slot.count;i++) {
-          const available=this.#available(s,slot.pool);
+        let qualified=false;const pityDue=product.pity&&(s.pity[user.id][product.id]??0)>=product.pity.after-1;
+        for(const [slotIndex,slot]of product.slots.entries()) for(let i=0;i<slot.count;i++) {
+          let available=this.#available(s,slot.pool);
+          if(pityDue&&slotIndex===0&&i===0)available=available.filter(e=>lookup(c.rarities,lookup(c.variants,e.variantId).rarityId).rank>=lookup(c.rarities,product.pity.rarityId).rank);
           let pool=available;
           if(product.duplicatePolicy.scope!=='none') pool=pool.filter(e=>!excluded.has(lookup(c.variants,e.variantId).cardId));
           if(!pool.length && product.duplicatePolicy.fallback==='allow') pool=available;
           check(pool.length,'POOL_EXHAUSTED','No eligible card remains in this pack slot',409);
           const copy=this.#mint(s,user.id,this.#weighted(pool),{type:'pack',packId:pack.id,purchaseId},'sealed');
+          if(product.pity&&lookup(c.rarities,copy.rarityId).rank>=lookup(c.rarities,product.pity.rarityId).rank)qualified=true;
           pack.copyIds.push(copy.id); excluded.add(copy.cardId);
         }
+        if(product.pity)s.pity[user.id][product.id]=qualified?0:(s.pity[user.id][product.id]??0)+1;
         s.packs[pack.id]=pack; packs.push(this.#packView(pack));
       }
       return {id:purchaseId,packs,paid:{currencyId:product.price.currencyId,amount:total}};
@@ -187,6 +244,7 @@ export class CardFramework {
         cards.push({...this.#copyView(s,copy,user.id),isNew:!seen.has(copy.cardId)}); seen.add(copy.cardId);
       }
       pack.openedAt=openedAt; pack.receipt={id:pack.id,openedAt,cards};
+      this.#notify(s,user.id,'pack.opened',{packId:pack.id,count:cards.length});
       return pack.receipt;
     });
   }
@@ -268,18 +326,34 @@ export class CardFramework {
     }
     return clone(offer);
   }
-  proposeTrade(actor,{key,toUserId,give,receive,expiresInSeconds=86400}) {
+  #tradeDigest(trade){return contentDigest({id:trade.id,fromUserId:trade.fromUserId,toUserId:trade.toUserId,give:trade.give,receive:trade.receive,createdAt:trade.createdAt,expiresAt:trade.expiresAt,message:trade.message??'',snapshots:trade.snapshots??null});}
+  #createTrade(s,user,{toUserId,give,receive,expiresInSeconds=86400,message='',versions={},parentTradeId=null}){
     integer(expiresInSeconds,'expiry seconds',1,604800);
-    return this.#command(actor,key,'trade.proposed',{toUserId,give,receive,expiresInSeconds},(s,user)=>{
+    check(typeof message==='string'&&message.length<=500,'INVALID_INPUT','Trade message must be at most 500 characters');jsonObject(versions,'card versions');
       check(toUserId!==user.id && s.users[toUserId],'INVALID_INPUT','Choose another registered user');
+      check(!this.#blocked(s,user.id,toUserId),'TRADE_BLOCKED','Trading between these accounts is blocked',403);
+      if(receive?.copyIds?.length)check(this.#preferences(s.users[toUserId]).inventoryVisibility!=='private','INVENTORY_PRIVATE','Recipient inventory is private',403);
       const given=this.#offer(s,user.id,give), requested=this.#offer(s,toUserId,receive);
       check(given.copyIds.length+given.currencies.length+requested.copyIds.length+requested.currencies.length>0,'INVALID_INPUT','Empty trade');
+      const ids=[...given.copyIds,...requested.copyIds];for(const copyId of ids)if(versions[copyId]!==undefined)check(s.copies[copyId].version===versions[copyId],'STALE_INVENTORY','A card changed; reload the inventories',409);
+      const snapshots=Object.fromEntries(ids.map(copyId=>[copyId,this.#copyView(s,s.copies[copyId],null)]));
       const trade={id:id(),fromUserId:user.id,toUserId,give:given,receive:requested,status:'pending',createdAt:this.#clock(),
-        expiresAt:new Date(Date.parse(this.#clock())+expiresInSeconds*1000).toISOString()};
+        expiresAt:new Date(Date.parse(this.#clock())+expiresInSeconds*1000).toISOString(),message,snapshots,parentTradeId};
+      trade.digest=this.#tradeDigest(trade);
       s.trades[trade.id]=trade;
       for(const copyId of given.copyIds) s.copies[copyId].lockedBy=trade.id;
       for(const money of given.currencies) this.#adjust(s,user.id,money.currencyId,-money.amount,'trade.escrow',trade.id);
+      this.#notify(s,toUserId,'trade.received',{tradeId:trade.id,fromName:user.displayName});
       return trade;
+  }
+  proposeTrade(actor,{key,toUserId,give,receive,expiresInSeconds=86400,message='',versions={}}) {
+    return this.#command(actor,key,'trade.proposed',{toUserId,give,receive,expiresInSeconds,message,versions},(s,user)=>this.#createTrade(s,user,{toUserId,give,receive,expiresInSeconds,message,versions}));
+  }
+  counterTrade(actor,{key,tradeId,give,receive,message='',expiresInSeconds=86400,expectedDigest}){
+    return this.#command(actor,key,'trade.countered',{tradeId,give,receive,message,expiresInSeconds,expectedDigest},(s,u)=>{
+      const old=s.trades[tradeId];check(old&&old.toUserId===u.id,'NOT_FOUND','Trade not found',404);check(old.status==='pending'&&Date.parse(old.expiresAt)>Date.parse(this.#clock()),'TRADE_CLOSED','Offer is no longer active',409);
+      if(expectedDigest!==undefined)check(expectedDigest===this.#tradeDigest(old),'TRADE_CHANGED','Review the current offer',409);
+      this.#release(s,old,'countered');const counter=this.#createTrade(s,u,{toUserId:old.fromUserId,give,receive,message,expiresInSeconds,parentTradeId:old.id});old.counterTradeId=counter.id;return counter;
     });
   }
   #release(s,trade,status) {
@@ -287,13 +361,14 @@ export class CardFramework {
     for(const money of trade.give.currencies) this.#adjust(s,trade.fromUserId,money.currencyId,money.amount,'trade.refund',trade.id);
     trade.status=status; trade.completedAt=this.#clock();
     this.#event(s,'trade.'+status,{tradeId:trade.id});
+    this.#notify(s,trade.fromUserId,'trade.'+status,{tradeId:trade.id});this.#notify(s,trade.toUserId,'trade.'+status,{tradeId:trade.id});
   }
   #expire(s) {
     for(const trade of Object.values(s.trades)) if(trade.status==='pending' && Date.parse(trade.expiresAt)<=Date.parse(this.#clock())) this.#release(s,trade,'expired');
   }
   sweepExpiredTrades(actor) {this.#admin(actor); return this.#store.transact(s=>{this.#expire(s); return {ok:true};});}
   trades(actor) {
-    return this.#store.transact(s=>{const u=this.#user(s,actor); this.#expire(s); return Object.values(s.trades).filter(t=>t.fromUserId===u.id || t.toUserId===u.id);});
+    return this.#store.transact(s=>{const u=this.#user(s,actor); this.#expire(s); return Object.values(s.trades).filter(t=>t.fromUserId===u.id || t.toUserId===u.id).map(t=>({...t,digest:this.#tradeDigest(t),fromName:s.users[t.fromUserId].displayName,toName:s.users[t.toUserId].displayName}));});
   }
   #transfer(s,copyId,from,to,tradeId) {
     const copy=s.copies[copyId]; copy.ownerId=to; copy.acquiredAt=this.#clock(); copy.version++;
@@ -301,12 +376,15 @@ export class CardFramework {
     for(const b of Object.values(copy.bindings)) if(b.transfer==='follow') b.holderId=to;
     copy.metadata.transfers??=[]; copy.metadata.transfers.push({from,to,tradeId,at:this.#clock()});
   }
-  acceptTrade(actor,{key,tradeId}) {
-    return this.#command(actor,key,'trade.accepted',{tradeId},(s,user)=>{
+  acceptTrade(actor,{key,tradeId,expectedDigest}) {
+    return this.#command(actor,key,'trade.accepted',{tradeId,expectedDigest},(s,user)=>{
       const trade=s.trades[tradeId];
       check(trade && trade.toUserId===user.id,'NOT_FOUND','Trade not found',404);
       check(trade.status==='pending','TRADE_CLOSED','Trade already closed',409);
+      if(expectedDigest!==undefined)check(expectedDigest===this.#tradeDigest(trade),'TRADE_CHANGED','Review the current offer',409);
       if(Date.parse(trade.expiresAt)<=Date.parse(this.#clock())) {this.#release(s,trade,'expired'); return trade;}
+      check(!this.#blocked(s,trade.fromUserId,trade.toUserId),'TRADE_BLOCKED','Trading between these accounts is blocked',403);
+      for(const [copyId,snapshot]of Object.entries(trade.snapshots??{}))check(s.copies[copyId]?.version===snapshot.version,'STALE_INVENTORY','A card changed after this offer; request a new offer',409);
       // Current switches and policies apply even when an offer predates a catalog update.
       if(trade.give.copyIds.length) this.#feature(s,'cardTrading');
       if(trade.give.currencies.length) this.#feature(s,'currencyTrading');
@@ -326,7 +404,7 @@ export class CardFramework {
       for(const copyId of trade.give.copyIds) this.#transfer(s,copyId,trade.fromUserId,user.id,trade.id);
       for(const copyId of trade.receive.copyIds) this.#transfer(s,copyId,user.id,trade.fromUserId,trade.id);
       this.#removePlacements(s,new Set([...trade.give.copyIds,...trade.receive.copyIds]));
-      trade.status='accepted'; trade.completedAt=this.#clock(); return trade;
+      trade.status='accepted'; trade.completedAt=this.#clock();this.#notify(s,trade.fromUserId,'trade.accepted',{tradeId});this.#notify(s,user.id,'trade.accepted',{tradeId});return trade;
     });
   }
   cancelTrade(actor,{key,tradeId}) {
@@ -336,7 +414,7 @@ export class CardFramework {
       this.#release(s,trade,user.id===trade.fromUserId?'cancelled':'declined'); return trade;
     });
   }
-  #removePlacements(s,ids) {for(const album of Object.values(s.albums)) {
+  #removePlacements(s,ids) {for(const u of Object.values(s.users))if(u.preferences)u.preferences.favoriteCopyIds=(u.preferences.favoriteCopyIds??[]).filter(copyId=>!ids.has(copyId));for(const album of Object.values(s.albums)) {
     const filtered=album.placements.filter(x=>!ids.has(x.copyId));
     if(filtered.length!==album.placements.length) {album.placements=filtered; album.version++;}
   }}

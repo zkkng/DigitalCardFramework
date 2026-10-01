@@ -2,6 +2,7 @@ export class ApiError extends Error {
   constructor(code,message,status) {super(message);this.code=code;this.status=status;}
 }
 export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={}) {
+  const query=options=>'?' + new URLSearchParams(Object.entries(options??{}).filter(([,value])=>value!==undefined&&value!==null)).toString();
   async function call(path,body,method=body===undefined?'GET':'POST') {
     const response=await request(baseUrl+path,{method,credentials:'same-origin',
       headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
@@ -12,11 +13,17 @@ export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={})
   return {
     catalog:()=>call('/catalog'), me:()=>call('/me'), wallet:()=>call('/wallet'), history:()=>call('/history'),
     inventory:()=>call('/inventory'), packs:()=>call('/packs'), quote:input=>call('/quote',input),
+    inventoryPage:options=>call('/inventory'+query({limit:50,...options})),directory:options=>call('/users'+query(options)),
+    tradeInventory:(userId,options)=>call('/users/'+encodeURIComponent(userId)+'/inventory'+query(options)),
+    availability:()=>call('/availability'),pity:()=>call('/pity'),preferences:input=>call('/preferences',input),
+    notifications:options=>call('/notifications'+query(options)),readNotifications:input=>call('/notifications/read',input),
+    operatorCatalog:()=>call('/operator/catalog'),previewImport:input=>call('/operator/import/preview',input),commitImport:input=>call('/operator/import/commit',input),
     purchase:input=>call('/purchase',input), openPack:input=>call('/open',input),
     convert:input=>call('/convert',input), tradeUp:input=>call('/trade-up',input),
     albums:()=>call('/albums'), saveAlbum:input=>call('/albums',input), viewAlbum:albumId=>call('/albums/'+encodeURIComponent(albumId)),
     publicAlbums:()=>call('/public-albums'), trades:()=>call('/trades'), proposeTrade:input=>call('/trades',input),
     acceptTrade:input=>call('/trades/accept',input), cancelTrade:input=>call('/trades/cancel',input),
+    counterTrade:input=>call('/trades/counter',input),
     bindings:()=>call('/bindings'), consumeBinding:input=>call('/bindings/use',input),
     inspectCard:copyId=>call('/cards/'+encodeURIComponent(copyId)),
     requestKey:()=>globalThis.crypto.randomUUID()
@@ -55,7 +62,7 @@ export function createCommandRunner({client,storage,namespace='default'}) {
   const active=new Map();
   const persist=()=>storage?.setItem(storageKey,JSON.stringify(pending));
   const stable=x=>Array.isArray(x)?x.map(stable):x && typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,stable(x[k])])):x;
-  const allowed=new Set(['purchase','openPack','convert','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','consumeBinding']);
+  const allowed=new Set(['purchase','openPack','convert','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','consumeBinding','counterTrade','preferences','readNotifications','commitImport']);
   return function run(command,input) {
     if(!allowed.has(command))throw new Error('Unsupported durable command');
     const intent=command==='purchase'?{productId:input.productId,quantity:input.quantity}:input;
