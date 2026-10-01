@@ -51,7 +51,8 @@
     "./card-types": "./src/card-types.js",
     "./code-ui": "./src/code-ui.js",
     "./code-vault": "./src/code-vault.js",
-    "./code-gateway": "./src/code-gateway.js"
+    "./code-gateway": "./src/code-gateway.js",
+    "./marketplace-ui": "./src/marketplace-ui.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",

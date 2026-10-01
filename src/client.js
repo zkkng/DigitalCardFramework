@@ -12,6 +12,11 @@ export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={})
     return data;
   }
   return {
+    tradingPolicy:()=>call('/trading-policy'),configureTrading:input=>call('/operator/trading',input),setCardTransferLock:input=>call('/operator/card-lock',input),
+    commerceSettings:()=>call('/commerce-settings'),configureCommerce:input=>call('/operator/commerce',input),shops:options=>call('/shops'+query(options)),createShop:input=>call('/shops',input),setShopEnabled:input=>call('/operator/shop-status',input),
+    listings:options=>call('/listings'+query(options)),createListing:input=>call('/listings',input),quoteListing:input=>call('/listings/quote',input),buyListing:input=>call('/listings/buy',input),cancelListing:input=>call('/listings/cancel',input),orders:options=>call('/orders'+query(options)),
+    enterRaffle:input=>call('/raffles/enter',input),raffleStatus:input=>call('/raffles/status',input),drawRaffle:input=>call('/operator/raffles/draw',input),
+    fulfillments:options=>call('/fulfillments'+query(options)),actionJobs:options=>call('/operator/actions'+query(options)),retryAction:input=>call('/operator/actions/retry',input),openCard:input=>call('/cards/open',input),
     catalog:()=>call('/catalog'), me:async()=>{const me=await call('/me');principal=me.userId;return me;}, wallet:()=>call('/wallet'), history:()=>call('/history'),
     inventory:()=>call('/inventory'), packs:()=>call('/packs'), quote:input=>call('/quote',input),
     inventoryPage:options=>call('/inventory'+query({limit:50,...options})),directory:options=>call('/users'+query(options)),
@@ -67,7 +72,7 @@ export function createCommandRunner({client,storage,namespace='default'}) {
   const active=new Map();
   const persist=()=>{try{storage?.setItem(storageKey,JSON.stringify(pending));}catch{/* Blocked storage keeps retry keys for this mounted session. */}};
   const stable=x=>Array.isArray(x)?x.map(stable):x && typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,stable(x[k])])):x;
-  const allowed=new Set(['purchase','openPack','convert','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','consumeBinding','counterTrade','preferences','readNotifications','commitImport','reportCodeUsage']);
+  const allowed=new Set(['purchase','openPack','convert','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','consumeBinding','counterTrade','preferences','readNotifications','commitImport','reportCodeUsage','createShop','createListing','buyListing','cancelListing','enterRaffle','openCard']);
   return function run(command,input) {
     if(!allowed.has(command))throw new Error('Unsupported durable command');
     const intent=command==='purchase'?{productId:input.productId,quantity:input.quantity}:input;

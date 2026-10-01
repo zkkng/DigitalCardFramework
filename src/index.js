@@ -6,3 +6,6 @@ export {createCurrencyGateway} from "./currency-gateway.js";
 export {createCodeVault} from './code-vault.js';
 export {createCodeGateway} from './code-gateway.js';
 export {cardTypeDefaults,cardBehavior} from './card-types.js';
+
+export {tradingDefaults} from './trading-policy.js';
+export {commerceDefaults} from './commerce.js';

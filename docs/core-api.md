@@ -62,3 +62,13 @@ The event journal is committed with commands, accessible only to operators, and 
 ## Host contract example
 
 Map your existing verified session to registerUser(operator,{provider:'host',subject:session.immutableSubject,...}). Cache its framework user ID in your host account mapping. Supply that ID from resolveIdentity after verifying the session on every request. Currency issuance uses grants with durable host event IDs. This supports host-controlled issuance into framework wallets; direct spending of an externally authoritative live wallet requires additional integration work.
+
+
+## Transfer policy, account actions and commerce
+
+- [Trading controls](trading-controls.md): `tradingPolicy`, `configureTrading`, `setCardTransferLock`, contextual transfer/trade hooks.
+- [Opening actions](card-actions.md): `openCard`, `fulfillments`, `actionJobs`, `retryAction`, `claimAction`, `settleAction`, `dispatchActions` and server event subscriptions.
+- [Shops and releases](shops-and-releases.md): `commerceSettings`, `configureCommerce`, `createShop`, `setShopEnabled`, `shops`, `createListing`, `listings`, `quoteListing`, `buyListing`, `cancelListing`, `expireListings` and `orders`.
+- [Raffles](raffles.md): `enterRaffle`, `raffleStatus`, `drawRaffle`, `drawDueRaffles` and ordinary quote/purchase for winner claims.
+
+These features are optional compositions of the same transactional core and authenticated client. Their guides specify defaults, permissions, retries, extension points and runnable examples.

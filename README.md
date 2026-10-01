@@ -24,6 +24,8 @@ Open **http://127.0.0.1:4317**. Switch fictional Rowan/Morgan accounts to test t
 | Opening | Atomic purchase/allocation, sealed inventory, durable retries, replaceable reveal, skip and replay |
 | Collection | Search/filter/sort, favorites, wishlists, duplicate counts, discovery completion and configurable trade-ups |
 | Trading | Two visible inventories, drag/drop and Add/Remove, card/currency offers, immutable review, escrow, counters, acceptance, decline/cancel and expiry |
+| Marketplace | Admin/player shops, finite card/pack stock, scheduled previews, reviewed purchases, orders and free-entry drop raffles |
+| Account rewards | Code-free opening actions, durable delivery, scoped workers, retries and replaceable reward history |
 | Albums | Private/public displays, selection/order, drag or arrows, custom layout JSON, isolated CSS, export/import and optimistic editing |
 | Presentation | Layered faces, crop/depth/blend/opacity, parallax, gloss/holo/foil masks, emissive effects, backs, orbit/flip/zoom/reset and shared inspection |
 | Combinations | Creator-defined grid pieces assemble compatible cards on one 3D stage; arbitrary groups can be compared |
@@ -87,6 +89,10 @@ Real identity-provider configuration, DNS/TLS and protected credentials are requ
 - [Core API](docs/core-api.md) and [HTTP schema](docs/openapi.json)
 - [Content authoring](docs/content-authoring.md)
 - [Card types, code cards and hybrid rewards](docs/card-types-and-codes.md)
+- [Trading policies and copy locks](docs/trading-controls.md)
+- [Opening actions and account rewards](docs/card-actions.md)
+- [Shops and scheduled releases](docs/shops-and-releases.md)
+- [Limited-drop raffles](docs/raffles.md)
 - [Customization recipes](docs/customization-recipes.md)
 - [Production setup](docs/production.md) and [identity and access](docs/access-and-identity.md)
 - [Portable card runtime](docs/complex-cards/README.md) and [creator API](docs/complex-cards/creator-api.md)

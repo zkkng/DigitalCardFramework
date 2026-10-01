@@ -5,6 +5,9 @@ import {MemoryStore} from './store.js';
 import {prepareImport,contentDigest} from './importer.js';
 import {page} from './data.js';
 import {auditState} from './audit.js';
+import {validateTradingPolicy,tradingDefaults,transferPolicyReason,assertTradePolicy} from './trading-policy.js';
+import {CommerceService} from './commerce.js';
+import {ActionService,openingActions,enqueueAction} from './actions.js';
 import {cardBehavior} from './card-types.js';
 import {CodeService,allocateCodes,codeStockAvailable,codeSummary,codeTransferReason,transferCodes} from './codes.js';
 
@@ -18,14 +21,93 @@ function fingerprint(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
 export class CardFramework {
-  #store; #clock; #random; #bindings; #policies; #limits; #codes;
-  constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={}}={}) {
+  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce;
+  constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={},actionHandlers={},actionOptions={},eventSubscriptions=[],raffleRandom=randomInt}={}) {
     this.#store=store; this.#clock=clock; this.#random=random;
-    const allowedLimits=['users','copies','packs','requests','albums','trades','copiesPerUser','packsPerUser'];
+    const allowedLimits=['users','copies','packs','requests','albums','trades','copiesPerUser','packsPerUser','actionJobs','shops','listings','orders'];
     check(limits&&typeof limits==='object'&&!Array.isArray(limits),'INVALID_INPUT','Limits must be an object');
     for(const [name,value]of Object.entries(limits)){check(allowedLimits.includes(name),'INVALID_INPUT','Unknown installation limit '+name);integer(value,'Installation limit '+name,1,10000000);}
-    this.#bindings=bindings; this.#policies=policies;this.#limits={...limits};
+    this.#bindings=bindings; this.#policies=policies;this.#limits={actionJobs:50000,shops:1000,listings:10000,orders:50000,...limits};
+    check(Array.isArray(eventSubscriptions)&&eventSubscriptions.length<=50,'INVALID_INPUT','At most 50 event subscriptions');
+    this.#subscriptions=eventSubscriptions.map(x=>{text(x.id,'subscription ID',100);text(x.handler,'subscription handler',100);check(Array.isArray(x.events)&&x.events.every(e=>typeof e==='string'),'INVALID_INPUT','Subscription events required');return clone(x);});
+    check(new Set(this.#subscriptions.map(x=>x.id)).size===this.#subscriptions.length,'INVALID_INPUT','Duplicate event subscription ID');
+    this.#actions=new ActionService({store,clock,handlers:actionHandlers,options:actionOptions});
     this.#codes=new CodeService({store,vault:codeVault,clock,...codeLimits});
+    this.#commerce=new CommerceService({
+      read:fn=>store.read(fn),transact:fn=>store.transact(fn),now:clock,
+      user:(s,a)=>this.#user(s,a),currency:(s,id)=>this.#currency(s,id),blocked:(s,a,b)=>this.#blocked(s,a,b),
+      command:(...args)=>this.#command(...args),operator:(...args)=>this.#operatorCommand(...args),
+      mint:(...args)=>this.#mint(...args),allocatePacks:(...args)=>this.#allocatePacks(...args),
+      adjust:(...args)=>this.#adjust(...args),event:(...args)=>this.#event(...args),notify:(...args)=>this.#notify(...args),
+      copyView:(...args)=>this.#copyView(...args),packView:p=>this.#packView(p),
+      transferAllowed:(s,c,from,to,channel,ignoreLock)=>{this.#feature(s,'cardTrading');const reason=this.#tradeReason(c,from,s,{channel,toUserId:to,ignoreLock});check(!reason,'TRANSFER_BLOCKED',reason,409);},
+      checkResale:(s,from,to,units,price)=>{if(price.amount>0){this.#feature(s,'currencyTrading');check(this.#currency(s,price.currencyId).tradable===true,'TRANSFER_BLOCKED','Resale currency is not tradable',403);}const copyIds=units.flatMap(unit=>unit.kind==='copy'?[unit.copyId]:s.packs[unit.packId].copyIds);this.#checkTrade(s,{channel:'sale',fromUserId:from,toUserId:to,give:{copyIds,currencies:[]},receive:{copyIds:[],currencies:price.amount>0?[price]:[]}});s.users[from].lastTradeAt=this.#clock();s.users[to].lastTradeAt=this.#clock();},
+      deliverCopy:(...args)=>this.#deliverCopy(...args),deliverPack:(...args)=>this.#deliverPack(...args),
+      canList:policies.canList,canPurchase:policies.canPurchase,
+    },{random:raffleRandom});
+
+  }
+  commerceSettings(){return this.#commerce.settings();}
+  configureCommerce(actor,input){return this.#commerce.configure(actor,input);}
+  createShop(actor,input){return this.#commerce.createShop(actor,input);}
+  setShopEnabled(actor,input){return this.#commerce.setShop(actor,input);}
+  shops(actor,options){return this.#commerce.shops(actor,options);}
+  createListing(actor,input){return this.#commerce.createListing(actor,input);}
+  listings(actor,options){return this.#commerce.listings(actor,options);}
+  quoteListing(actor,input){return this.#commerce.quote(actor,input);}
+  buyListing(actor,input){return this.#commerce.buy(actor,input);}
+  orders(actor,options){return this.#commerce.orders(actor,options);}
+  cancelListing(actor,input){return this.#commerce.cancel(actor,input);}
+  expireListings(actor){return this.#commerce.expire(actor);}
+  enterRaffle(actor,input){return this.#commerce.enter(actor,input);}
+  raffleStatus(actor,input){return this.#commerce.raffleStatus(actor,input);}
+  drawRaffle(actor,input){return this.#commerce.draw(actor,input);}
+  drawDueRaffles(actor,{limit=20}={}){this.#admin(actor,'raffles.draw');integer(limit,'draw limit',1,100);const ids=this.#store.read(s=>Object.values(s.listings??{}).filter(l=>l.status==='active'&&l.raffle&&!l.draw&&Date.parse(l.raffle.entryClosesAt)<=Date.parse(this.#clock())&&(!l.endsAt||Date.parse(l.endsAt)>Date.parse(this.#clock()))).slice(0,limit).map(l=>l.id));return ids.map(listingId=>this.drawRaffle(actor,{key:'automatic-draw:'+listingId,listingId}));}
+  openCard(actor,{key,copyId}){return this.#command(actor,key,'card.revealed',{copyId},(s,u)=>{const copy=s.copies[copyId];check(copy?.ownerId===u.id&&copy.state==='owned','NOT_FOUND','Card not found',404);check(!copy.lockedBy,'CARD_LOCKED','Card is reserved',409);this.#openCopy(s,copy,u.id);return this.#copyView(s,copy,u.id);});}
+  #openCopy(s,copy,userId){if(copy.openedAt)return;copy.openedAt=this.#clock();copy.openedBy=userId;copy.version++;openingActions(s,copy,userId,copy.openedAt);this.#event(s,'card.opened',{copyId:copy.id,userId,packId:copy.source?.packId??null,openedAt:copy.openedAt});}
+  #primaryLock(copy){const lock=copy.transferLock;check(!lock||lock.until&&Date.parse(lock.until)<=Date.parse(this.#clock()),'TRANSFER_BLOCKED',lock?.reason??'Card is locked',409);}
+  #assignUndisclosed(s,copy,userId){for(const codeId of copy.codeIds??[]){const row=s.codes[codeId];check(!row.revealedAt,'CODE_STATE','Stock code was already disclosed',409);row.holderId=userId;row.history.push({type:'code.assigned',at:this.#clock(),actorId:userId});}for(const binding of Object.values(copy.bindings))binding.holderId=userId;}
+  #deliverCopy(s,copy,from,to,orderId,primary){
+    if(primary)this.#primaryLock(copy);this.#transfer(s,copy.id,from,to,orderId);
+    if(primary){this.#assignUndisclosed(s,copy,to);this.#openCopy(s,copy,to);}
+    copy.metadata.acquisition={type:'shop',orderId,at:this.#clock()};this.#cleanTransferred(s,copy.id,from);
+  }
+  #deliverPack(s,pack,from,to,orderId){
+    for(const copyId of pack.copyIds){const copy=s.copies[copyId];this.#primaryLock(copy);this.#transfer(s,copyId,from,to,orderId);this.#assignUndisclosed(s,copy,to);copy.metadata.acquisition={type:'shop',orderId,at:this.#clock()};}
+    pack.ownerId=to;delete pack.lockedBy;pack.acquisition={type:'shop',orderId,from,at:this.#clock()};
+  }
+  #cleanTransferred(s,copyId){this.#removePlacements(s,new Set([copyId]));}
+  fulfillments(actor,options){return this.#actions.history(actor,options);}
+  actionJobs(actor,options){return this.#actions.history(actor,options,true);}
+  retryAction(actor,input){return this.#actions.retry(actor,input);}
+  claimAction(actor){return this.#actions.claim(actor);}
+  settleAction(actor,input){return this.#actions.settle(actor,input);}
+  dispatchActions(actor,options){return this.#actions.dispatch(actor,options);}
+  tradingPolicy(){return this.#store.read(s=>s.tradingPolicy??{revision:0,policy:clone(tradingDefaults)});}
+  configureTrading(actor,{key,expectedRevision,policy}){
+    const clean=validateTradingPolicy(policy);
+    return this.#operatorCommand(actor,key,'trading.manage','trading.configured',{expectedRevision,policy:clean},s=>{
+      check((s.tradingPolicy?.revision??0)===expectedRevision,'POLICY_CHANGED','Trading policy changed',409);
+      for(const currencyId of clean.allowedCurrencyIds??[])this.#currency(s,currencyId);
+      s.tradingPolicy={revision:expectedRevision+1,policy:clean};return s.tradingPolicy;
+    });
+  }
+  setCardTransferLock(actor,{key,copyId,locked=true,reason='This card cannot be transferred',until=null}){
+    check(typeof locked==='boolean','INVALID_INPUT','locked must be boolean');text(reason,'lock reason',300);
+    check(until===null||typeof until==='string'&&Number.isFinite(Date.parse(until))&&Date.parse(until)>Date.parse(this.#clock()),'INVALID_INPUT','Lock expiry must be in the future');
+    return this.#operatorCommand(actor,key,'trading.manage','card.transfer-lock',{copyId,locked,reason,until},s=>{
+      const copy=Object.hasOwn(s.copies,copyId)?s.copies[copyId]:null;check(copy,'NOT_FOUND','Card not found',404);if(locked)copy.transferLock={reason,until,at:this.#clock(),actorId:actor.userId??null};else delete copy.transferLock;copy.version++;return {copyId,version:copy.version,lock:copy.transferLock??null};
+    });
+  }
+  #operatorCommand(actor,key,permission,type,input,fn){
+    this.#admin(actor,permission);text(key,'idempotency key',128);
+    return this.#store.transact(s=>{s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,hash=fingerprint({type,input}),previous=s.operatorRequests[token];if(previous){check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Operator key already used',409);return previous.result;}const result=fn(s);this.#capacity(s);this.#event(s,type,{userId:actor.userId??null});s.operatorRequests[token]={hash,result:clone(result)};return result;});
+  }
+  #capacity(s){
+    for(const field of ['copies','packs','requests','albums','trades','actionJobs','shops','listings','orders'])if(this.#limits[field]!==undefined)
+      check(field==='requests'?Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length+Object.keys(s.externalSettlements??{}).length<this.#limits.requests:Object.keys(s[field]??{}).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
+    if(this.#limits.copiesPerUser!==undefined){const counts={};for(const c of Object.values(s.copies))if(c.state!=='consumed')counts[c.ownerId]=(counts[c.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.copiesPerUser,'INVENTORY_CAPACITY','Collector inventory capacity reached',507);}
+    if(this.#limits.packsPerUser!==undefined){const counts={};for(const p of Object.values(s.packs))counts[p.ownerId]=(counts[p.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.packsPerUser,'PACK_CAPACITY','Collector pack capacity reached',507);}
   }
   configureCodePool(actor,input){return this.#codes.configurePool(actor,input);}
   importCodes(actor,input){return this.#codes.importBatch(actor,input);}
@@ -60,12 +142,12 @@ export class CardFramework {
   audit(actor){this.#admin(actor,'audit.read');return this.#store.read(auditState);}
   #admin(actor,permission) { check(hasPermission(actor,permission),'FORBIDDEN','Operator authority required: '+permission,403); }
   #user(s,actor) {
-    check(actor?.disabled!==true && actor?.userId && s.users[actor.userId],'UNAUTHENTICATED','A verified framework user is required',401);
+    check(actor?.disabled!==true && actor?.userId && Object.hasOwn(s.users,actor.userId),'UNAUTHENTICATED','A verified framework user is required',401);
     return s.users[actor.userId];
   }
   #catalog(s) {check(s.catalog,'NO_CATALOG','Publish a catalog first',409); return s.catalog;}
   #feature(s,name) {check(this.#catalog(s).features[name],'FEATURE_DISABLED',name+' is disabled',403);}
-  #event(s,type,data) {s.events.push({id:id(),sequence:s.events.length+1,type,data,at:this.#clock()});}
+  #event(s,type,data) {const event={id:id(),sequence:s.events.length+1,type,data,at:this.#clock()};s.events.push(event);for(const subscription of this.#subscriptions)if(subscription.events.includes(type)||subscription.events.includes('*'))enqueueAction(s,{handler:subscription.handler,userId:data.userId??data.ownerId??null,params:{event:clone(event)},source:{type:'event',eventId:event.id,subscriptionId:subscription.id}},event.at);check(Object.keys(s.actionJobs??{}).length<=this.#limits.actionJobs,'INSTALLATION_CAPACITY','Action queue capacity reached',507);}
   #notify(s,userId,type,data){s.notifications??=[];s.notifications.push({id:id(),userId,type,data,at:this.#clock(),read:false});const own=s.notifications.filter(n=>n.userId===userId);if(own.length>2000){const remove=new Set(own.slice(0,own.length-2000).map(n=>n.id));s.notifications=s.notifications.filter(n=>!remove.has(n.id));}}
   #preferences(user){return {inventoryVisibility:'traders',favoriteCopyIds:[],wishlistCardIds:[],blockedUserIds:[],...user.preferences};}
   me(actor){return this.#store.read(s=>{const u=this.#user(s,actor);return {userId:u.id,displayName:u.displayName,preferences:this.#preferences(u)};});}
@@ -79,7 +161,8 @@ export class CardFramework {
   }
   #blocked(s,a,b){return this.#preferences(s.users[a]).blockedUserIds.includes(b)||this.#preferences(s.users[b]).blockedUserIds.includes(a);}
   directory(actor,options={}){return this.#store.read(s=>{const viewer=this.#user(s,actor);return page(Object.values(s.users).filter(u=>u.id!==viewer.id&&!this.#blocked(s,viewer.id,u.id)).map(u=>({id:u.id,name:u.displayName,createdAt:u.createdAt,inventoryVisible:this.#catalog(s).features.inventoryBrowsing&&this.#preferences(u).inventoryVisibility!=='private'})),{...options,sort:'name'});});}
-  #tradeReason(copy,userId,s){if(copy.lockedBy)return 'Reserved in another offer';if(!cardBehavior(copy.definition).tradable)return 'This card type is not tradable';const codeReason=codeTransferReason(s,copy);if(codeReason)return codeReason;if(Object.values(copy.bindings).some(b=>b.transfer==='block'))return 'Attached data blocks transfer';if(this.#policies.canTransfer&&this.#policies.canTransfer(clone(copy),userId)!==true)return 'Host policy blocks transfer';return null;}
+  #tradeReason(copy,userId,s,{channel='trade',toUserId=null,ignoreLock=false}={}){if(copy.lockedBy&&!ignoreLock)return 'Reserved by another transaction';if(!cardBehavior(copy.definition).tradable)return 'This card type is not tradable';const rule=transferPolicyReason(s,copy,channel,this.#clock());if(rule)return rule;const codeReason=codeTransferReason(s,copy);if(codeReason)return codeReason;if(Object.values(copy.bindings).some(b=>b.transfer==='block'))return 'Attached data blocks transfer';if(this.#policies.canTransfer){const decision=this.#policies.canTransfer(clone(copy),userId,{channel,toUserId});if(decision!==true)return typeof decision==='string'?decision:'Host policy blocks transfer';}return null;}
+  #checkTrade(s,context){context={channel:'trade',...context};assertTradePolicy(s,context,this.#clock());if(this.#policies.canTrade){const result=this.#policies.canTrade(clone(context));check(result===true,'TRANSFER_BLOCKED',typeof result==='string'?result:'Host trade policy rejected offer',403);}}
   tradeInventory(actor,userId,options={}){return this.#store.read(s=>{
     const viewer=this.#user(s,actor),owner=s.users[userId];check(owner,'NOT_FOUND','Inventory not available',404);
     if(owner.id!==viewer.id){this.#feature(s,'inventoryBrowsing');check(!this.#blocked(s,viewer.id,owner.id)&&this.#preferences(owner).inventoryVisibility!=='private','NOT_FOUND','Inventory not available',404);if(this.#preferences(owner).inventoryVisibility==='traders')this.#feature(s,'cardTrading');}
@@ -96,10 +179,7 @@ export class CardFramework {
       const previous=s.requests[token];
       if (previous) {check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409); return previous.result;}
       const result=fn(s,user);
-      for(const field of ['copies','packs','requests','albums','trades'])if(this.#limits[field]!==undefined)
-        check(field==='requests'?Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length+Object.keys(s.externalSettlements??{}).length<this.#limits.requests:Object.keys(s[field]).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
-      if(this.#limits.copiesPerUser!==undefined){const counts={};for(const c of Object.values(s.copies))if(c.state!=='consumed')counts[c.ownerId]=(counts[c.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.copiesPerUser,'INVENTORY_CAPACITY','Collector inventory capacity reached',507);}
-      if(this.#limits.packsPerUser!==undefined)check(Object.values(s.packs).filter(p=>p.ownerId===user.id).length<=this.#limits.packsPerUser,'PACK_CAPACITY','Collector pack capacity reached',507);
+      this.#capacity(s);
       s.requests[token]={hash,result:clone(result)};
       this.#event(s,type,{userId:user.id});
       return result;
@@ -260,15 +340,21 @@ export class CardFramework {
       check(quantity<=product.maxQuantity,'INVALID_INPUT','Quantity exceeds product limit');
       const total=product.price.amount*quantity; integer(total,'total price');
       const purchaseId=id(); this.#adjust(s,user.id,product.price.currencyId,-total,'purchase',purchaseId);
+      const packs=this.#allocatePacks(s,user,product,quantity,{purchaseId});
+      return {id:purchaseId,packs,paid:{currencyId:product.price.currencyId,amount:total}};
+    });
+  }
+  #allocatePacks(s,user,product,quantity,source={},personalized=true){
+    const c=this.#catalog(s),purchaseId=source.purchaseId??null;
       const packs=[];
       s.pity??={};s.pity[user.id]??={};
       for (let n=0;n<quantity;n++) {
-        const pack={id:id(),ownerId:user.id,productId,productRevision,lineId:product.lineId,catalogVersion:c.version,
+        const pack={id:id(),ownerId:user.id,productId:product.id,productRevision:product.revision,lineId:product.lineId,catalogVersion:c.version,
           product:clone(product),purchaseId,batchIndex:n,metadata:clone(product.metadata??{}),createdAt:this.#clock(),openedAt:null,copyIds:[],receipt:null};
         const excluded=new Set();
-        if(product.duplicatePolicy.scope==='inventory') for(const copy of Object.values(s.copies))
+        if(personalized&&product.duplicatePolicy.scope==='inventory') for(const copy of Object.values(s.copies))
           if(copy.ownerId===user.id && ['owned','sealed'].includes(copy.state)) excluded.add(copy.cardId);
-        let qualified=false;const pityDue=product.pity&&(s.pity[user.id][product.id]??0)>=product.pity.after-1;
+        let qualified=false;const pityDue=personalized&&product.pity&&(s.pity[user.id][product.id]??0)>=product.pity.after-1;
         const firstCardSlot=product.slots.findIndex(slot=>(slot.role??'card')==='card');
         for(const [slotIndex,slot]of product.slots.entries()) {
           if(slot.probability&&slot.probability.numerator<slot.probability.denominator){const roll=this.#random(slot.probability.denominator);check(Number.isInteger(roll)&&roll>=0&&roll<slot.probability.denominator,'INVALID_PROVIDER','Invalid slot probability draw',500);if(roll>=slot.probability.numerator)continue;}
@@ -279,21 +365,21 @@ export class CardFramework {
           if(slot.role!=='insert'&&product.duplicatePolicy.scope!=='none') pool=pool.filter(e=>!excluded.has(lookup(c.variants,e.variantId).cardId));
           if(!pool.length && product.duplicatePolicy.fallback==='allow') pool=available;
           check(pool.length,'POOL_EXHAUSTED','No eligible card remains in this pack slot',409);
-          const copy=this.#mint(s,user.id,this.#weighted(pool),{type:'pack',packId:pack.id,purchaseId,productId,productRevision,productDigest:contentDigest(product),packIndex:n,slotId:slot.id??'slot-'+slotIndex,slotIndex,slotRole:slot.role??'card',slotOrdinal:i,position:pack.copyIds.length,slotMetadata:clone(slot.metadata??{}),packMetadata:clone(product.metadata??{})},'sealed');
-          if(slot.role!=='insert'&&product.pity&&lookup(c.rarities,copy.rarityId).rank>=lookup(c.rarities,product.pity.rarityId).rank)qualified=true;
+          const copy=this.#mint(s,user.id,this.#weighted(pool),{type:'pack',packId:pack.id,purchaseId,productId:product.id,productRevision:product.revision,...source,productDigest:contentDigest(product),packIndex:n,slotId:slot.id??'slot-'+slotIndex,slotIndex,slotRole:slot.role??'card',slotOrdinal:i,position:pack.copyIds.length,slotMetadata:clone(slot.metadata??{}),packMetadata:clone(product.metadata??{})},'sealed');
+          if(slot.role!=='insert'&&personalized&&product.pity&&lookup(c.rarities,copy.rarityId).rank>=lookup(c.rarities,product.pity.rarityId).rank)qualified=true;
           pack.copyIds.push(copy.id); if(slot.role!=='insert')excluded.add(copy.cardId);
           }
         }
-        if(product.pity)s.pity[user.id][product.id]=qualified?0:(s.pity[user.id][product.id]??0)+1;
+        if(personalized&&product.pity)s.pity[user.id][product.id]=qualified?0:(s.pity[user.id][product.id]??0)+1;
         s.packs[pack.id]=pack; packs.push(this.#packView(pack));
       }
-      return {id:purchaseId,packs,paid:{currencyId:product.price.currencyId,amount:total}};
-    });
+    return packs;
   }
   #packView(pack) {const {copyIds,receipt,...view}=clone(pack); return {...view,cardCount:copyIds.length};}
   packs(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return Object.values(s.packs).filter(p=>p.ownerId===u.id).map(p=>this.#packView(p));});}
   #copyView(s,copy,viewerId) {
     const result=clone(copy); result.openedByName=copy.openedBy ? s.users[copy.openedBy]?.displayName??null:null;
+    for(const binding of Object.values(result.variant.bindings??{}))if(binding.visibility==='owner'){delete binding.data;delete binding.factory;}
     result.bindings=Object.fromEntries(Object.entries(result.bindings).filter(([,b])=>b.visibility==='public' || b.holderId===viewerId));
     result.codes=(copy.codeIds??[]).map(codeId=>codeSummary(s,s.codes[codeId],viewerId,this.#clock()));delete result.codeIds;
     if(viewerId!==copy.ownerId){delete result.metadata.transfers;for(const value of [result.source,result.provenance])if(value){delete value.purchaseId;delete value.packMetadata;delete value.slotMetadata;}}
@@ -301,12 +387,13 @@ export class CardFramework {
   }
   openPack(actor,{key,packId}) {
     return this.#command(actor,key,'pack.opened',{packId},(s,user)=>{
-      const pack=s.packs[packId]; check(pack && pack.ownerId===user.id,'NOT_FOUND','Pack not found',404);
+      const pack=s.packs[packId]; check(pack && pack.ownerId===user.id,'NOT_FOUND','Pack not found',404);check(!pack.lockedBy,'PACK_LOCKED','Pack is reserved in a listing',409);
       if(pack.receipt) return pack.receipt;
       const seen=new Set(Object.values(s.copies).filter(x=>x.ownerId===user.id && x.state==='owned').map(x=>x.cardId));
       const openedAt=this.#clock(), cards=[];
       for(const copyId of pack.copyIds) {
         const copy=s.copies[copyId]; copy.state='owned'; copy.openedAt=openedAt; copy.openedBy=user.id; copy.version++;
+        openingActions(s,copy,user.id,openedAt);
         this.#event(s,'card.opened',{copyId,packId,userId:user.id,openedAt});
         cards.push({...this.#copyView(s,copy,user.id),isNew:!seen.has(copy.cardId)}); seen.add(copy.cardId);
       }
@@ -367,24 +454,23 @@ export class CardFramework {
       if(recipe.duplicatesOnly) check(new Set(inputs.map(x=>x.variantId)).size===1,'RECIPE_MISMATCH','Recipe requires copies of the same variant');
       const pool=this.#available(s,recipe.outputPool); check(pool.length,'POOL_EXHAUSTED','Recipe outputs exhausted',409);
       const output=this.#mint(s,user.id,this.#weighted(pool),{type:'tradeUp',recipeId,inputIds:copyIds});
-      output.openedAt=this.#clock(); output.openedBy=user.id;
+      this.#openCopy(s,output,user.id);
       for(const copy of inputs) {copy.state='consumed'; copy.version++;}
       this.#removePlacements(s,new Set(copyIds));
       return this.#copyView(s,output,user.id);
     });
   }
-  #offer(s,userId,offer) {
+  #offer(s,userId,offer,toUserId=null) {
     check(offer && Array.isArray(offer.copyIds) && Array.isArray(offer.currencies),'INVALID_INPUT','Trade offers need copyIds and currencies arrays');
-    check(offer.copyIds.length<=100 && offer.currencies.length<=20,'INVALID_INPUT','Trade offer too large');
+    check(offer.copyIds.length<=1000 && offer.currencies.length<=100,'INVALID_INPUT','Trade offer too large');
     check(new Set(offer.copyIds).size===offer.copyIds.length,'INVALID_INPUT','Duplicate copy in offer');
     if(offer.copyIds.length) this.#feature(s,'cardTrading');
     if(offer.currencies.length) this.#feature(s,'currencyTrading');
     for(const copyId of offer.copyIds) {
       const copy=s.copies[copyId]; check(copy && copy.ownerId===userId && copy.state==='owned','NOT_OWNED','Trade card not owned',403);
       check(!copy.lockedBy,'CARD_LOCKED','Trade card already reserved',409);
-      check(cardBehavior(copy.definition).tradable && !codeTransferReason(s,copy),'TRANSFER_BLOCKED','Card type or code policy blocks transfer',409);
+      const reason=this.#tradeReason(copy,userId,s,{toUserId});check(!reason,'TRANSFER_BLOCKED',reason,409);
       check(!Object.values(copy.bindings).some(b=>b.transfer==='block'),'TRANSFER_BLOCKED','Card has a nontransferable binding',409);
-      if(this.#policies.canTransfer) check(this.#policies.canTransfer(clone(copy),userId)===true,'TRANSFER_BLOCKED','Host transfer policy rejected card',409);
     }
     const seen=new Set();
     for(const money of offer.currencies) {
@@ -396,13 +482,14 @@ export class CardFramework {
     return clone(offer);
   }
   #tradeDigest(trade){return contentDigest({id:trade.id,fromUserId:trade.fromUserId,toUserId:trade.toUserId,give:trade.give,receive:trade.receive,createdAt:trade.createdAt,expiresAt:trade.expiresAt,message:trade.message??'',snapshots:trade.snapshots??null});}
-  #createTrade(s,user,{toUserId,give,receive,expiresInSeconds=86400,message='',versions={},parentTradeId=null}){
+  #createTrade(s,user,{toUserId,give,receive,expiresInSeconds=Math.min(86400,(s.tradingPolicy?.policy??tradingDefaults).maxExpirySeconds),message='',versions={},parentTradeId=null}){
     integer(expiresInSeconds,'expiry seconds',1,604800);
     check(typeof message==='string'&&message.length<=500,'INVALID_INPUT','Trade message must be at most 500 characters');jsonObject(versions,'card versions');
       check(toUserId!==user.id && s.users[toUserId],'INVALID_INPUT','Choose another registered user');
       check(!this.#blocked(s,user.id,toUserId),'TRADE_BLOCKED','Trading between these accounts is blocked',403);
       if(receive?.copyIds?.length)check(this.#preferences(s.users[toUserId]).inventoryVisibility!=='private','INVENTORY_PRIVATE','Recipient inventory is private',403);
-      const given=this.#offer(s,user.id,give), requested=this.#offer(s,toUserId,receive);
+      const given=this.#offer(s,user.id,give,toUserId), requested=this.#offer(s,toUserId,receive,user.id);
+      this.#checkTrade(s,{fromUserId:user.id,toUserId,give:given,receive:requested,expiresInSeconds});
       check(given.copyIds.length+given.currencies.length+requested.copyIds.length+requested.currencies.length>0,'INVALID_INPUT','Empty trade');
       const ids=[...given.copyIds,...requested.copyIds];for(const copyId of ids)if(versions[copyId]!==undefined)check(s.copies[copyId].version===versions[copyId],'STALE_INVENTORY','A card changed; reload the inventories',409);
       const snapshots=Object.fromEntries(ids.map(copyId=>[copyId,this.#copyView(s,s.copies[copyId],null)]));
@@ -415,10 +502,10 @@ export class CardFramework {
       this.#notify(s,toUserId,'trade.received',{tradeId:trade.id,fromName:user.displayName});
       return trade;
   }
-  proposeTrade(actor,{key,toUserId,give,receive,expiresInSeconds=86400,message='',versions={}}) {
+  proposeTrade(actor,{key,toUserId,give,receive,expiresInSeconds,message='',versions={}}) {
     return this.#command(actor,key,'trade.proposed',{toUserId,give,receive,expiresInSeconds,message,versions},(s,user)=>this.#createTrade(s,user,{toUserId,give,receive,expiresInSeconds,message,versions}));
   }
-  counterTrade(actor,{key,tradeId,give,receive,message='',expiresInSeconds=86400,expectedDigest}){
+  counterTrade(actor,{key,tradeId,give,receive,message='',expiresInSeconds,expectedDigest}){
     return this.#command(actor,key,'trade.countered',{tradeId,give,receive,message,expiresInSeconds,expectedDigest},(s,u)=>{
       const old=s.trades[tradeId];check(old&&old.toUserId===u.id,'NOT_FOUND','Trade not found',404);check(old.status==='pending'&&Date.parse(old.expiresAt)>Date.parse(this.#clock()),'TRADE_CLOSED','Offer is no longer active',409);
       if(expectedDigest!==undefined)check(expectedDigest===this.#tradeDigest(old),'TRADE_CHANGED','Review the current offer',409);
@@ -457,18 +544,18 @@ export class CardFramework {
       if(Date.parse(trade.expiresAt)<=Date.parse(this.#clock())) {this.#release(s,trade,'expired'); return trade;}
       check(!this.#blocked(s,trade.fromUserId,trade.toUserId),'TRADE_BLOCKED','Trading between these accounts is blocked',403);
       for(const [copyId,snapshot]of Object.entries(trade.snapshots??{}))check(s.copies[copyId]?.version===snapshot.version,'STALE_INVENTORY','A card changed after this offer; request a new offer',409);
+      this.#checkTrade(s,{fromUserId:trade.fromUserId,toUserId:trade.toUserId,give:trade.give,receive:trade.receive});
       // Current switches and policies apply even when an offer predates a catalog update.
       if(trade.give.copyIds.length) this.#feature(s,'cardTrading');
       if(trade.give.currencies.length) this.#feature(s,'currencyTrading');
       for(const copyId of trade.give.copyIds) {
         const copy=s.copies[copyId];
         check(copy.ownerId===trade.fromUserId && copy.state==='owned' && copy.lockedBy===trade.id,'TRADE_CONFLICT','Escrow changed',409);
-        check(cardBehavior(copy.definition).tradable && !codeTransferReason(s,copy),'TRANSFER_BLOCKED','Card type or code policy blocks transfer',409);
+          const reason=this.#tradeReason(copy,trade.fromUserId,s,{toUserId:user.id,ignoreLock:true});check(!reason,'TRANSFER_BLOCKED',reason,409);
         check(!Object.values(copy.bindings).some(b=>b.transfer==='block'),'TRANSFER_BLOCKED','Binding blocks transfer',409);
-        if(this.#policies.canTransfer) check(this.#policies.canTransfer(clone(copy),trade.fromUserId)===true,'TRANSFER_BLOCKED','Host transfer policy rejected card',409);
       }
       for(const money of trade.give.currencies) check(this.#currency(s,money.currencyId).tradable===true,'TRANSFER_BLOCKED','Currency trading disabled',403);
-      this.#offer(s,user.id,trade.receive);
+      this.#offer(s,user.id,trade.receive,trade.fromUserId);
       for(const money of trade.receive.currencies) {
         this.#adjust(s,user.id,money.currencyId,-money.amount,'trade',trade.id);
         this.#adjust(s,trade.fromUserId,money.currencyId,money.amount,'trade',trade.id);
@@ -477,6 +564,7 @@ export class CardFramework {
       for(const copyId of trade.give.copyIds) this.#transfer(s,copyId,trade.fromUserId,user.id,trade.id);
       for(const copyId of trade.receive.copyIds) this.#transfer(s,copyId,user.id,trade.fromUserId,trade.id);
       this.#removePlacements(s,new Set([...trade.give.copyIds,...trade.receive.copyIds]));
+      s.users[trade.fromUserId].lastTradeAt=this.#clock();s.users[trade.toUserId].lastTradeAt=this.#clock();
       trade.status='accepted'; trade.completedAt=this.#clock();this.#notify(s,trade.fromUserId,'trade.accepted',{tradeId});this.#notify(s,user.id,'trade.accepted',{tradeId});return trade;
     });
   }
@@ -518,7 +606,7 @@ export class CardFramework {
   }
   viewAlbum(actor,albumId) {
     return this.#store.read(s=>{
-      const viewer=actor?.disabled!==true && actor?.userId && s.users[actor.userId]?actor.userId:null, album=s.albums[albumId];
+      const viewer=actor?.disabled!==true && actor?.userId && Object.hasOwn(s.users,actor.userId)?actor.userId:null, album=s.albums[albumId];
       const allowed=album && (album.ownerId===viewer || (album.visibility==='public' && this.#catalog(s).features.publicAlbums));
       check(allowed,'NOT_FOUND','Album not found',404); return this.#albumView(s,album,viewer);
     });

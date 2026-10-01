@@ -2869,6 +2869,1604 @@
           }
         }
       }
+    },
+    "/trading-policy": {
+      "get": {
+        "operationId": "tradingPolicy",
+        "description": "Verified account API",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "policy": {
+                      "$ref": "#/components/schemas/TradingPolicy"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/trading": {
+      "post": {
+        "operationId": "configureTrading",
+        "description": "Requires trading.manage. Replaces the complete live policy with optimistic revision checking.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradingSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/card-lock": {
+      "post": {
+        "operationId": "setCardTransferLock",
+        "description": "Requires trading.manage. Individual transfer lock independent of trade/listing escrow; bumps copy version.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferLock"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/commerce-settings": {
+      "get": {
+        "operationId": "commerceSettings",
+        "description": "Verified account API",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "settings": {
+                      "$ref": "#/components/schemas/CommerceSettings"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/commerce": {
+      "post": {
+        "operationId": "configureCommerce",
+        "description": "Requires commerce.manage. Player shops and pack resale default off.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigureCommerce"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/shops": {
+      "get": {
+        "operationId": "shops",
+        "description": "Verified account API",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createShop",
+        "description": "Verified account; player shops must be enabled. Admin shops and another owner require commerce.manage.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShop"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/shop-status": {
+      "post": {
+        "operationId": "setShopEnabled",
+        "description": "Requires commerce.manage. Disabling prevents purchases without changing completed orders.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "key",
+                  "shopId",
+                  "enabled"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "shopId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/listings": {
+      "get": {
+        "operationId": "listings",
+        "description": "Verified account API",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          },
+          {
+            "name": "shopId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createListing",
+        "description": "Owner-only stock reservation. Player shops cannot mint or choose custom handlers. Existing copy restrictions still apply.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateListing"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/listings/quote": {
+      "post": {
+        "operationId": "quoteListing",
+        "description": "Review exact reserved units and integer total. Sealed pack contents remain hidden.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListingQuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "listingId",
+                    "quantity",
+                    "unitIds",
+                    "digest",
+                    "price",
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/listings/buy": {
+      "post": {
+        "operationId": "buyListing",
+        "description": "Atomic debit, seller credit, exact-unit transfer and order. Rechecks time, stock, limits and current policy; supplied prices are ignored.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListingPurchase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/listings/cancel": {
+      "post": {
+        "operationId": "cancelListing",
+        "description": "Seller or commerce.manage operator releases unsold stock; completed purchases remain intact.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListingCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/orders": {
+      "get": {
+        "operationId": "orders",
+        "description": "Private buyer/seller order history with current fulfillment state.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/raffles/enter": {
+      "post": {
+        "operationId": "enterRaffle",
+        "description": "Free entry, one per verified account before server deadline. No debit.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListingCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/raffles/status": {
+      "post": {
+        "operationId": "raffleStatus",
+        "description": "Counts and current account entry/win/claim state, never other entrants.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListingQuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/raffles/draw": {
+      "post": {
+        "operationId": "drawRaffle",
+        "description": "Requires raffles.draw. Persists unique winners and exclusive stock reservations once, including when retried with a different key.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListingCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/cards/open": {
+      "post": {
+        "operationId": "openCard",
+        "description": "First opening of an owned unreserved card queues its configured actions once.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "key",
+                  "copyId"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "copyId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Copy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/fulfillments": {
+      "get": {
+        "operationId": "fulfillments",
+        "description": "Verified account API",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Page"
+                    },
+                    {
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ActionJob"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/actions": {
+      "get": {
+        "operationId": "actionJobs",
+        "description": "Requires actions.manage. Sanitized delivery diagnostics.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/actions/retry": {
+      "post": {
+        "operationId": "retryAction",
+        "description": "Requires actions.manage. Retry dead delivery using the same downstream idempotency ID. No client delivery acknowledgment or arbitrary execution route exists.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "key",
+                  "jobId"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "jobId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3753,6 +5351,13 @@
                   "items": {
                     "$ref": "#/components/schemas/CodeAttachment"
                   }
+                },
+                "onOpen": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "$ref": "#/components/schemas/OpeningAction"
+                  }
                 }
               }
             }
@@ -4496,6 +6101,692 @@
             "description": "Numerator cannot exceed denominator. One draw per slot, not per card."
           }
         }
+      },
+      "OpeningAction": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "handler"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "params": {
+            "type": "object",
+            "description": "Public bounded parameters for a server-installed handler; never source code or credentials."
+          }
+        }
+      },
+      "TransferRule": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "decision",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "decision": {
+            "enum": [
+              "allow",
+              "deny"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "trade",
+                "sale"
+              ]
+            }
+          },
+          "match": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "copyIds": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "cardIds": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "variantIds": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "lineIds": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "rarityIds": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "types": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "tags": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "metadata": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      },
+      "TradingPolicy": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "defaultDecision": {
+            "enum": [
+              "allow",
+              "deny"
+            ],
+            "default": "allow"
+          },
+          "rules": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/TransferRule"
+            }
+          },
+          "maxCardsPerSide": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 100
+          },
+          "maxCurrenciesPerSide": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 20
+          },
+          "allowGifts": {
+            "type": "boolean",
+            "default": true
+          },
+          "minAccountAgeSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 31536000
+          },
+          "cooldownSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 31536000
+          },
+          "maxExpirySeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 604800
+          },
+          "allowedCurrencyIds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          }
+        }
+      },
+      "TradingSettings": {
+        "type": "object",
+        "required": [
+          "key",
+          "expectedRevision",
+          "policy"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "policy": {
+            "$ref": "#/components/schemas/TradingPolicy"
+          }
+        }
+      },
+      "TransferLock": {
+        "type": "object",
+        "required": [
+          "key",
+          "copyId"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "copyId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "locked": {
+            "type": "boolean",
+            "default": true
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "CommerceSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "playerShops": {
+            "type": "boolean",
+            "default": false
+          },
+          "packResale": {
+            "type": "boolean",
+            "default": false
+          },
+          "allowedCurrencyIds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "maxListingsPerShop": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 200
+          },
+          "maxStockPerListing": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "maxRaffleEntries": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000,
+            "default": 10000
+          }
+        }
+      },
+      "ConfigureCommerce": {
+        "type": "object",
+        "required": [
+          "key",
+          "expectedRevision",
+          "settings"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "settings": {
+            "$ref": "#/components/schemas/CommerceSettings"
+          }
+        }
+      },
+      "CreateShop": {
+        "type": "object",
+        "required": [
+          "key",
+          "name"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "kind": {
+            "enum": [
+              "admin",
+              "player"
+            ],
+            "default": "player"
+          },
+          "ownerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "ListingStock": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "copies",
+              "packs",
+              "mint-card",
+              "mint-pack",
+              "action"
+            ]
+          },
+          "ids": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "uniqueItems": true,
+            "minItems": 1
+          },
+          "variantId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "productId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "params": {
+            "type": "object"
+          }
+        },
+        "description": "Existing stock requires ids. Mint sources require quantity and variantId/productId. Custom stock requires quantity and installed handler. Only admin shops with commerce.manage may issue new/custom stock."
+      },
+      "RaffleTerms": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entryClosesAt",
+          "claimSeconds",
+          "winners"
+        ],
+        "properties": {
+          "entryClosesAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "claimSeconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 604800
+          },
+          "winners": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "CreateListing": {
+        "type": "object",
+        "required": [
+          "key",
+          "shopId",
+          "title",
+          "price",
+          "items"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "shopId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "price": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "currencyId",
+              "amount"
+            ],
+            "properties": {
+              "currencyId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "amount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          },
+          "items": {
+            "$ref": "#/components/schemas/ListingStock"
+          },
+          "previewAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "perBuyerLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 10
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "raffle": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RaffleTerms"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ListingQuoteRequest": {
+        "type": "object",
+        "required": [
+          "listingId"
+        ],
+        "properties": {
+          "listingId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 1
+          }
+        }
+      },
+      "ListingPurchase": {
+        "type": "object",
+        "required": [
+          "key",
+          "listingId",
+          "quantity",
+          "unitIds",
+          "digest"
+        ],
+        "properties": {
+          "listingId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 1
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "unitIds": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "uniqueItems": true
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      },
+      "ListingCommand": {
+        "type": "object",
+        "required": [
+          "key",
+          "listingId"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "listingId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
+      "ActionJob": {
+        "type": "object",
+        "required": [
+          "id",
+          "handler",
+          "status",
+          "attempts",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "userId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "succeeded",
+              "dead"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalAttempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source": {
+            "type": "object"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "nextAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "description": "Sanitized delivery history; no executable params, provider output or lease token."
       }
     }
   }

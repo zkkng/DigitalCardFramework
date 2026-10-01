@@ -31,13 +31,13 @@ function held(s, actor, codeId) {
 }
 function unlocked(s, row) {
   const copy = s.copies[row.copyId];
-  check(copy?.ownerId !== row.holderId || !copy.lockedBy, 'CARD_LOCKED', 'Cancel the trade before accessing this code', 409);
+  check(copy?.ownerId !== row.holderId || !copy.lockedBy, 'CARD_LOCKED', 'Release the reservation before accessing this code', 409);
 }
 
 /** Secret-free projection used for history, card inspection and public trade disclosures. */
 export function codeSummary(s, row, viewerId, at) {
   const copy = s.copies[row.copyId], own = row.holderId === viewerId;
-  const unavailable = !own ? 'This code belongs to another holder.' : copy?.state === 'sealed' ? 'Open the pack first.' : !row.revealedAt && (expired(row, at) || terminal.has(row.status)) ? 'This code expired or became unavailable before reveal.' : copy?.ownerId === row.holderId && copy?.lockedBy ? 'Cancel the trade before accessing this code.' : null;
+  const unavailable = !own ? 'This code belongs to another holder.' : copy?.state === 'sealed' ? 'Open the pack first.' : !row.revealedAt && (expired(row, at) || terminal.has(row.status)) ? 'This code expired or became unavailable before reveal.' : copy?.ownerId === row.holderId && copy?.lockedBy ? 'Release the reservation before accessing this code.' : null;
   const summary = { id: row.id, attachmentId: row.attachmentId, title: row.title,
     providerId: row.providerId, status: expired(row, at) && !terminal.has(row.status) ? 'expired' : row.status,
     revealed: row.revealedAt !== null, reportedUsed: row.reportedUsed, transfer: row.transfer,

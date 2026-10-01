@@ -27,7 +27,7 @@ const dbPath=resolve(process.env.DATABASE_PATH??'data/production.sqlite');await 
 const extension=process.env.HOST_MODULE?await import(pathToFileURL(resolve(process.env.HOST_MODULE)).href):{};
 const codeKeyConfig=await secret('CODE_VAULT_KEYS'),codeIndex=await secret('CODE_INDEX_KEY');
 const codeVault=codeKeyConfig?createCodeVault({activeKeyId:process.env.CODE_ACTIVE_KEY_ID,keys:Object.fromEntries(Object.entries(JSON.parse(codeKeyConfig)).map(([id,hex])=>[id,keyFromHex(hex)])),indexKey:keyFromHex(codeIndex)}):undefined;
-const store=new SQLiteStore(dbPath,{encryptionKey}),framework=new CardFramework({store,codeVault,codeLimits:extension.codeLimits,bindings:extension.bindings,policies:extension.policies,
+const store=new SQLiteStore(dbPath,{encryptionKey}),framework=new CardFramework({store,actionHandlers:extension.actionHandlers,actionOptions:extension.actionOptions,eventSubscriptions:extension.eventSubscriptions,raffleRandom:extension.raffleRandom,codeVault,codeLimits:extension.codeLimits,bindings:extension.bindings,policies:extension.policies,
   limits:{users:500,copies:5000,packs:2000,requests:20000,albums:2000,trades:2000,copiesPerUser:1000,packsPerUser:500,...extension.limits}});
 try{framework.catalog();}catch(error){if(error.code!=='NO_CATALOG')throw error;if(!process.env.CATALOG_FILE)throw new Error('CATALOG_FILE is required for first initialization');framework.publishCatalog({role:'admin'},parseContent(await readFile(process.env.CATALOG_FILE,'utf8'),{format:/\.ya?ml$/i.test(process.env.CATALOG_FILE)?'yaml':'json'}));}
 const raw=framework.operatorCatalog({role:'admin'});
@@ -58,7 +58,9 @@ const server=createServer({requestTimeout:15000,headersTimeout:10000,maxHeaderSi
   }catch{res.statusCode=500;res.end('Request could not be completed');}
 });
 server.maxRequestsPerSocket=1000;server.keepAliveTimeout=5000;
-const maintenance=setInterval(()=>{try{framework.sweepExpiredTrades({role:'admin'});}catch{process.stderr.write('Trade expiry maintenance failed\n');}},60000);maintenance.unref();
+let dispatching=null;const workerAbort=new AbortController();
+const actionWorker=extension.actionWorker!==false&&Object.keys(extension.actionHandlers??{}).length?setInterval(()=>{if(!dispatching){dispatching=framework.dispatchActions({permissions:['actions.dispatch']},{limit:10,signal:workerAbort.signal}).catch(()=>process.stderr.write('Action delivery cycle failed\n')).finally(()=>{dispatching=null;});}},1000):null;actionWorker?.unref();
+const maintenance=setInterval(()=>{try{framework.sweepExpiredTrades({role:'admin'});framework.expireListings({role:'admin'});framework.drawDueRaffles({role:'admin'});}catch{process.stderr.write('Scheduled maintenance failed\n');}},60000);maintenance.unref();
 server.listen(Number(process.env.PORT??8080),process.env.BIND_ADDRESS??'127.0.0.1',()=>console.log('Framework production host ready on '+origin));
-let closing=false;function shutdown(){if(closing)return;closing=true;clearInterval(maintenance);server.close(async()=>{await presentations?.close();sessions.close();framework.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();}
+let closing=false;function shutdown(){if(closing)return;closing=true;clearInterval(maintenance);clearInterval(actionWorker);workerAbort.abort();server.close(async()=>{await dispatching;await presentations?.close();sessions.close();framework.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();}
 process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);

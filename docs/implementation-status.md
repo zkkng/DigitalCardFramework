@@ -34,3 +34,12 @@ Public view/renderer/layout overrides, reveal/trade controllers, imports, polici
 Built-in card classifications, namespaced custom types, hybrid code attachments, guaranteed/optional insert slots, immutable origin records and evidence-based legacy backfill are implemented. Encrypted unique stock, atomic pack allocation, scratch/peel/open private reveals, historical access, transfer policies, personal used markers and provider-confirmed status have headless and HTTP contracts. The reference application includes replaceable Code history and opt-in insert discovery. See [usage and deployment](card-types-and-codes.md) and the executable `examples/code-cards.mjs`.
 
 External game redemption, signed webhook verification, refund/reissue decisions and code-index-key migration remain host work. Type names do not add game rules or financial voucher accounting. Existing generic bindings remain available but do not provide the encrypted stock lifecycle.
+
+
+## Trading controls, account actions and commerce
+
+[Live trading policies](trading-controls.md) support category/copy selectors, independent locks, account age, cooldown, gift, size and currency controls. [Opening actions](card-actions.md) provide a durable outbox, scoped worker APIs, stable downstream retry identities, leases and private delivery history. Installed handlers implement external services.
+
+[Shops](shops-and-releases.md) support administrator issuance and optional player resale, card/pack escrow, configured integer currencies, exact-unit review, atomic settlement, scheduled previews, per-buyer limits and orders. [Raffles](raffles.md) allocate free-entry purchase rights to reserved stock, with unique draws, claim deadlines and expiry. Default views, HTTP schemas and executable examples use the same headless contracts.
+
+External delivery is at least once and requires receiver deduplication. Preallocated shop packs do not apply future-buyer pity or inventory duplicate protection. Paid raffle tickets, public randomness proofs, auctions, fees, withdrawals and automatic external refund workflows are outside these contracts. Storage remains the bounded transactional profile described above.

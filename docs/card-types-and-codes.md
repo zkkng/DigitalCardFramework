@@ -9,7 +9,7 @@ Applies to framework 0.2. Use the headless APIs, HTTP API, or replaceable privat
 | `collectible` (default), `playable`, `art` | Included | Yes | Yes |
 | `token` | Included | Yes | No |
 | `checklist` | Hidden | Yes | No |
-| `code`, `voucher` | Hidden | No | No |
+| `code`, `voucher`, `reward` | Hidden | No | No |
 
 These types classify cards and supply behavior defaults. They do not implement game rules, stored-value balances or ticket scanning. All default types are album-eligible; the picker can explicitly include hidden inserts. Override `behavior.collectionDefault`, `albumDefault`, `albumEligible`, `tradable` and `tradeUp` on a card definition. Issued copies retain their behavior snapshot after catalog changes.
 
@@ -23,6 +23,8 @@ cardTypes: [{id:'example.ticket', name:'Admission ticket', defaults:{
 ```
 
 Custom type IDs need a namespace. Validation rejects undeclared types. A **hybrid** is an ordinary card variant with code attachments; it keeps its ordinary collection behavior. Code-bearing copies cannot be consumed as trade-up inputs, even if their card type normally permits it.
+
+For account unlocks without displaying a code, declare `onOpen` actions instead. Code, voucher and reward variants accept code attachments, opening actions, or both. See [account rewards](card-actions.md).
 
 ## Attach a code and add an insert slot
 

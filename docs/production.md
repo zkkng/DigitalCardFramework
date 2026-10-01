@@ -82,3 +82,12 @@ For externally funded wallets, export `currencyProviders` from HOST_MODULE. The 
 ## Code-card stock
 
 For catalogs with code attachments, configure the separate code-vault key ring and stable index key described in [code-card operations](card-types-and-codes.md#deploy-and-operate). Startup verifies existing envelopes and reconstructs missing legacy provenance from stored evidence. `HOST_MODULE` may export `codeProviders` with authenticated read-only status lookups and `codeLimits` for bounded inventory/request capacity. A provider confirmation is distinct from a player marking a code used. Include the vault keys in isolated restore drills; state encryption keys alone cannot recover code secrets.
+
+
+## Shops and durable account rewards
+
+`HOST_MODULE` may export `actionHandlers`, `actionOptions`, `eventSubscriptions`, `actionWorker` and `raffleRandom`. These are trusted server extensions. The host runs one delivery cycle at a time when handlers are configured; set `actionWorker:false` to use an independent worker. Handlers must validate public parameters, map the immutable framework beneficiary to a verified external account, honor cancellation and deduplicate the supplied job ID at the receiver. See [delivery and recovery](card-actions.md).
+
+Minute-based maintenance expires listings and draws due raffles, in addition to expiring trades. Time and stock checks also run inside purchase transactions. Monitor private action jobs, dead deliveries, stock reservations and `audit()`; reconcile ambiguous upstream outcomes before manual retries. Missing handlers and exhausted capacities require operator action. Preserve the state database when restarting: it contains stock, orders, draw results, leases and retry identities.
+
+`trading.manage`, `commerce.manage`, `raffles.draw`, `actions.manage` and `actions.dispatch` are distinct permissions. Give background workers only their required permissions. Admin shop creation requires a registered framework account; proceeds go to the shop owner. Player shops and sealed-pack resale default to disabled. See [trading controls](trading-controls.md), [shops](shops-and-releases.md), and [raffles](raffles.md) for complete defaults and APIs. External currencies use verified ledger reconciliation; the shop transaction never performs an unverified remote debit.

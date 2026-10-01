@@ -22,6 +22,11 @@ Newly signed-in users become collectors. They receive no upload, pack-definition
 
 - Catalog: `catalog.read`, `catalog.preview`, `catalog.publish`.
 - Operations: `accounts.register`, `currency.grant`, `audit.read`, `events.read`, `maintenance.run`.
+- Trading: `trading.manage` for live rules and individual copy locks.
+- Shops: `commerce.manage` for issuance/settings and `raffles.draw` for scheduled allocations.
+- Account rewards: `actions.manage` for diagnostics/retry; `actions.dispatch` for trusted workers.
+- Codes: `codes.manage`, `codes.import`, `codes.confirm`.
+- External funding: `currency.settle`.
 - Artwork: `art.import`, `art.review`, `art.publish`, `art.moderate`.
 
 Trusted principals have `{userId, role:'player'|'admin', permissions?:string[], disabled?:boolean}`. The permission list allows staff roles without making them full admins. Admin grants all **known** permissions; unknown actions still fail. Collection commands continue checking the current user's ownership, trade participants, locks, private fields and feature policies. A staff permission does not permit stealing another user's card or accessing their private binding data.

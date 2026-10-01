@@ -44,6 +44,10 @@ function validateSchema(schema,label) {
   function walk(x){check(x&&typeof x==='object'&&!Array.isArray(x),'INVALID_CATALOG','Invalid '+label+' schema');for(const key of Object.keys(x))check(allowed.has(key),'INVALID_CATALOG','Unsupported schema keyword '+key);if(x.properties)for(const sub of Object.values(x.properties))walk(sub);if(x.items)walk(x.items);if(x.additionalProperties&&typeof x.additionalProperties==='object')walk(x.additionalProperties);}
   walk(schema);try{return new Ajv({allErrors:true,strict:true,validateFormats:false}).compile(schema);}catch(error){throw new FrameworkError('INVALID_CATALOG','Invalid '+label+' schema: '+error.message);}
 }
+function validateActions(actions){
+  check(Array.isArray(actions)&&actions.length<=16,'INVALID_CATALOG','At most 16 opening actions');const ids=new Set();
+  for(const action of actions){jsonObject(action);check(Object.keys(action).every(k=>['id','handler','params'].includes(k)),'INVALID_CATALOG','Unknown action field');for(const key of ['id','handler']){text(action[key],key,100);check(/^[a-z0-9][a-z0-9._:-]*$/i.test(action[key]),'INVALID_CATALOG','Invalid action identifier');}check(!ids.has(action.id),'INVALID_CATALOG','Duplicate opening action');ids.add(action.id);jsonObject(action.params??={});}return actions;
+}
 export function validateCatalog(input) {
   check(input && typeof input==='object' && !Array.isArray(input),'INVALID_CATALOG','Catalog must be an object');
   const c=safeData(input);
@@ -99,6 +103,7 @@ export function validateCatalog(input) {
     if (x.enabled!==undefined) check(typeof x.enabled==='boolean','INVALID_CATALOG','enabled must be boolean');
     if (x.supplyLimit!==undefined) integer(x.supplyLimit,'supply limit');
     jsonObject(x.metadata??={});
+    validateActions(x.onOpen??=[]);
     check(Array.isArray(x.codes??=[])&&x.codes.length<=8,'INVALID_CATALOG','A variant supports at most eight code attachments');
     const codeIds=new Set();
     for(const spec of x.codes){
@@ -109,7 +114,7 @@ export function validateCatalog(input) {
       check(['open','scratch','peel'].includes(spec.reveal)&&['retain','follow-unrevealed','block'].includes(spec.transfer),'INVALID_CATALOG','Invalid code reveal or transfer policy');
       if(spec.title!==undefined)text(spec.title,'code title');
     }
-    if(['code','voucher'].includes(cards[x.cardId].type))check(x.codes.length>0,'INVALID_CATALOG','Code and voucher variants require a code attachment');
+    if(['code','voucher','reward'].includes(cards[x.cardId].type))check(x.codes.length>0||x.onOpen.length>0,'INVALID_CATALOG','Code and voucher variants require a code attachment or opening action');
     validateMetadata('variant',x.metadata,x.id);
     if(x.back!==undefined)assetReference(x.back,'variant back');if(x.effectMask!==undefined)assetReference(x.effectMask,'effect mask');
     if(x.finish!==undefined)check(['standard','gloss','holo','foil'].includes(x.finish),'INVALID_CATALOG','Invalid card finish');

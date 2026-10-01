@@ -3,7 +3,7 @@ export const cardTypeDefaults = Object.freeze(Object.fromEntries([
   ['collectible', true, true, true], ['playable', true, true, true],
   ['art', true, true, true], ['token', true, true, false],
   ['checklist', false, true, false], ['code', false, false, false],
-  ['voucher', false, false, false],
+  ['voucher', false, false, false], ['reward', false, false, false],
 ].map(([id, visible, tradable, tradeUp]) => [id, Object.freeze({
   collectionDefault: visible, albumDefault: visible, albumEligible: true, tradable, tradeUp,
 })])));
