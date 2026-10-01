@@ -33,7 +33,7 @@ function workerPurchase(path,actor,quote,key) {
     worker.once('message',resolve);worker.once('error',reject);worker.once('exit',exit=>{if(exit!==0)reject(new Error('Worker exited '+exit));});
   });
 }
-test('concurrent processes cannot both purchase the last edition copy',async t=>{
+test('concurrent SQLite connections cannot both purchase the last edition copy',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'digital-card-race-'));t.after(()=>{assert(dir.startsWith(join(tmpdir(),'digital-card-')));rmSync(dir,{recursive:true,force:true});});
   const path=join(dir,'race.sqlite'),x=fixture({store:new SQLiteStore(path)}),quote=x.core.quote(x.alice,{productId:'unique'});
   const results=await Promise.all([workerPurchase(path,x.alice,quote,'a'),workerPurchase(path,x.bob,quote,'b')]);

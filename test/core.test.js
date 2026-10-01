@@ -225,3 +225,14 @@ test('layers and arbitrary namespaced attributes survive acquisition and public 
   assert(events.every((e,i)=>e.sequence===i+1));
   assert.throws(()=>x.core.events(x.alice),code('FORBIDDEN'));
 });
+
+test('disabling trading blocks acceptance but still permits escrow cancellation',()=>{
+  const x=fixture();
+  const trade=x.core.proposeTrade(x.alice,{key:'offer',toUserId:x.bob.userId,
+    give:{copyIds:[],currencies:[{currencyId:'credits',amount:10}]},receive:{copyIds:[],currencies:[]}});
+  const next=structuredClone(x.c);next.version=2;next.features.cardTrading=false;next.features.currencyTrading=false;
+  x.core.publishCatalog(admin,next);
+  assert.throws(()=>x.core.acceptTrade(x.bob,{key:'blocked',tradeId:trade.id}),code('FEATURE_DISABLED'));
+  assert.equal(x.core.cancelTrade(x.alice,{key:'cancel',tradeId:trade.id}).status,'cancelled');
+  assert.equal(x.core.wallet(x.alice).credits,10000);
+});

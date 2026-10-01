@@ -212,7 +212,16 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
   }
   function trades() {
     const node=section('Trading');
-    if(!model.catalog.features.cardTrading&&!model.catalog.features.currencyTrading){node.append(element('p','dc-muted','Trading is disabled by this host.'));return node;}
+    if(!model.catalog.features.cardTrading&&!model.catalog.features.currencyTrading){
+      node.append(element('p','dc-muted','Trading is disabled by this host.'));
+      for(const trade of model.trades.filter(t=>t.status==='pending')){
+        const box=element('div','dc-trade');
+        box.append(element('p','',trade.status+' - '+trade.id),
+          button('Cancel / decline',()=>action(()=>mutate('cancelTrade',{tradeId:trade.id}))));
+        node.append(box);
+      }
+      return node;
+    }
     const target=field(node,'Recipient user ID'),give=field(node,'Your card copy IDs, separated by commas'),receive=field(node,'Requested card copy IDs, separated by commas');
     let giveCurrency,receiveCurrency,giveAmount,receiveAmount;
     if(model.catalog.features.currencyTrading) {

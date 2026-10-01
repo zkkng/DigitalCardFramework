@@ -3,7 +3,9 @@ import {CardFramework} from '../src/index.js';
 import {SQLiteStore} from '../src/sqlite.js';
 if(parentPort) {
   const framework=new CardFramework({store:new SQLiteStore(workerData.path),bindings:{'demo.code':()=>({code:'worker-code'})}});
-  try {parentPort.postMessage({ok:true,result:framework.purchase(workerData.actor,{...workerData.quote,key:workerData.key})});}
-  catch(error) {parentPort.postMessage({ok:false,code:error.code,message:error.message});}
+  let result;
+  try {result={ok:true,result:framework.purchase(workerData.actor,{...workerData.quote,key:workerData.key})};}
+  catch(error) {result={ok:false,code:error.code,message:error.message};}
   finally {framework.close();}
+  parentPort.postMessage(result);
 }
