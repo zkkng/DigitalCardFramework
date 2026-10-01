@@ -1,6 +1,7 @@
 import Ajv from 'ajv';
 import {validatePresentationReference} from './presentation/integration.js';
 import {safeData} from './data.js';
+import {cardTypeDefaults} from './card-types.js';
 const ajv=new Ajv({allErrors:true,strict:true,validateFormats:false});
 export class FrameworkError extends Error {
   constructor(code, message, status = 400) { super(message); this.name='FrameworkError'; this.code=code; this.status=status; }
@@ -50,6 +51,10 @@ export function validateCatalog(input) {
   const currencies=index(c.currencies,'currencies'), lines=index(c.lines,'lines');
   const rarities=index(c.rarities,'rarities'), cards=index(c.cards,'cards');
   const variants=index(c.variants,'variants'), products=index(c.products,'products');
+  const customTypes=index(c.cardTypes??=[],'card types');
+  const behaviorKeys=['collectionDefault','albumDefault','albumEligible','tradable','tradeUp'];
+  function behavior(value){jsonObject(value,'card behavior');check(Object.entries(value).every(([key,v])=>behaviorKeys.includes(key)&&typeof v==='boolean'),'INVALID_CATALOG','Invalid card behavior');}
+  for(const type of c.cardTypes){check(/^[a-z0-9-]+\.[a-z0-9._-]+$/i.test(type.id),'INVALID_CATALOG','Custom card types must be namespaced');text(type.name,'card type name');behavior(type.defaults??={});}
   index(c.recipes??=[],'recipes');
   index(c.combinations??=[],'combinations');index(c.displayFields??=[],'display fields');
   c.features={cardTrading:false,currencyTrading:false,conversion:false,tradeUps:false,publicAlbums:false,inventoryBrowsing:true,...c.features};
@@ -68,6 +73,8 @@ export function validateCatalog(input) {
   for (const x of c.cards) {
     check(lines[x.lineId],'INVALID_CATALOG','Unknown card line');
     text(x.name,'card name');
+    x.type??='collectible';check(Object.hasOwn(cardTypeDefaults,x.type)||Object.hasOwn(customTypes,x.type),'INVALID_CATALOG','Unknown card type');
+    behavior(x.behavior??={});x.behavior={...(cardTypeDefaults[x.type]??cardTypeDefaults.collectible),...customTypes[x.type]?.defaults,...x.behavior};
     jsonObject(x.metadata??={});
     jsonObject(x.stats??={});validateMetadata('card',x.metadata,x.id);validateMetadata('stats',x.stats,x.id);
     check(Array.isArray(x.tags??=[])&&x.tags.length<=50&&x.tags.every(tag=>typeof tag==='string'&&tag.length<=80),'INVALID_CATALOG','Invalid card tags');
@@ -92,6 +99,17 @@ export function validateCatalog(input) {
     if (x.enabled!==undefined) check(typeof x.enabled==='boolean','INVALID_CATALOG','enabled must be boolean');
     if (x.supplyLimit!==undefined) integer(x.supplyLimit,'supply limit');
     jsonObject(x.metadata??={});
+    check(Array.isArray(x.codes??=[])&&x.codes.length<=8,'INVALID_CATALOG','A variant supports at most eight code attachments');
+    const codeIds=new Set();
+    for(const spec of x.codes){
+      jsonObject(spec,'code attachment');check(Object.keys(spec).every(k=>['id','poolId','title','reveal','transfer'].includes(k)),'INVALID_CATALOG','Unknown code attachment field; secrets belong in the code vault');
+      for(const key of ['id','poolId'])check(typeof spec[key]==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/.test(spec[key])&&!['constructor','prototype','__proto__'].includes(spec[key]),'INVALID_CATALOG','Invalid code attachment '+key);
+      check(!codeIds.has(spec.id),'INVALID_CATALOG','Duplicate code attachment');codeIds.add(spec.id);
+      spec.reveal??='scratch';spec.transfer??='retain';
+      check(['open','scratch','peel'].includes(spec.reveal)&&['retain','follow-unrevealed','block'].includes(spec.transfer),'INVALID_CATALOG','Invalid code reveal or transfer policy');
+      if(spec.title!==undefined)text(spec.title,'code title');
+    }
+    if(['code','voucher'].includes(cards[x.cardId].type))check(x.codes.length>0,'INVALID_CATALOG','Code and voucher variants require a code attachment');
     validateMetadata('variant',x.metadata,x.id);
     if(x.back!==undefined)assetReference(x.back,'variant back');if(x.effectMask!==undefined)assetReference(x.effectMask,'effect mask');
     if(x.finish!==undefined)check(['standard','gloss','holo','foil'].includes(x.finish),'INVALID_CATALOG','Invalid card finish');
@@ -106,6 +124,7 @@ export function validateCatalog(input) {
   for (const x of c.products) {
     check(lines[x.lineId] && currencies[x.price?.currencyId],'INVALID_CATALOG','Unknown product line/currency');
     text(x.name,'pack name'); integer(x.revision,'product revision');
+    jsonObject(x.metadata??={});
     if(x.enabled!==undefined)check(typeof x.enabled==='boolean','INVALID_CATALOG','Invalid product enabled flag');
     for(const key of ['availableFrom','availableUntil'])if(x[key]!==undefined)check(typeof x[key]==='string'&&Number.isFinite(Date.parse(x[key])),'INVALID_CATALOG','Invalid product availability time');
     if(x.availableFrom&&x.availableUntil)check(Date.parse(x.availableUntil)>Date.parse(x.availableFrom),'INVALID_CATALOG','Product availability must have positive duration');
@@ -113,8 +132,12 @@ export function validateCatalog(input) {
     x.duplicatePolicy={scope:'none',fallback:'allow',...x.duplicatePolicy};
     check(['none','pack','inventory'].includes(x.duplicatePolicy.scope) && ['allow','reject'].includes(x.duplicatePolicy.fallback),'INVALID_CATALOG','Invalid duplicate policy');
     check(Array.isArray(x.slots) && x.slots.length>0,'INVALID_CATALOG','Pack slots required');
-    let count=0;
-    for (const slot of x.slots) {
+    let count=0;const slotIds=new Set();
+    for (const [slotIndex,slot] of x.slots.entries()) {
+      slot.id??='slot-'+slotIndex;slot.role??='card';jsonObject(slot.metadata??={});
+      check(typeof slot.id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/.test(slot.id)&&!slotIds.has(slot.id),'INVALID_CATALOG','Invalid or duplicate slot ID');slotIds.add(slot.id);
+      check(['card','insert'].includes(slot.role),'INVALID_CATALOG','Invalid slot role');
+      if(slot.probability!==undefined){check(slot.probability&&typeof slot.probability==='object'&&!Array.isArray(slot.probability)&&Object.keys(slot.probability).every(k=>['numerator','denominator'].includes(k)),'INVALID_CATALOG','Invalid slot probability');integer(slot.probability.denominator,'slot probability denominator',1,2147483647);integer(slot.probability.numerator,'slot probability numerator',0,slot.probability.denominator);}
       count+=integer(slot.count,'slot count',1,100);
       check(Array.isArray(slot.pool) && slot.pool.length>0,'INVALID_CATALOG','Pool required');
       const seen=new Set(); let total=0;
@@ -127,7 +150,8 @@ export function validateCatalog(input) {
       integer(total,'weight sum',1,2147483647);
     }
     integer(count,'pack size',1,100);
-    if(x.pity){integer(x.pity.after,'pity threshold',1,1000);check(rarities[x.pity.rarityId],'INVALID_CATALOG','Unknown pity rarity');check(x.slots[0].pool.some(e=>rarities[variants[e.variantId].rarityId].rank>=rarities[x.pity.rarityId].rank),'INVALID_CATALOG','First slot must contain an eligible pity outcome');}
+    check(x.slots.some(slot=>!slot.probability||slot.probability.numerator===slot.probability.denominator),'INVALID_CATALOG','A pack needs at least one guaranteed slot');
+    if(x.pity){integer(x.pity.after,'pity threshold',1,1000);check(rarities[x.pity.rarityId],'INVALID_CATALOG','Unknown pity rarity');const first=x.slots.find(slot=>slot.role==='card');check(first&&(!first.probability||first.probability.numerator===first.probability.denominator)&&first.pool.some(e=>rarities[variants[e.variantId].rarityId].rank>=rarities[x.pity.rarityId].rank),'INVALID_CATALOG','First normal card slot must be guaranteed and contain an eligible pity outcome');}
   }
   for (const x of c.recipes) {
     text(x.name,'recipe name'); check(lines[x.lineId] && rarities[x.inputRarityId],'INVALID_CATALOG','Unknown recipe line/rarity');

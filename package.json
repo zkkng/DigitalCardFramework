@@ -47,7 +47,11 @@
     "./presentation/gif-source": "./src/presentation/gif-source.js",
     "./currency-gateway": "./src/currency-gateway.js",
     "./presentation/png-encode": "./src/presentation/png-encode.js",
-    "./presentation/node-http": "./src/presentation/node-http.js"
+    "./presentation/node-http": "./src/presentation/node-http.js",
+    "./card-types": "./src/card-types.js",
+    "./code-ui": "./src/code-ui.js",
+    "./code-vault": "./src/code-vault.js",
+    "./code-gateway": "./src/code-gateway.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",

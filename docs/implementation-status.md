@@ -28,3 +28,9 @@ The standalone profile uses local framework currencies and binding state, with a
 CSS 3D inspection renders front/back surfaces and layered parallax. It does not reconstruct unseen artwork, merge ownership or execute imported code. Portable `.dcard` packaging and its advanced player are implemented in the presentation module; consult the [supported capabilities and limits](complex-cards/implementation-status.md).
 
 Public view/renderer/layout overrides, reveal/trade controllers, imports, policies, binding factories, identity and store contracts are implemented. An automatic plugin marketplace/registry, compatibility negotiator and React-specific adapter are separate work.
+
+## Card types and private rewards
+
+Built-in card classifications, namespaced custom types, hybrid code attachments, guaranteed/optional insert slots, immutable origin records and evidence-based legacy backfill are implemented. Encrypted unique stock, atomic pack allocation, scratch/peel/open private reveals, historical access, transfer policies, personal used markers and provider-confirmed status have headless and HTTP contracts. The reference application includes replaceable Code history and opt-in insert discovery. See [usage and deployment](card-types-and-codes.md) and the executable `examples/code-cards.mjs`.
+
+External game redemption, signed webhook verification, refund/reissue decisions and code-index-key migration remain host work. Type names do not add game rules or financial voucher accounting. Existing generic bindings remain available but do not provide the encrypted stock lifecycle.

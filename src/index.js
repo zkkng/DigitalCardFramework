@@ -3,3 +3,6 @@ export {MemoryStore} from './store.js';
 export {FrameworkError,validateCatalog} from './catalog.js';
 
 export {createCurrencyGateway} from "./currency-gateway.js";
+export {createCodeVault} from './code-vault.js';
+export {createCodeGateway} from './code-gateway.js';
+export {cardTypeDefaults,cardBehavior} from './card-types.js';

@@ -5,6 +5,8 @@ import {MemoryStore} from './store.js';
 import {prepareImport,contentDigest} from './importer.js';
 import {page} from './data.js';
 import {auditState} from './audit.js';
+import {cardBehavior} from './card-types.js';
+import {CodeService,allocateCodes,codeStockAvailable,codeSummary,codeTransferReason,transferCodes} from './codes.js';
 
 const clone = value => structuredClone(value);
 const id = () => randomUUID();
@@ -16,13 +18,43 @@ function fingerprint(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
 export class CardFramework {
-  #store; #clock; #random; #bindings; #policies; #limits;
-  constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={}}={}) {
+  #store; #clock; #random; #bindings; #policies; #limits; #codes;
+  constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={}}={}) {
     this.#store=store; this.#clock=clock; this.#random=random;
     const allowedLimits=['users','copies','packs','requests','albums','trades','copiesPerUser','packsPerUser'];
     check(limits&&typeof limits==='object'&&!Array.isArray(limits),'INVALID_INPUT','Limits must be an object');
     for(const [name,value]of Object.entries(limits)){check(allowedLimits.includes(name),'INVALID_INPUT','Unknown installation limit '+name);integer(value,'Installation limit '+name,1,10000000);}
     this.#bindings=bindings; this.#policies=policies;this.#limits={...limits};
+    this.#codes=new CodeService({store,vault:codeVault,clock,...codeLimits});
+  }
+  configureCodePool(actor,input){return this.#codes.configurePool(actor,input);}
+  importCodes(actor,input){return this.#codes.importBatch(actor,input);}
+  codePools(actor){return this.#codes.pools(actor);}
+  codeInventory(actor,options){return this.#codes.inventory(actor,options);}
+  codeHistory(actor,options){return this.#codes.history(actor,options);}
+  revealCode(actor,input){return this.#codes.reveal(actor,input);}
+  reportCodeUsage(actor,input){return this.#codes.reportUsage(actor,input);}
+  confirmCodeStatus(actor,input){return this.#codes.confirm(actor,input);}
+  codeLookupMaterial(actor,codeId){return this.#codes.lookupMaterial(actor,codeId);}
+  rotateCodeEncryption(actor){return this.#codes.rotateEncryption(actor);}
+  verifyCodeVault(actor){return this.#codes.verifyVault(actor);}
+  /** Add evidence-backed origin records to copies issued before provenance v1. */
+  backfillProvenance(actor) {
+    this.#admin(actor,'maintenance.run');
+    return this.#store.transact(s=>{
+      let count=0;
+      for(const copy of Object.values(s.copies))if(!copy.provenance){
+        const pack=s.packs[copy.source?.packId];
+        copy.provenance={version:1,reconstructed:true,catalogVersion:pack?.catalogVersion??null,
+          issuedAt:copy.createdAt,definitionDigest:contentDigest(copy.definition),variantDigest:contentDigest(copy.variant),...clone(copy.source??{})};
+        if(pack)Object.assign(copy.provenance,{packId:pack.id,productId:pack.productId,productRevision:pack.productRevision,
+          productDigest:pack.product?contentDigest(pack.product):null,position:pack.copyIds.indexOf(copy.id),
+          purchaseId:pack.purchaseId??null,packIndex:pack.batchIndex??null});
+        count++;
+      }
+      if(count)this.#event(s,'provenance.backfilled',{count});
+      return {count};
+    });
   }
   close() { this.#store.close(); }
   audit(actor){this.#admin(actor,'audit.read');return this.#store.read(auditState);}
@@ -47,11 +79,11 @@ export class CardFramework {
   }
   #blocked(s,a,b){return this.#preferences(s.users[a]).blockedUserIds.includes(b)||this.#preferences(s.users[b]).blockedUserIds.includes(a);}
   directory(actor,options={}){return this.#store.read(s=>{const viewer=this.#user(s,actor);return page(Object.values(s.users).filter(u=>u.id!==viewer.id&&!this.#blocked(s,viewer.id,u.id)).map(u=>({id:u.id,name:u.displayName,createdAt:u.createdAt,inventoryVisible:this.#catalog(s).features.inventoryBrowsing&&this.#preferences(u).inventoryVisibility!=='private'})),{...options,sort:'name'});});}
-  #tradeReason(copy,userId){if(copy.lockedBy)return 'Reserved in another offer';if(Object.values(copy.bindings).some(b=>b.transfer==='block'))return 'Attached data blocks transfer';if(this.#policies.canTransfer&&this.#policies.canTransfer(clone(copy),userId)!==true)return 'Host policy blocks transfer';return null;}
+  #tradeReason(copy,userId,s){if(copy.lockedBy)return 'Reserved in another offer';if(!cardBehavior(copy.definition).tradable)return 'This card type is not tradable';const codeReason=codeTransferReason(s,copy);if(codeReason)return codeReason;if(Object.values(copy.bindings).some(b=>b.transfer==='block'))return 'Attached data blocks transfer';if(this.#policies.canTransfer&&this.#policies.canTransfer(clone(copy),userId)!==true)return 'Host policy blocks transfer';return null;}
   tradeInventory(actor,userId,options={}){return this.#store.read(s=>{
     const viewer=this.#user(s,actor),owner=s.users[userId];check(owner,'NOT_FOUND','Inventory not available',404);
     if(owner.id!==viewer.id){this.#feature(s,'inventoryBrowsing');check(!this.#blocked(s,viewer.id,owner.id)&&this.#preferences(owner).inventoryVisibility!=='private','NOT_FOUND','Inventory not available',404);if(this.#preferences(owner).inventoryVisibility==='traders')this.#feature(s,'cardTrading');}
-    const cards=Object.values(s.copies).filter(c=>c.ownerId===owner.id&&c.state==='owned').map(c=>{const reason=this.#tradeReason(c,owner.id);return {...this.#copyView(s,c,viewer.id),tradable:!reason,untradableReason:reason};});
+    const cards=Object.values(s.copies).filter(c=>c.ownerId===owner.id&&c.state==='owned').map(c=>{const reason=this.#tradeReason(c,owner.id,s);return {...this.#copyView(s,c,viewer.id),tradable:!reason,untradableReason:reason};});
     return {owner:{id:owner.id,name:owner.displayName},...page(cards,options)};
   });}
   inventoryPage(actor,options={}){return page(this.inventory(actor),options);}
@@ -181,7 +213,7 @@ export class CardFramework {
     const c=this.#catalog(s);
     return pool.filter(e=>{
       const v=lookup(c.variants,e.variantId);
-      return v.enabled!==false && (v.supplyLimit===undefined || (s.supply[v.id]??0)<v.supplyLimit);
+      return v.enabled!==false && (v.supplyLimit===undefined || (s.supply[v.id]??0)<v.supplyLimit) && codeStockAvailable(s,v.codes,this.#clock());
     });
   }
   #mint(s,ownerId,variantId,source,state='owned') {
@@ -200,7 +232,9 @@ export class CardFramework {
       check(!data?.then,'INVALID_PROVIDER','Binding factories must be synchronous',500);
       copy.bindings[name]={visibility:spec.visibility,transfer:spec.transfer,holderId:ownerId,state:'active',data:jsonObject(data)};
     }
-    s.copies[copy.id]=copy; return copy;
+    copy.provenance={version:1,catalogVersion:c.version,issuedAt:copy.createdAt,definitionDigest:contentDigest(card),variantDigest:contentDigest(variant),...clone(source)};
+    s.copies[copy.id]=copy;allocateCodes(s,copy,variant.codes,this.#clock());
+    this.#event(s,'card.issued',{copyId:copy.id,ownerId,variantId,provenance:clone(copy.provenance)});return copy;
   }
   quote(actor,{productId,quantity=1}) {
     integer(quantity,'quantity',1,100);
@@ -230,21 +264,25 @@ export class CardFramework {
       s.pity??={};s.pity[user.id]??={};
       for (let n=0;n<quantity;n++) {
         const pack={id:id(),ownerId:user.id,productId,productRevision,lineId:product.lineId,catalogVersion:c.version,
-          product:clone(product),createdAt:this.#clock(),openedAt:null,copyIds:[],receipt:null};
+          product:clone(product),purchaseId,batchIndex:n,metadata:clone(product.metadata??{}),createdAt:this.#clock(),openedAt:null,copyIds:[],receipt:null};
         const excluded=new Set();
         if(product.duplicatePolicy.scope==='inventory') for(const copy of Object.values(s.copies))
           if(copy.ownerId===user.id && ['owned','sealed'].includes(copy.state)) excluded.add(copy.cardId);
         let qualified=false;const pityDue=product.pity&&(s.pity[user.id][product.id]??0)>=product.pity.after-1;
-        for(const [slotIndex,slot]of product.slots.entries()) for(let i=0;i<slot.count;i++) {
+        const firstCardSlot=product.slots.findIndex(slot=>(slot.role??'card')==='card');
+        for(const [slotIndex,slot]of product.slots.entries()) {
+          if(slot.probability&&slot.probability.numerator<slot.probability.denominator){const roll=this.#random(slot.probability.denominator);check(Number.isInteger(roll)&&roll>=0&&roll<slot.probability.denominator,'INVALID_PROVIDER','Invalid slot probability draw',500);if(roll>=slot.probability.numerator)continue;}
+          for(let i=0;i<slot.count;i++) {
           let available=this.#available(s,slot.pool);
-          if(pityDue&&slotIndex===0&&i===0)available=available.filter(e=>lookup(c.rarities,lookup(c.variants,e.variantId).rarityId).rank>=lookup(c.rarities,product.pity.rarityId).rank);
+          if(pityDue&&slotIndex===firstCardSlot&&i===0)available=available.filter(e=>lookup(c.rarities,lookup(c.variants,e.variantId).rarityId).rank>=lookup(c.rarities,product.pity.rarityId).rank);
           let pool=available;
-          if(product.duplicatePolicy.scope!=='none') pool=pool.filter(e=>!excluded.has(lookup(c.variants,e.variantId).cardId));
+          if(slot.role!=='insert'&&product.duplicatePolicy.scope!=='none') pool=pool.filter(e=>!excluded.has(lookup(c.variants,e.variantId).cardId));
           if(!pool.length && product.duplicatePolicy.fallback==='allow') pool=available;
           check(pool.length,'POOL_EXHAUSTED','No eligible card remains in this pack slot',409);
-          const copy=this.#mint(s,user.id,this.#weighted(pool),{type:'pack',packId:pack.id,purchaseId},'sealed');
-          if(product.pity&&lookup(c.rarities,copy.rarityId).rank>=lookup(c.rarities,product.pity.rarityId).rank)qualified=true;
-          pack.copyIds.push(copy.id); excluded.add(copy.cardId);
+          const copy=this.#mint(s,user.id,this.#weighted(pool),{type:'pack',packId:pack.id,purchaseId,productId,productRevision,productDigest:contentDigest(product),packIndex:n,slotId:slot.id??'slot-'+slotIndex,slotIndex,slotRole:slot.role??'card',slotOrdinal:i,position:pack.copyIds.length,slotMetadata:clone(slot.metadata??{}),packMetadata:clone(product.metadata??{})},'sealed');
+          if(slot.role!=='insert'&&product.pity&&lookup(c.rarities,copy.rarityId).rank>=lookup(c.rarities,product.pity.rarityId).rank)qualified=true;
+          pack.copyIds.push(copy.id); if(slot.role!=='insert')excluded.add(copy.cardId);
+          }
         }
         if(product.pity)s.pity[user.id][product.id]=qualified?0:(s.pity[user.id][product.id]??0)+1;
         s.packs[pack.id]=pack; packs.push(this.#packView(pack));
@@ -257,6 +295,8 @@ export class CardFramework {
   #copyView(s,copy,viewerId) {
     const result=clone(copy); result.openedByName=copy.openedBy ? s.users[copy.openedBy]?.displayName??null:null;
     result.bindings=Object.fromEntries(Object.entries(result.bindings).filter(([,b])=>b.visibility==='public' || b.holderId===viewerId));
+    result.codes=(copy.codeIds??[]).map(codeId=>codeSummary(s,s.codes[codeId],viewerId,this.#clock()));delete result.codeIds;
+    if(viewerId!==copy.ownerId){delete result.metadata.transfers;for(const value of [result.source,result.provenance])if(value){delete value.purchaseId;delete value.packMetadata;delete value.slotMetadata;}}
     return result;
   }
   openPack(actor,{key,packId}) {
@@ -267,6 +307,7 @@ export class CardFramework {
       const openedAt=this.#clock(), cards=[];
       for(const copyId of pack.copyIds) {
         const copy=s.copies[copyId]; copy.state='owned'; copy.openedAt=openedAt; copy.openedBy=user.id; copy.version++;
+        this.#event(s,'card.opened',{copyId,packId,userId:user.id,openedAt});
         cards.push({...this.#copyView(s,copy,user.id),isNew:!seen.has(copy.cardId)}); seen.add(copy.cardId);
       }
       pack.openedAt=openedAt; pack.receipt={id:pack.id,openedAt,cards};
@@ -274,7 +315,7 @@ export class CardFramework {
       return pack.receipt;
     });
   }
-  inventory(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return Object.values(s.copies).filter(x=>x.ownerId===u.id && x.state==='owned').map(x=>{const reason=this.#tradeReason(x,u.id);return {...this.#copyView(s,x,u.id),tradable:!reason,untradableReason:reason};});});}
+  inventory(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return Object.values(s.copies).filter(x=>x.ownerId===u.id && x.state==='owned').map(x=>{const reason=this.#tradeReason(x,u.id,s);return {...this.#copyView(s,x,u.id),tradable:!reason,untradableReason:reason};});});}
   inspectCard(actor,copyId) {
     return this.#store.read(s=>{
       const user=this.#user(s,actor), copy=s.copies[copyId];
@@ -321,6 +362,7 @@ export class CardFramework {
         check(!copy.lockedBy,'CARD_LOCKED','Card is reserved by a trade',409);
         check(copy.lineId===recipe.lineId && copy.rarityId===recipe.inputRarityId,'RECIPE_MISMATCH','Input does not match recipe');
         check(Object.keys(copy.bindings).length===0,'BOUND_CARD','Bound cards require a dedicated trade-up policy',409);
+        check(cardBehavior(copy.definition).tradeUp && !(copy.codeIds?.length),'BOUND_CARD','This card type or attached code cannot be consumed in a trade-up',409);
       }
       if(recipe.duplicatesOnly) check(new Set(inputs.map(x=>x.variantId)).size===1,'RECIPE_MISMATCH','Recipe requires copies of the same variant');
       const pool=this.#available(s,recipe.outputPool); check(pool.length,'POOL_EXHAUSTED','Recipe outputs exhausted',409);
@@ -340,6 +382,7 @@ export class CardFramework {
     for(const copyId of offer.copyIds) {
       const copy=s.copies[copyId]; check(copy && copy.ownerId===userId && copy.state==='owned','NOT_OWNED','Trade card not owned',403);
       check(!copy.lockedBy,'CARD_LOCKED','Trade card already reserved',409);
+      check(cardBehavior(copy.definition).tradable && !codeTransferReason(s,copy),'TRANSFER_BLOCKED','Card type or code policy blocks transfer',409);
       check(!Object.values(copy.bindings).some(b=>b.transfer==='block'),'TRANSFER_BLOCKED','Card has a nontransferable binding',409);
       if(this.#policies.canTransfer) check(this.#policies.canTransfer(clone(copy),userId)===true,'TRANSFER_BLOCKED','Host transfer policy rejected card',409);
     }
@@ -401,7 +444,9 @@ export class CardFramework {
     const copy=s.copies[copyId]; copy.ownerId=to; copy.acquiredAt=this.#clock(); copy.version++;
     delete copy.lockedBy;
     for(const b of Object.values(copy.bindings)) if(b.transfer==='follow') b.holderId=to;
+    transferCodes(s,copy,from,to,tradeId,this.#clock());
     copy.metadata.transfers??=[]; copy.metadata.transfers.push({from,to,tradeId,at:this.#clock()});
+    this.#event(s,'card.transferred',{copyId,from,to,tradeId});
   }
   acceptTrade(actor,{key,tradeId,expectedDigest}) {
     return this.#command(actor,key,'trade.accepted',{tradeId,expectedDigest},(s,user)=>{
@@ -418,6 +463,7 @@ export class CardFramework {
       for(const copyId of trade.give.copyIds) {
         const copy=s.copies[copyId];
         check(copy.ownerId===trade.fromUserId && copy.state==='owned' && copy.lockedBy===trade.id,'TRADE_CONFLICT','Escrow changed',409);
+        check(cardBehavior(copy.definition).tradable && !codeTransferReason(s,copy),'TRANSFER_BLOCKED','Card type or code policy blocks transfer',409);
         check(!Object.values(copy.bindings).some(b=>b.transfer==='block'),'TRANSFER_BLOCKED','Binding blocks transfer',409);
         if(this.#policies.canTransfer) check(this.#policies.canTransfer(clone(copy),trade.fromUserId)===true,'TRANSFER_BLOCKED','Host transfer policy rejected card',409);
       }
@@ -458,6 +504,7 @@ export class CardFramework {
       const clean=placements.map((p,index)=>{
         const copy=s.copies[p.copyId];
         check(copy && copy.ownerId===user.id && copy.state==='owned','NOT_OWNED','Album card is not owned',403);
+        check(cardBehavior(copy.definition).albumEligible,'ALBUM_INELIGIBLE','This card is excluded from album placement',409);
         return {copyId:p.copyId,position:p.position===undefined?index:integer(p.position,'position',0,100000),data:jsonObject(p.data??{},'placement data')};
       });
       const album={id:existing?.id??id(),ownerId:user.id,name,visibility,layout:clone(layout),placements:clean,version:(existing?.version??0)+1,updatedAt:this.#clock()};
@@ -471,7 +518,7 @@ export class CardFramework {
   }
   viewAlbum(actor,albumId) {
     return this.#store.read(s=>{
-      const viewer=actor?.userId && s.users[actor.userId]?actor.userId:null, album=s.albums[albumId];
+      const viewer=actor?.disabled!==true && actor?.userId && s.users[actor.userId]?actor.userId:null, album=s.albums[albumId];
       const allowed=album && (album.ownerId===viewer || (album.visibility==='public' && this.#catalog(s).features.publicAlbums));
       check(allowed,'NOT_FOUND','Album not found',404); return this.#albumView(s,album,viewer);
     });

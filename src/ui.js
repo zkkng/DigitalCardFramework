@@ -5,6 +5,7 @@ import {defaultCSS} from './styles.js';
 import {render3DInspector,renderComparison} from './inspector-ui.js';
 import {renderCollection,renderAlbums} from './collection-ui.js';
 import {renderTrading} from './trading-ui.js';
+import {renderCodeHistory} from './code-ui.js';
 export {defaultCSS} from './styles.js';
 export function element(tag,className,text) {
   const node=document.createElement(tag);
@@ -133,9 +134,9 @@ export function mountOpener(root,{controller,cardRenderer=renderCard,view,onSele
   });
   return ()=>{unsubscribe();cleanup?.();root.replaceChildren();};
 }
-export function mountFramework(root,{client,theme={},css='',cardRenderer=renderCard,albumRenderer=renderAlbum,inspectorRenderer=render3DInspector,comparisonRenderer=renderComparison,views:customViews={},viewLabels={},
+export function mountFramework(root,{client,theme={},css='',cardRenderer=renderCard,albumRenderer=renderAlbum,inspectorRenderer=render3DInspector,comparisonRenderer=renderComparison,codeRevealRenderer,views:customViews={},viewLabels={},
   backRenderer,metadataRenderer,openerView,layouts={},participants=[],navigation='sections',
-  sections=['wallet','shop','packs','collection','albums','trades']}={}) {
+  sections=['wallet','shop','packs','collection','codes','albums','trades']}={}) {
   const removeStyles=installStyles(root,{theme,css});
   const dashboard=element('div','dc-dashboard'),nav=element('nav','dc-nav'),content=element('div','dc-content');
   const status=element('div','dc-status'),inspector=element('dialog','dc-inspector-dialog');
@@ -236,9 +237,9 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
     node.append(list);const opener=element('div');node.append(opener);openerDispose=mountOpener(opener,{controller,cardRenderer:renderer,view:openerView,onSelect:inspect});return node;
   }
   const viewState={};
-  const context=()=>({client,inspect,inspectTogether,refresh,mutate,action,navigate,cardRenderer:renderer,albumRenderer,layouts,state:viewState});
-  const views={wallet,shop,packs,collection:()=>renderCollection(model,context()),albums:()=>renderAlbums(model,context()),trades:()=>renderTrading(model,context()),...Object.fromEntries(Object.entries(customViews).map(([id,view])=>[id,()=>view(model,context())]))};
-  const labels={wallet:'Wallet',shop:'Discover',packs:'My packs',collection:'Collection',albums:'Albums',trades:'Trade lounge',...viewLabels};
+  const context=()=>({client,inspect,inspectTogether,refresh,mutate,action,navigate,cardRenderer:renderer,albumRenderer,codeRevealRenderer,layouts,state:viewState});
+  const views={wallet,shop,packs,codes:()=>renderCodeHistory(model,context()),collection:()=>renderCollection(model,context()),albums:()=>renderAlbums(model,context()),trades:()=>renderTrading(model,context()),...Object.fromEntries(Object.entries(customViews).map(([id,view])=>[id,()=>view(model,context())]))};
+  const labels={wallet:'Wallet',shop:'Discover',packs:'My packs',collection:'Collection',codes:'Code history',albums:'Albums',trades:'Trade lounge',...viewLabels};
   function renderView() {
     if(!model||disposed)return;openerDispose?.();openerDispose=null;viewDisposers.forEach(fn=>fn());viewDisposers=[];content.replaceChildren();nav.replaceChildren();dashboard.replaceChildren();
     root.classList.toggle('dc-with-nav',navigation==='tabs');

@@ -1,13 +1,13 @@
 import {CardFramework,MemoryStore} from '../src/index.js';
 import {sampleCatalog} from '../examples/catalog.js';
 export const admin={role:'admin'};
-export function fixture({store=new MemoryStore(),change,random=()=>0,clock=()=> '2026-09-30T12:00:00.000Z',bindings={},policies={}}={}) {
+export function fixture({store=new MemoryStore(),change,random=()=>0,clock=()=> '2026-09-30T12:00:00.000Z',bindings={},policies={},codeVault,codeLimits}={}) {
   const c=structuredClone(sampleCatalog);c.version=1;
   c.products.push(...[
     ['common','dawn.standard'],['rare','aurora.holo'],['unique','solstice.unique']
   ].map(([name,variantId])=>({id:name,lineId:'sky',name,revision:1,price:{currencyId:'credits',amount:10},slots:[{count:1,pool:[{variantId,weight:1}]}]})));
   change?.(c);
-  const core=new CardFramework({store,random,clock,bindings:{'demo.code':()=>({code:'PRIVATE-DEMO-CODE'}),...bindings},policies});
+  const core=new CardFramework({store,random,clock,bindings:{'demo.code':()=>({code:'PRIVATE-DEMO-CODE'}),...bindings},policies,codeVault,codeLimits});
   core.publishCatalog(admin,c);
   const a=core.registerUser(admin,{provider:'test',subject:'alice',displayName:'Alice'});
   const b=core.registerUser(admin,{provider:'test',subject:'bob',displayName:'Bob'});

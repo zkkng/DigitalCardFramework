@@ -2,8 +2,8 @@ import {readFile} from 'node:fs/promises';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const presentationModules=['index','card-view','integration','player','webgl','resolver','package','data','motion','validate','media','advanced-media','extensions','project','authoring'];
-const modules=['ui','client','styles','atelier-styles','trade-client','trading-ui','collection-ui','studio-ui','inspector-ui','player-ui','ui-kit'];
+const presentationModules=['index','card-view','integration','player','webgl','resolver','package','data','motion','validate','media','advanced-media','extensions','project','authoring','performance','album-motion'];
+const modules=['card-types','code-ui','ui','client','styles','atelier-styles','trade-client','trading-ui','collection-ui','studio-ui','inspector-ui','player-ui','ui-kit'];
 export async function serveReference(req,res,{production=false,assetOrigins=[]}={}){
   const path=new URL(req.url,'http://localhost').pathname;
   const files=new Map([['/','examples/index.html'],['/app.js','examples/app.js'],['/site.css','examples/site.css'],...modules.map(x=>['/src/'+x+'.js','src/'+x+'.js']),...presentationModules.map(x=>['/src/presentation/'+x+'.js','src/presentation/'+x+'.js'])]);

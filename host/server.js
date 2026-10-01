@@ -1,6 +1,8 @@
 import {createPresentationStore} from "../src/presentation/service.js";
 import {createPresentationHandler} from "../src/presentation/node-http.js";
 import {authorizePresentation} from "../src/access.js";
+import {createCodeVault} from '../src/code-vault.js';
+import {createCodeGateway} from '../src/code-gateway.js';
 import {createCurrencyGateway} from "../src/currency-gateway.js";
 import {createServer} from 'node:http';
 import {readFile,mkdir} from 'node:fs/promises';
@@ -23,18 +25,24 @@ const issuer=process.env.OIDC_ISSUER,clientId=process.env.OIDC_CLIENT_ID;
 const adminSubjects=JSON.parse(process.env.OPERATOR_SUBJECTS??'[]');if(!Array.isArray(adminSubjects)||adminSubjects.some(x=>typeof x!=='string'))throw new Error('OPERATOR_SUBJECTS must be a JSON string array');
 const dbPath=resolve(process.env.DATABASE_PATH??'data/production.sqlite');await mkdir(dirname(dbPath),{recursive:true});
 const extension=process.env.HOST_MODULE?await import(pathToFileURL(resolve(process.env.HOST_MODULE)).href):{};
-const store=new SQLiteStore(dbPath,{encryptionKey}),framework=new CardFramework({store,bindings:extension.bindings,policies:extension.policies,
+const codeKeyConfig=await secret('CODE_VAULT_KEYS'),codeIndex=await secret('CODE_INDEX_KEY');
+const codeVault=codeKeyConfig?createCodeVault({activeKeyId:process.env.CODE_ACTIVE_KEY_ID,keys:Object.fromEntries(Object.entries(JSON.parse(codeKeyConfig)).map(([id,hex])=>[id,keyFromHex(hex)])),indexKey:keyFromHex(codeIndex)}):undefined;
+const store=new SQLiteStore(dbPath,{encryptionKey}),framework=new CardFramework({store,codeVault,codeLimits:extension.codeLimits,bindings:extension.bindings,policies:extension.policies,
   limits:{users:500,copies:5000,packs:2000,requests:20000,albums:2000,trades:2000,copiesPerUser:1000,packsPerUser:500,...extension.limits}});
 try{framework.catalog();}catch(error){if(error.code!=='NO_CATALOG')throw error;if(!process.env.CATALOG_FILE)throw new Error('CATALOG_FILE is required for first initialization');framework.publishCatalog({role:'admin'},parseContent(await readFile(process.env.CATALOG_FILE,'utf8'),{format:/\.ya?ml$/i.test(process.env.CATALOG_FILE)?'yaml':'json'}));}
 const raw=framework.operatorCatalog({role:'admin'});
 for(const variant of raw.variants)for(const binding of Object.values(variant.bindings))if(binding.factory&&!extension.bindings?.[binding.factory])throw new Error('Configure binding factory '+binding.factory+' in HOST_MODULE');
+if(raw.variants.some(v=>v.codes?.length)&&!codeVault)throw new Error('Configure CODE_VAULT_KEYS, CODE_ACTIVE_KEY_ID and CODE_INDEX_KEY before serving code cards');
+framework.verifyCodeVault({role:'admin'});
+framework.backfillProvenance({role:'admin'});
+const codeGateway=extension.codeProviders?createCodeGateway({framework,providers:extension.codeProviders}):undefined;
 const audit=framework.audit({role:'admin'});if(!audit.ok||!store.integrity())throw new Error('Database verification failed; restore a verified backup');
 const sessions=new SessionStore(dbPath,{encryptionKey,maxSessions:extension.sessionOptions?.maxSessions}),rateLimit=extension.rateLimiter??createRateLimiter(extension.rateLimits);
 if(!extension.identityProvider&&(!issuer?.startsWith('https://')||!clientId))throw new Error('Configure OIDC or a host identityProvider');
 const provider=extension.identityProvider??await createOIDCProvider({issuer,clientId,clientSecret:await secret('OIDC_CLIENT_SECRET'),origin});
 const auth=createAuthHost({framework,sessions,provider,origin,adminSubjects,resolveAccess:extension.resolveAccess,rateLimit});
 const currencyGateway=extension.currencyProviders?createCurrencyGateway({framework,providers:extension.currencyProviders}):undefined;
-const api=createApiHandler({framework,currencyGateway,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,exposeOperators:true,requireTradeReview:true,requirePrincipal:true,rateLimit,
+const api=createApiHandler({framework,currencyGateway,codeGateway,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,exposeOperators:true,requireTradeReview:true,requirePrincipal:true,rateLimit,
   onRequest:event=>process.stdout.write(JSON.stringify({kind:'request',...event})+'\n')});
 const presentations=process.env.PRESENTATION_ROOT?await createPresentationStore({root:resolve(process.env.PRESENTATION_ROOT),...extension.presentationOptions,authorize:authorizePresentation}):null;
 const presentationHTTP=presentations?createPresentationHandler({store:presentations,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,rateLimit}):null;

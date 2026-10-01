@@ -11,3 +11,9 @@
 Configure trusted identity, TLS, credentials, upload scanning and resource limits before accepting untrusted content. See [production setup](docs/production.md) and [identity and access](docs/access-and-identity.md).
 
 The supplied external-currency example uses a synthetic provider. A live integration must verify provider evidence and define refund, withdrawal and reconciliation behavior.
+
+## Code entitlements
+
+Use encrypted code pools for unique secret rewards. Never place codes in public card data or rely on a visual scratch cover to protect plaintext. Current-holder checks and trade locks apply at the reveal endpoint on every request, including retries. Player used markers are not verified redemption. Provider adapters must authenticate upstream evidence, redact secrets from diagnostics, and validate webhooks before submitting scoped confirmations.
+
+Keep vault encryption keys and the stable HMAC index key separate from database backups. Repeat permission, disclosure, duplicate allocation, replay, transfer-race, expiry and restore checks before major releases. The automated code tests cover these boundaries with synthetic codes; live provider security remains an integration responsibility.

@@ -73,7 +73,7 @@ Public package subpaths expose core, SQLite, HTTP, client/UI, importer, trade co
 
 Use Creator studio as an authorized operator, or `tools/content.js`. [Moonbridge YAML](examples/imports/moonbridge.yaml) and [JSON](examples/imports/moonbridge.json) show stats, metadata, layers, asset references, rarity/edition and labels. Merge replaces supplied rows by stable ID and retains omitted rows. Publication checks the reviewed digest and catalog version. Existing copies preserve snapshots; published edition identities/caps remain immutable.
 
-Assets live in your storage/CDN. Definitions are public; sensitive codes belong in owner-only bindings. Metadata and YAML are data, never executable scripts. See [content authoring](docs/content-authoring.md).
+Assets live in your storage/CDN. Definitions are public; sensitive reward codes belong in encrypted code pools and variant attachments. Metadata and YAML are data, never executable scripts. See [content authoring](docs/content-authoring.md).
 
 ## Production profile
 
@@ -86,6 +86,7 @@ Real identity-provider configuration, DNS/TLS and protected credentials are requ
 - [Supported features](docs/implementation-status.md)
 - [Core API](docs/core-api.md) and [HTTP schema](docs/openapi.json)
 - [Content authoring](docs/content-authoring.md)
+- [Card types, code cards and hybrid rewards](docs/card-types-and-codes.md)
 - [Customization recipes](docs/customization-recipes.md)
 - [Production setup](docs/production.md) and [identity and access](docs/access-and-identity.md)
 - [Portable card runtime](docs/complex-cards/README.md) and [creator API](docs/complex-cards/creator-api.md)

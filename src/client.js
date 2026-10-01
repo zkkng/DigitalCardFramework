@@ -27,6 +27,8 @@ export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={})
     acceptTrade:input=>call('/trades/accept',input), cancelTrade:input=>call('/trades/cancel',input),
     counterTrade:input=>call('/trades/counter',input),
     bindings:()=>call('/bindings'), consumeBinding:input=>call('/bindings/use',input),
+    codeHistory:options=>call('/codes'+query(options)),revealCode:input=>call('/codes/reveal',input),reportCodeUsage:input=>call('/codes/report',input),reconcileCode:input=>call('/codes/reconcile',input),
+    codeInventory:options=>call('/operator/codes'+query(options)),codePools:()=>call('/operator/code-pools'),configureCodePool:input=>call('/operator/code-pools',input),importCodes:input=>call('/operator/codes/import',input),confirmCodeStatus:input=>call('/operator/codes/confirm',input),
     inspectCard:copyId=>call('/cards/'+encodeURIComponent(copyId)),
     requestKey:()=>globalThis.crypto.randomUUID()
   };
@@ -65,7 +67,7 @@ export function createCommandRunner({client,storage,namespace='default'}) {
   const active=new Map();
   const persist=()=>{try{storage?.setItem(storageKey,JSON.stringify(pending));}catch{/* Blocked storage keeps retry keys for this mounted session. */}};
   const stable=x=>Array.isArray(x)?x.map(stable):x && typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,stable(x[k])])):x;
-  const allowed=new Set(['purchase','openPack','convert','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','consumeBinding','counterTrade','preferences','readNotifications','commitImport']);
+  const allowed=new Set(['purchase','openPack','convert','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','consumeBinding','counterTrade','preferences','readNotifications','commitImport','reportCodeUsage']);
   return function run(command,input) {
     if(!allowed.has(command))throw new Error('Unsupported durable command');
     const intent=command==='purchase'?{productId:input.productId,quantity:input.quantity}:input;

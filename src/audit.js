@@ -17,6 +17,21 @@ export function auditState(s){
     credits.delete(token);
   }
   for(const token of credits.keys())add('SETTLEMENT_RECEIPT_MISSING',token);
+  const codePrints=new Set(),assignedCodes=new Set();
+  for(const copy of copies){
+    for(const codeId of copy.codeIds??[]){const row=s.codes?.[codeId];if(assignedCodes.has(codeId)||!row||row.copyId!==copy.id)add('CODE_ASSIGNMENT_INVALID',copy.id);assignedCodes.add(codeId);}
+    if(copy.provenance){const p=copy.provenance;if(p.type==='pack'){const pack=s.packs[p.packId];if(!pack||!pack.copyIds.includes(copy.id)||p.productId!==pack.productId||p.catalogVersion!==pack.catalogVersion||p.position!==pack.copyIds.indexOf(copy.id))add('PROVENANCE_INVALID',copy.id);}}
+  }
+  for(const row of Object.values(s.codes??{})){
+    if(codePrints.has(row.fingerprint))add('CODE_DUPLICATE',row.id);codePrints.add(row.fingerprint);
+    if(!s.codePools?.[row.poolId]||s.codePools[row.poolId].providerId!==row.providerId)add('CODE_POOL_INVALID',row.id);
+    if(!['available','allocated','redeemed','revoked'].includes(row.status)||row.secret?.version!==1||!row.secret.keyId)add('CODE_STATE_INVALID',row.id);
+    if(row.copyId&&row.status==='available'||row.status==='redeemed'&&!row.redeemedAt||row.status==='revoked'&&!row.revokedAt)add('CODE_LIFECYCLE_INVALID',row.id);
+    if(row.copyId){const copy=s.copies[row.copyId];if(!copy||!assignedCodes.has(row.id)||!s.users[row.holderId])add('CODE_HOLDER_INVALID',row.id);if(row.transfer==='follow-unrevealed'&&copy?.ownerId!==row.holderId)add('CODE_FOLLOW_INVALID',row.id);}
+    else if(row.holderId||row.status==='allocated')add('CODE_ALLOCATION_INVALID',row.id);
+    if(row.revealedAt&&!row.revealedBy||row.reportedUsed&&!row.revealedAt)add('CODE_DISCLOSURE_INVALID',row.id);
+  }
+  for(const proof of Object.values(s.codeConfirmations??{})){const row=s.codes?.[proof.codeId];if(!row||row.providerId!==proof.providerId||row.status!==proof.status)add('CODE_CONFIRMATION_INVALID',proof.codeId);}
   const identities=new Set();for(const u of Object.values(s.users)){const identity=JSON.stringify([u.provider,u.subject]);if(identities.has(identity))add('IDENTITY_DUPLICATE',u.id);identities.add(identity);}
   return {ok:issues.length===0,issues,revision:s.revision,counts:{users:Object.keys(s.users).length,copies:copies.length,packs:Object.keys(s.packs).length,trades:Object.keys(s.trades).length,events:s.events.length}};
 }

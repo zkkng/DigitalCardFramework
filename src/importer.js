@@ -26,7 +26,7 @@ export function prepareImport({source,format='json',mode='merge',base,expectedVe
   if(mode==='replace')merged=incoming;
   else {
     check(base,'INVALID_IMPORT','Use replace for the first full catalog');merged=structuredClone(base);
-    const allowed=['cards','variants','products','recipes','lines','rarities','currencies','combinations','displayFields'];
+    const allowed=['cards','variants','products','recipes','lines','rarities','currencies','combinations','displayFields','cardTypes'];
     for(const key of Object.keys(incoming))check([...allowed,'features','metadataSchemas','version'].includes(key),'INVALID_IMPORT','Unknown import section '+key);
     for(const key of allowed)if(incoming[key]!==undefined){
       check(Array.isArray(incoming[key]),'INVALID_IMPORT',key+' must be an array');
@@ -41,7 +41,7 @@ export function prepareImport({source,format='json',mode='merge',base,expectedVe
     merged.version=incoming.version??base.version+1;
   }
   const manifest=validateCatalog(merged),changes=[];
-  for(const key of ['currencies','lines','rarities','cards','variants','products','recipes','combinations']){
+  for(const key of ['currencies','lines','rarities','cards','variants','products','recipes','combinations','cardTypes']){
     const old=new Map((base?.[key]??[]).map(row=>[row.id,row]));
     for(const row of manifest[key]??[]){const previous=old.get(row.id);if(!previous||contentDigest(previous)!==contentDigest(row))changes.push({section:key,id:row.id,action:previous?'update':'add'});old.delete(row.id);}
     for(const id of old.keys())changes.push({section:key,id,action:'remove'});
