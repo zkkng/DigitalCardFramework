@@ -7,7 +7,8 @@ async function login() {
   try {
     await fetch('/demo/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:select.value})});
     app?.dispose();document.querySelector('#user-id').textContent='User ID: '+select.value;
-    app=mountFramework(document.querySelector('#framework'),{client:createClient()});await app.ready;
+    app=mountFramework(document.querySelector('#framework'),{client:createClient(),navigation:'tabs',participants:users,
+      sections:['shop','packs','collection','albums','trades','wallet']});await app.ready;
     document.querySelector('#demo-error').textContent='';
   }catch(error){document.querySelector('#demo-error').textContent=error.message;}
 }

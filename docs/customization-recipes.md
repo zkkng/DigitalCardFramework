@@ -14,6 +14,24 @@ Default precedence is default CSS < host theme/CSS < explicit card/variant asset
 
 sections:['collection','albums','wallet','shop'] hides pack/trade sections and rearranges the remaining sections. A sections entry may be a callback (model,{client,inspect,refresh}) returning a host DOM node. This inserts or replaces any whole section. The host can instead mount only mountOpener inside a sidebar, modal or existing page.
 
+### Guided playground navigation
+
+The default `navigation:'sections'` keeps the composed sections on one page, including host callbacks. `navigation:'tabs'` shows one named built-in section at a time, a persistent wallet summary, and a sealed-pack count. The `sections` array controls navigation order. Named tabs are `shop`, `packs`, `collection`, `albums`, `trades`, and `wallet`; custom callback sections should use section mode or a host-owned shell. Purchasing from the default shop switches to `packs`; opening and visual reveal remain separate commands.
+
+```js
+mountFramework(root, {
+  client,
+  navigation: 'tabs',
+  sections: ['shop', 'packs', 'collection', 'albums', 'trades', 'wallet'],
+  participants: [{id: rowanId, name: 'Rowan'}, {id: morganId, name: 'Morgan'}],
+  theme: {'--dc-accent': '#baa1ff'}
+});
+```
+
+`participants` is an optional host-supplied array of `{id,name}`. It supplies account display names and recipient choices; it grants no access to another inventory. Without it, trading accepts a recipient ID. Offered cards and trade-up inputs use owned-copy checkboxes; requested cards still accept IDs from the inspector. Currency choices use published, tradable catalog entries. The server remains authoritative for all eligibility, balances, and ownership.
+
+The built-in inspector opens a native dialog with focus containment, Escape dismissal and an explicit Close button. `renderInspector(copy,{labels:{line,rarity},...})` optionally accepts human-readable catalog labels; timestamps display in the browser's local timezone. Renderer/theme/layout replacement contracts remain available. The geometric fallback card face and pack illustrations use CSS, with no art files required. Finite supply availability is validated by the server at purchase; displayed odds are base rates, not a live stock promise.
+
 ## Replace one part
 
 cardRenderer(copy,options), backRenderer(copy), metadataRenderer(copy), albumRenderer(model,options) and openerView(state,controller) are single explicit host selections. Choose one implementation at composition time; there is no import-order registry. A wrapper can call renderCard or renderAlbum then add trusted controls. Copy models and receipts are detached objects.

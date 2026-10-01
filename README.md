@@ -13,6 +13,8 @@ node examples/server.js
 
 Open http://127.0.0.1:4317 for the standalone demo, or /alternate for a different host composition. The demo uses two fictional accounts, three currencies, two lines, three pack products, a 1-of-1 edition, a duplicate trade-up recipe and private attached data. Dawn uses runtime-generated geometric SVG layers to demonstrate parallax; no artwork files are stored in this repository. It binds only to loopback. Demo starting balances are issued once and the database persists in ignored data/demo.sqlite.
 
+The Card Atelier playground separates Pack shop, My packs, Collection, Albums, Trading and Wallet. Buy a pack, open it in My packs, reveal the saved results, then inspect or display the cards. Switch Rowan/Morgan to test separate inventories. [Navigation and participant configuration](docs/customization-recipes.md#guided-playground-navigation) uses the public UI API; `/alternate` continues to demonstrate a host-owned arrangement.
+
 ## Implemented core
 
 - Stable users linked by host provider and immutable subject; one inventory per user.
