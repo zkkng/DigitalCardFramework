@@ -37,9 +37,15 @@ const server = createServer(async (req, res) => {
     );
     if (pathname === "/") {
       res.setHeader("content-type", "text/html");
+      res.setHeader("set-cookie", "card_session=browser-audit; HttpOnly; SameSite=Lax; Path=/");
       res.end(
         '<!doctype html><title>Framework audit</title><style>body{margin:0}#root{width:240px;height:360px;position:relative}</style><div id="root"></div>',
       );
+      return;
+    }
+    if (pathname.startsWith("/card/") && !req.headers.cookie?.includes("card_session=browser-audit")) {
+      res.writeHead(401);
+      res.end("Sign in to load this card");
       return;
     }
     if (pathname === "/favicon.ico") {
@@ -72,6 +78,15 @@ const server = createServer(async (req, res) => {
   }
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const crossRequests = [];
+const crossServer = createServer((req, res) => {
+  crossRequests.push({ path: req.url, cookie: req.headers.cookie ?? null });
+  res.setHeader("access-control-allow-origin", "*");
+  const data = pkg.files.get(new URL(req.url, "http://test").pathname.slice(1));
+  res.writeHead(data ? 200 : 404);
+  res.end(data);
+});
+await new Promise((r) => crossServer.listen(0, "127.0.0.1", r));
 let browser;
 const checks = [],
   errors = [];
@@ -84,8 +99,11 @@ try {
   }
   const page = await browser.newPage({ viewport: { width: 800, height: 800 } });
   page.on("pageerror", (e) => errors.push(e.message));
+  const denied = await fetch(`http://127.0.0.1:${server.address().port}/card/integrity.json`);
+  assert.equal(denied.status, 401);
+  checks.push({ name: "private card files reject anonymous requests", passed: true });
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
-  const result = await page.evaluate(async () => {
+  const result = await page.evaluate(async ({ crossOrigin }) => {
     const { createPlayerStage } = await import("/src/presentation/player.js");
     const { directoryResolver } = await import("/src/presentation/resolver.js");
     const { createWebGLRenderer } = await import("/src/presentation/webgl.js");
@@ -100,6 +118,11 @@ try {
     const settle = () => new Promise((r) => setTimeout(r, 80)),
       root = document.getElementById("root");
     const resolver = await directoryResolver("/card/");
+    results.push(check(Boolean(resolver.manifest), "directory resolver loads session-protected card metadata"));
+    const external = await directoryResolver(crossOrigin);
+    await external.asset("art");
+    external.dispose();
+    results.push(check(true, "public cross-origin card metadata and artwork still load"));
     const stage = createPlayerStage({ root });
     let view = stage.mount(root, { resolver });
     await view.ready;
@@ -652,8 +675,11 @@ try {
       ),
     );
     return results;
-  });
+  }, { crossOrigin: `http://127.0.0.1:${crossServer.address().port}/` });
   checks.push(...result);
+  assert.ok(crossRequests.length >= 4);
+  assert.ok(crossRequests.every((request) => request.cookie === null));
+  checks.push({ name: "cross-origin metadata and artwork receive no session cookies", passed: true });
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({ browser: browser.version(), engine, checks }, null, 2),
@@ -688,4 +714,6 @@ try {
   await browser?.close();
   server.closeAllConnections();
   await new Promise((r) => server.close(r));
+  crossServer.closeAllConnections();
+  await new Promise((r) => crossServer.close(r));
 }

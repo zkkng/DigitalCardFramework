@@ -28,7 +28,9 @@ export async function directoryResolver(base, { digest, signal } = {}) {
     safePath(path);
     const response = await fetch(new URL(path, root), {
       signal: requestSignal,
-      credentials: "omit",
+      // Private host content needs its existing session. Cross-origin card
+      // servers still receive no ambient credentials, and redirects stay blocked.
+      credentials: "same-origin",
       redirect: "error",
     });
     ensure(response.ok, "HTTP", "Unable to load " + path);
