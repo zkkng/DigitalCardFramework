@@ -54,6 +54,23 @@ test("performance report deduplicates shared textures while identifying every ex
   ])
     assert.throws(() => analyzePerformance(p, config));
 });
+
+test("default upload estimates retain standard texture cost with explicit lite opt-in", () => {
+  const p = fixture();
+  p.manifest.quality.standard = { maxEdge: 1536 };
+  p.manifest.quality.lite = { maxEdge: 768 };
+  Object.assign(p.manifest.assets.find((a) => a.id === "art"), {
+    width: 1536,
+    height: 1536,
+  });
+  const standard = analyzePerformance(p),
+    lite = analyzePerformance(p, { quality: "lite" });
+  assert.equal(standard.policy.quality, "standard");
+  assert.equal(standard.faces.front.estimatedTextureBytes, 1536 * 1536 * 4);
+  assert.equal(lite.faces.front.estimatedTextureBytes, 768 * 768 * 4);
+  assert(standard.issues.some((i) => i.code === "LAYER_TEXTURE"));
+  assert(!lite.issues.some((i) => i.code === "LAYER_TEXTURE"));
+});
 test("automated authoring emits performance report and honors host rejection policy", async () => {
   const events = [],
     authoring = createAuthoring({

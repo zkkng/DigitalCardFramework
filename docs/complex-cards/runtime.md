@@ -16,7 +16,7 @@ Public entry points are root `/presentation`, `/presentation/authoring`, `/prese
 import {createPlayerStage, directoryResolver} from '@digital-card/framework/presentation';
 const resolver = await directoryResolver(baseURL, {digest});
 const stage = createPlayerStage({root: region});
-const view = stage.mount(slot, {resolver}, {quality:'lite', inputMode:'drag'});
+const view = stage.mount(slot, {resolver}, {quality:'standard', inputMode:'drag'});
 await view.ready;
 view.setInputs({tilt:{x:0.4,y:-0.2},angle:0.7});
 await view.setSide('back');
@@ -61,12 +61,30 @@ See [creator API](creator-api.md) for batch imports, effect controls, external c
 
 ## Audited lifecycle and surface controls
 
-`await stage.setBudget({estimatedGpuBytes: 32 * 1024 * 1024, maxDpr: 1})` releases and readmits live resources under the new ceiling. Invalid, nonfinite and unknown budget fields fail. Text, raster and adapter allocations share the ceiling; the framebuffer can shrink below the previous DPR floor. These remain estimates, not driver-memory accounting. A sustained-cost downgrade has a 10-second cooldown.
+`await stage.setBudget({estimatedGpuBytes: 32 * 1024 * 1024, maxDpr: 1})` releases and readmits live resources under the new ceiling. Invalid, nonfinite and unknown budget fields fail. Text, raster and adapter allocations share the ceiling; the framebuffer can shrink below the previous DPR floor. These remain estimates, not driver-memory accounting. Sustained CPU submission cost emits a diagnostic; it never progressively reduces the configured resolution. That timing is not a GPU or display-presentation measurement. Raising the budget retries the host-requested texture quality, including recovery from a poster fallback.
 
-`await view.setSide('back')` and `await view.setQuality('standard')` wait for a changed face/rendition to finish admission. No change returns `undefined`. Disposed view setters cannot resurrect resources. `snapshot()` requires an interactive face; it cannot silently return a blank poster fallback. Directory resolver disposal aborts pending network reads and revokes object URLs.
+`await view.setSide('back')` and `await view.setQuality('standard')` wait for a changed face/rendition to finish admission. An unchanged, ready rendition returns `undefined`; requesting quality again after fallback retries admission. Disposed view setters cannot resurrect resources. `snapshot()` requires an interactive face; it cannot silently return a blank poster fallback. Directory resolver disposal aborts pending network reads and revokes object URLs.
 
 Each image node accepts `sampling: 'nearest' | 'linear'`. This controls GPU sampling per draw, even when nodes share a texture. Quality-tier image resizing still happens before sampling; choose a maxEdge large enough to retain every authored pixel when exact source pixels matter. `scene.background` accepts `transparent`, `#RRGGBB`, or `#RRGGBBAA`. A node mask uses one local alpha image or one local polygon; `invert` applies to either. Cropped atlas coordinates do not move its polygon mask.
 
 Groups support inherited transforms/opacity/brightness/saturation, not isolated compositing surfaces. Group masks, materials and non-normal blends now fail explicitly rather than being ignored. Prebake such groups or install a host adapter. An unavailable optional adapter with `omit-decorative` is removed by its adapter ID; `poster` and `static-pose` use the authored face poster. Required missing capabilities always select the poster.
 
 The import scanner receives an AbortSignal and has a configurable `scanTimeoutMs` (default 30 seconds). Cancellation/timeout settles the job even if a faulty callback never resolves. The host must still terminate its underlying decoder process; Promise cancellation cannot stop arbitrary native code. Failed store initialization releases its writer lock. After a process crash, operators must confirm no writer remains before removing a stale lock; automatic cross-process crash recovery is not implemented.
+
+
+## Sharpness, screen density and zoom
+
+The stage separates decoded texture detail from final canvas resolution. Interactive mounts default to `standard` (or the manifest's lite edge limit when standard is absent); poster grids remain posters. Hosts may explicitly choose `lite` for small thumbnails. A coarse pointer does not by itself determine the framework's texture quality.
+
+Default budget fields are `maxDpr:3`, `maxZoom:3`, `maxCanvasPixels:8388608`, `maxTextureEdge:4096`, `renderScale:1`, and `estimatedGpuBytes:96*1024*1024`. Native density and visual-viewport pinch scale are multiplied independently, then bounded by pixel count, remaining estimated memory and WebGL surface limits. Browser resize, visual viewport resize and screen-density changes invalidate a static stage without requiring card input. Canvas axes use their actual integer backing sizes, including snapshots.
+
+```js
+const stage=createPlayerStage({root:region,budget:{
+  maxDpr:3, maxZoom:3, maxCanvasPixels:8*1024*1024,
+  maxTextureEdge:1024, estimatedGpuBytes:96*1024*1024
+}});
+```
+
+This host profile retains native phone density and allows bounded pinch detail while limiting decoded textures independently. `maxTextureEdge` also caps text and adapter surfaces; WebGL's texture-size limit remains authoritative. Keep a larger edge for full-size inspection when memory allows. `renderScale` is an explicit 0.1–4 multiplier for host CSS magnification; the player does not infer it from changing perspective bounds, which would resize the framebuffer on every rotation. `maxZoom` is 1–8; the pixel ceiling is at most 33,554,432. Explicitly low host budgets remain valid and may reduce sharpness.
+
+`stage.diagnostics()` reports requested/effective density, backing dimensions, whether resolution is constrained, texture bytes and the configured limits. Memory numbers estimate owned resources, not all driver/compositor allocations. Low-resolution source art, lossy source compression, limited authored posters and intentionally reduced texture tiers cannot recover detail by increasing the canvas alone. Pixel-art sampling is still explicit per node. See [MDN on pinch scale](https://developer.mozilla.org/en-US/docs/Web/API/VisualViewport/scale) and [WebGL sizing guidance](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices).

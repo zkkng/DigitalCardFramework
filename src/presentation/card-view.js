@@ -9,7 +9,7 @@ import { directoryResolver } from "./resolver.js";
 export function createCardRenderer({
   fallbackRenderer,
   mode = "poster",
-  quality = "lite",
+  quality = "standard",
   resolve = directoryResolver,
   budget,
   adapters = [],

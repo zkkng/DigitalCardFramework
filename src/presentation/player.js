@@ -2,11 +2,16 @@ import { ensure, clamp } from "./data.js";
 import { CAPABILITIES, validateScene } from "./validate.js";
 import { evaluate, normalizedInputs, selectFrame } from "./motion.js";
 import { createWebGLRenderer } from "./webgl.js";
+import { surfaceResolution } from "./resolution.js";
 
 function validateBudget(value) {
   const fields = {
     estimatedGpuBytes: [1024, 2 ** 32],
     maxDpr: [0.1, 4],
+    maxZoom: [1, 8],
+    renderScale: [0.1, 4],
+    maxCanvasPixels: [1, 33554432],
+    maxTextureEdge: [64, 16384],
     activeVideoDecoders: [0, 16],
     maxGraphOperationsPerUpdate: [1, 1000000],
   };
@@ -17,7 +22,8 @@ function validateBudget(value) {
         Number.isFinite(n) &&
         n >= range[0] &&
         n <= range[1] &&
-        (key === "maxDpr" || Number.isInteger(n)),
+        (["maxDpr", "maxZoom", "renderScale"].includes(key) ||
+          Number.isInteger(n)),
       "BUDGET",
       "Invalid stage budget " + key,
     );
@@ -71,7 +77,11 @@ export function createPlayerStage({
   validateBudget(budget);
   const limits = {
     estimatedGpuBytes: 96 * 1024 * 1024,
-    maxDpr: 1.5,
+    maxDpr: 3,
+    maxZoom: 3,
+    renderScale: 1,
+    maxCanvasPixels: 8388608,
+    maxTextureEdge: 4096,
     activeVideoDecoders: 1,
     maxGraphOperationsPerUpdate: 16384,
     ...budget,
@@ -106,7 +116,8 @@ export function createPlayerStage({
     bytes = 0,
     decoders = 0,
     slow = 0,
-    lastDowngrade = -Infinity,
+    lastWarning = -Infinity,
+    resolution = null,
     layoutDirty = true;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   const staticMotion = () => motion === "static" || reduced.matches;
@@ -122,12 +133,19 @@ export function createPlayerStage({
       raf = requestAnimationFrame(draw);
     }
   }
+  const textureEdge = (view) =>
+    Math.min(
+      view.resolver.manifest.quality[view.quality]?.maxEdge ??
+        view.resolver.manifest.quality.lite?.maxEdge ??
+        768,
+      limits.maxTextureEdge,
+      gpu?.maxTextureSize ?? 4096,
+    );
   async function lease(view, id, generation = view.generation) {
     const asset = await view.resolver.asset(id);
     if (view.disposed || generation !== view.generation)
       throw new DOMException("View disposed or replaced", "AbortError");
-    const maxEdge =
-        view.resolver.manifest.quality[view.quality]?.maxEdge ?? 768,
+    const maxEdge = textureEdge(view),
       key = `${view.resolver.digest}:${id}:${maxEdge}`;
     let entry = cache.get(key);
     if (!entry) {
@@ -375,7 +393,7 @@ export function createPlayerStage({
           view.audio.set(node.id, audio);
         }
         if (node.type === "text") {
-          const edge = manifest.quality[view.quality]?.maxEdge ?? 768;
+          const edge = textureEdge(view);
           const ratio = Math.min(
             1,
             edge / Math.max(node.width, node.height * 1.4),
@@ -412,7 +430,7 @@ export function createPlayerStage({
         if (node.type === "adapter") {
           const adapter = adapters.find((a) => a.id === node.adapter);
           ensure(adapter, "ADAPTER", "Required adapter not installed");
-          const edge = manifest.quality[view.quality]?.maxEdge ?? 768,
+          const edge = textureEdge(view),
             ratio = Math.min(1, edge / Math.max(node.width, node.height)),
             width = Math.max(1, Math.round(node.width * ratio)),
             height = Math.max(1, Math.round(node.height * ratio)),
@@ -512,17 +530,19 @@ export function createPlayerStage({
     lastTime = now;
     const started = performance.now();
     if (layoutDirty) layout();
-    const dpr = Math.min(
-        devicePixelRatio || 1,
-        limits.maxDpr,
-        Math.sqrt(
-          Math.max(1, limits.estimatedGpuBytes - bytes) /
-            (Math.max(1, root.clientWidth * root.clientHeight) * 4),
-        ),
-      ),
-      w = Math.max(1, Math.floor(root.clientWidth * dpr)),
-      h = Math.max(1, Math.floor(root.clientHeight * dpr));
-    gpu.begin(w, h);
+    resolution = surfaceResolution({
+      width: root.clientWidth,
+      height: root.clientHeight,
+      deviceDpr: window.devicePixelRatio,
+      zoom: window.visualViewport?.scale,
+      displayScale: limits.renderScale,
+      maxDpr: limits.maxDpr,
+      maxZoom: limits.maxZoom,
+      maxPixels: limits.maxCanvasPixels,
+      maxDimension: gpu.maxSurfaceDimension,
+      availableBytes: limits.estimatedGpuBytes - bytes,
+    });
+    gpu.begin(resolution.width, resolution.height);
     let needsTime = false;
     for (const view of views) {
       if (
@@ -537,7 +557,9 @@ export function createPlayerStage({
         inputs["tilt.x"] = inputs["tilt.y"] = 0;
         inputs.angle = 0.5;
       }
-      const viewport = view.rect.map((v) => v * dpr),
+      const viewport = view.rect.map(
+          (v, i) => v * (i % 2 ? resolution.scaleY : resolution.scaleX),
+        ),
         [x, y, vw, vh] = viewport,
         card = view.resolver.manifest.canvas;
       const flip = Math.abs(
@@ -741,22 +763,42 @@ export function createPlayerStage({
     const duration = performance.now() - started;
     if (duration > 25) slow++;
     else slow = Math.max(0, slow - 1);
-    if (slow > 90 && now - lastDowngrade >= 10000 && limits.maxDpr > 0.1) {
-      lastDowngrade = now;
-      const nextDpr = Math.max(
-        0.1,
-        Math.min(limits.maxDpr, limits.maxDpr * 0.8),
-      );
-      limits.maxDpr = nextDpr;
+    if (slow > 90 && now - lastWarning >= 10000) {
+      lastWarning = now;
       slow = 0;
       onDiagnostic({
-        type: "qualityChanged",
-        reason: "Sustained render cost",
-        maxDpr: limits.maxDpr,
+        type: "renderCost",
+        reason: "Sustained CPU submission cost",
+        durationMs: duration,
       });
     }
     if (needsTime) wake();
   }
+  function viewportChanged() {
+    layoutDirty = true;
+    wake();
+  }
+  window.addEventListener("resize", viewportChanged, {
+    signal: cleanup.signal,
+  });
+  window.visualViewport?.addEventListener("resize", viewportChanged, {
+    signal: cleanup.signal,
+  });
+  let densityQuery;
+  function densityChanged() {
+    densityQuery?.removeEventListener("change", densityChanged);
+    densityQuery = matchMedia(
+      `(resolution: ${window.devicePixelRatio || 1}dppx)`,
+    );
+    densityQuery.addEventListener("change", densityChanged);
+    viewportChanged();
+  }
+  densityChanged();
+  cleanup.signal.addEventListener(
+    "abort",
+    () => densityQuery?.removeEventListener("change", densityChanged),
+    { once: true },
+  );
   const resize = new ResizeObserver(() => {
     layoutDirty = true;
     wake();
@@ -834,7 +876,7 @@ export function createPlayerStage({
       model,
       {
         resolver = model.resolver,
-        quality = "lite",
+        quality = "standard",
         side = "front",
         inputMode = "host",
         onEvent,
@@ -874,6 +916,7 @@ export function createPlayerStage({
         poster,
         resolver,
         quality,
+        requestedQuality: quality,
         side,
         onEvent,
         inputs: { tilt: { x: 0, y: 0 } },
@@ -1014,7 +1057,8 @@ export function createPlayerStage({
         setQuality(value) {
           if (view.disposed) return;
           ensure(qualities.includes(value), "QUALITY", "Unknown quality");
-          if (view.quality !== value) {
+          view.requestedQuality = value;
+          if (view.quality !== value || !view.readyToDraw) {
             const from = view.quality;
             view.quality = value;
             const pending = loadSide(view);
@@ -1081,18 +1125,19 @@ export function createPlayerStage({
           raf = 0;
           draw(performance.now());
           const r = view.rect,
-            dpr = canvas.width / root.clientWidth,
+            scaleX = canvas.width / root.clientWidth,
+            scaleY = canvas.height / root.clientHeight,
             out = document.createElement("canvas");
-          out.width = Math.max(1, r[2] * dpr);
-          out.height = Math.max(1, r[3] * dpr);
+          out.width = Math.max(1, r[2] * scaleX);
+          out.height = Math.max(1, r[3] * scaleY);
           out
             .getContext("2d")
             .drawImage(
               canvas,
-              r[0] * dpr,
-              r[1] * dpr,
-              r[2] * dpr,
-              r[3] * dpr,
+              r[0] * scaleX,
+              r[1] * scaleY,
+              r[2] * scaleX,
+              r[3] * scaleY,
               0,
               0,
               out.width,
@@ -1133,7 +1178,10 @@ export function createPlayerStage({
         view.poster.hidden = false;
       }
       canvas.width = canvas.height = 1;
-      for (const view of live) await loadSide(view);
+      for (const view of live) {
+        view.quality = view.requestedQuality;
+        await loadSide(view);
+      }
       wake();
     },
     invalidateLayout() {
@@ -1142,6 +1190,9 @@ export function createPlayerStage({
     },
     diagnostics() {
       return {
+        resolution: resolution ? { ...resolution } : null,
+        textureBytes: bytes,
+        limits: { ...limits },
         views: views.size,
         pendingJobs: [...cache.values()].filter((e) => !e.texture).length,
         activeViews: [...views].filter(

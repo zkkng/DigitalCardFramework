@@ -2,7 +2,7 @@ import {readFile} from 'node:fs/promises';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const presentationModules=['index','card-view','integration','player','webgl','resolver','package','data','motion','validate','media','advanced-media','extensions','project','authoring','performance','album-motion'];
+const presentationModules=['index','card-view','integration','player','resolution','webgl','resolver','package','data','motion','validate','media','advanced-media','extensions','project','authoring','performance','album-motion'];
 const modules=['marketplace-ui','card-types','code-ui','ui','client','styles','atelier-styles','trade-client','trading-ui','collection-ui','studio-ui','inspector-ui','player-ui','ui-kit'];
 export async function serveReference(req,res,{production=false,assetOrigins=[]}={}){
   const path=new URL(req.url,'http://localhost').pathname;

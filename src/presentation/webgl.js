@@ -131,6 +131,11 @@ export function createWebGLRenderer(canvas) {
   const white = texture(whiteCanvas);
   return {
     gl,
+    maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+    maxSurfaceDimension: Math.min(
+      gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
+      ...gl.getParameter(gl.MAX_VIEWPORT_DIMS),
+    ),
     texture,
     updateTexture(t, source) {
       gl.bindTexture(gl.TEXTURE_2D, t);

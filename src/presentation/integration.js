@@ -59,7 +59,7 @@ export async function mountPresentation({
   target,
   definition,
   resolve = directoryResolver,
-  quality = "lite",
+  quality = "standard",
   hostInputs = {},
   onEvent,
   inputMode = "drag",

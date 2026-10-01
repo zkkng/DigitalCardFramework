@@ -146,7 +146,7 @@ export function mountStudio(
     slot.style.aspectRatio = `${project.manifest.canvas.width}/${project.manifest.canvas.height}`;
     stage = createPlayerStage({
       root: region,
-      budget: { estimatedGpuBytes: 192 * 1024 * 1024, maxDpr: 1.5 },
+      budget: { estimatedGpuBytes: 192 * 1024 * 1024, maxDpr: 3 },
     });
     view = stage.mount(
       slot,

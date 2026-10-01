@@ -4,7 +4,7 @@ const MiB = 1024 * 1024;
 /** Conservative authoring heuristics, not a prediction for a particular phone. */
 export const mobilePerformanceDefaults = Object.freeze({
   mode: "warn",
-  quality: "lite",
+  quality: "standard",
   layerTextureBytes: 8 * MiB,
   faceTextureBytes: 48 * MiB,
   layerDownloadBytes: 4 * MiB,
