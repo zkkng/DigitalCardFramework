@@ -1,6 +1,6 @@
 # Customization architecture
 
-Confirmed product requirement and researched design direction, 30 September 2026. Apply during every development phase, including the first website integration. This is a design contract; the mechanisms below are not yet implemented. Concrete API names, stack and packaging remain to be decided through working slices.
+Confirmed product requirement and researched design direction, 30 September 2026. Apply during every development phase, including the first website integration. This is the ongoing design contract. Runtime 0.1 implements a headless reveal controller, public replacement callbacks, configurable layouts and a local transactional core. [Implementation coverage](implementation-status.md) identifies the remaining module-registry, provider and compatibility work.
 
 ## What adopters must be able to do
 

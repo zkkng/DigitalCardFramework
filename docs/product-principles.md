@@ -1,6 +1,6 @@
 # Digital card framework — product and architecture principles
 
-Confirmed user direction, 30 September 2026. This clarification takes precedence over narrower MapleStory wording in earlier planning documents. It records the intended product and future design requirements; it does not claim those features are implemented.
+Confirmed user direction, 30 September 2026. This clarification takes precedence over narrower MapleStory wording in earlier planning documents. It records ongoing product and architecture requirements. See [implementation coverage](implementation-status.md) for the current executable core and remaining work.
 
 ## Open by default, easy to integrate
 

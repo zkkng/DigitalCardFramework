@@ -4,7 +4,7 @@ API version 0.1. All core methods are synchronous, detached-result methods. Brow
 
 ## Catalog
 
-publishCatalog(operator, manifest) validates and persists a complete JSON catalog. version increases for each publication. Definitions can be disabled/retired through enabled:false but published IDs are retained. Card line identity and variant card/rarity/supplyLimit are immutable. Use a new variant ID for another edition. Modified pack products increment revision. Each acquired copy retains its definition/variant snapshot.
+publishCatalog(operator, manifest) validates and persists a complete JSON catalog. version increases for each publication. Variants, products and recipes can be disabled through enabled:false; published IDs are retained. Card line identity and variant card/rarity/supplyLimit are immutable. Use a new variant ID for another edition. Modified pack products increment revision. Each acquired copy retains its definition/variant snapshot.
 
 | Field | Meaning |
 | --- | --- |
