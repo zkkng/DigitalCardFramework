@@ -1,4 +1,5 @@
 import Ajv from 'ajv';
+import {validatePresentationReference} from './presentation/integration.js';
 import {safeData} from './data.js';
 const ajv=new Ajv({allErrors:true,strict:true,validateFormats:false});
 export class FrameworkError extends Error {
@@ -73,6 +74,7 @@ export function validateCatalog(input) {
     if(x.description!==undefined)text(x.description,'card description',4000);
     if(x.back!==undefined)assetReference(x.back,'card back');
     if(x.appearance!==undefined)jsonObject(x.appearance,'appearance');
+    if(x.presentation!==undefined){try{validatePresentationReference(x.presentation);}catch(error){check(false,'INVALID_CATALOG',error.message);}}
     check(Array.isArray(x.layers??=[])&&x.layers.length<=24,'INVALID_CATALOG','layers must have at most 24 entries');
     const layerIds=new Set();
     for (const layer of x.layers) {

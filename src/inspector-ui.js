@@ -2,7 +2,7 @@ import {el,button} from './ui-kit.js';
 /** Camera is presentation state; it never changes copy ownership or card definitions. */
 function camera(stage,target){let yaw=0,pitch=0,zoom=1,drag=null;
   stage.tabIndex=0;stage.setAttribute('aria-label','3D card stage. Drag to rotate. Arrow keys rotate; plus and minus zoom; R resets.');
-  const apply=()=>{target.style.transform=`scale(${zoom}) rotateX(${pitch}deg) rotateY(${yaw}deg)`;stage.dataset.yaw=String(Math.round(yaw));for(const card of stage.querySelectorAll('.dc-card')){card.style.setProperty('--dc-x',String(Math.sin(yaw*Math.PI/180)*.8));card.style.setProperty('--dc-y',String(pitch/85));}};
+  const apply=()=>{target.style.transform=`scale(${zoom}) rotateX(${pitch}deg) rotateY(${yaw}deg)`;stage.dataset.yaw=String(Math.round(yaw));for(const card of stage.querySelectorAll('.dc-card')){card.style.setProperty('--dc-x',String(Math.sin(yaw*Math.PI/180)*.8));card.style.setProperty('--dc-y',String(pitch/85));card.setPresentationInputs?.({tilt:{x:Math.sin(yaw*Math.PI/180),y:pitch/85}});const angle=((yaw%360)+360)%360;card.setPresentationSide?.(angle>90&&angle<270?'back':'front');}};
   stage.addEventListener('pointerdown',e=>{if(e.target.closest('.dc-camera-controls'))return;drag={x:e.clientX,y:e.clientY,yaw,pitch};stage.setPointerCapture(e.pointerId);});
   stage.addEventListener('pointermove',e=>{if(!drag)return;yaw=drag.yaw+(e.clientX-drag.x)*.65;pitch=Math.max(-85,Math.min(85,drag.pitch-(e.clientY-drag.y)*.5));apply();});
   stage.addEventListener('pointerup',()=>drag=null);stage.addEventListener('pointercancel',()=>drag=null);
@@ -11,7 +11,7 @@ function camera(stage,target){let yaw=0,pitch=0,zoom=1,drag=null;
   controls.querySelectorAll('button')[0].setAttribute('aria-label','Rotate left');controls.querySelectorAll('button')[2].setAttribute('aria-label','Rotate right');controls.querySelectorAll('button')[3].setAttribute('aria-label','Zoom out');controls.querySelectorAll('button')[4].setAttribute('aria-label','Zoom in');stage.append(controls);apply();return {apply};
 }
 export function render3DInspector(copy,{cardRenderer,metadataRenderer,backRenderer,onClose,labels={},catalog}={}){
-  const node=el('section','dc-inspector'),grid=el('div','dc-inspector-grid'),stage=el('div','dc-3d-stage'),card=cardRenderer(copy,{interactive:false,backRenderer}),details=el('div');
+  const node=el('section','dc-inspector'),grid=el('div','dc-inspector-grid'),stage=el('div','dc-3d-stage'),card=cardRenderer(copy,{interactive:false,backRenderer,presentationMode:'interactive'}),details=el('div');
   card.tabIndex=-1;card.classList.add('dc-orbit-card');const inner=card.querySelector('.dc-card-inner')??card;inner.append(el('span','dc-card-edge'));stage.append(card);camera(stage,inner);
   details.append(el('span','dc-eyebrow','COLLECTION OBJECT'),el('h2','',copy.definition.name),el('p','dc-muted',copy.definition.description??'Explore both faces, layered depth and the history of this card.'));
   if(copy.definition.tags?.length){const tags=el('div','dc-tags');copy.definition.tags.forEach(t=>tags.append(el('span','dc-badge',t)));details.append(tags);}

@@ -15,7 +15,7 @@ const secret=async name=>process.env[name+'_FILE']?(await readFile(process.env[n
 const origin=process.env.SITE_ORIGIN;
 if(!origin||new URL(origin).origin!==origin||!origin.startsWith('https://'))throw new Error('SITE_ORIGIN must be an exact HTTPS origin');
 const encryptionKey=keyFromHex(await secret('STATE_ENCRYPTION_KEY'));if(!encryptionKey)throw new Error('STATE_ENCRYPTION_KEY is required');
-const issuer=process.env.OIDC_ISSUER,clientId=process.env.OIDC_CLIENT_ID;if(!issuer?.startsWith('https://')||!clientId)throw new Error('OIDC_ISSUER and OIDC_CLIENT_ID are required');
+const issuer=process.env.OIDC_ISSUER,clientId=process.env.OIDC_CLIENT_ID;
 const adminSubjects=JSON.parse(process.env.OPERATOR_SUBJECTS??'[]');if(!Array.isArray(adminSubjects)||adminSubjects.some(x=>typeof x!=='string'))throw new Error('OPERATOR_SUBJECTS must be a JSON string array');
 const dbPath=resolve(process.env.DATABASE_PATH??'data/production.sqlite');await mkdir(dirname(dbPath),{recursive:true});
 const extension=process.env.HOST_MODULE?await import(pathToFileURL(resolve(process.env.HOST_MODULE)).href):{};
@@ -26,8 +26,9 @@ const raw=framework.operatorCatalog({role:'admin'});
 for(const variant of raw.variants)for(const binding of Object.values(variant.bindings))if(binding.factory&&!extension.bindings?.[binding.factory])throw new Error('Configure binding factory '+binding.factory+' in HOST_MODULE');
 const audit=framework.audit({role:'admin'});if(!audit.ok||!store.integrity())throw new Error('Database verification failed; restore a verified backup');
 const sessions=new SessionStore(dbPath,{encryptionKey,maxSessions:extension.sessionOptions?.maxSessions}),rateLimit=extension.rateLimiter??createRateLimiter(extension.rateLimits);
+if(!extension.identityProvider&&(!issuer?.startsWith('https://')||!clientId))throw new Error('Configure OIDC or a host identityProvider');
 const provider=extension.identityProvider??await createOIDCProvider({issuer,clientId,clientSecret:await secret('OIDC_CLIENT_SECRET'),origin});
-const auth=createAuthHost({framework,sessions,provider,origin,adminSubjects,rateLimit});
+const auth=createAuthHost({framework,sessions,provider,origin,adminSubjects,resolveAccess:extension.resolveAccess,rateLimit});
 const api=createApiHandler({framework,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,exposeOperators:true,requireTradeReview:true,requirePrincipal:true,rateLimit,
   onRequest:event=>process.stdout.write(JSON.stringify({kind:'request',...event})+'\n')});
 const assetOrigins=(process.env.ASSET_ORIGINS??'').split(',').filter(Boolean);for(const value of assetOrigins)if(new URL(value).origin!==value||!value.startsWith('https://'))throw new Error('ASSET_ORIGINS requires exact HTTPS origins');

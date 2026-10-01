@@ -1,3 +1,5 @@
+import {createCardRenderer} from './presentation/card-view.js';
+const portableRenderers=new Map();
 import {createRevealController,createCommandRunner} from './client.js';
 import {defaultCSS} from './styles.js';
 import {render3DInspector,renderComparison} from './inspector-ui.js';
@@ -23,7 +25,8 @@ export function installStyles(root,{theme={},css=''}={}) {
   const style=element('style'); style.textContent=defaultCSS+'\n'+css; root.prepend(style);
   return ()=>{style.remove();root.classList.remove('dc-root');for(const name of Object.keys(theme)) if(themes.includes(name)) root.style.removeProperty(name);};
 }
-export function renderCard(copy,{onSelect,interactive=true,backRenderer,effects=true}={}) {
+export function renderCard(copy,{onSelect,interactive=true,backRenderer,effects=true,presentationMode='poster'}={}) {
+  if(copy.definition.presentation){if(!portableRenderers.has(presentationMode))portableRenderers.set(presentationMode,createCardRenderer({mode:presentationMode}));return portableRenderers.get(presentationMode)(copy,{onSelect});}
   const node=element('button','dc-card'); node.type='button';
   node.setAttribute('aria-label',copy.definition.name+', '+copy.rarityId+(copy.serialNumber?' '+copy.serialNumber+' of '+copy.editionTotal:''));
   const inner=element('span','dc-card-inner'),front=element('span','dc-front'),back=element('span','dc-back');

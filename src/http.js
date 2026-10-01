@@ -1,3 +1,4 @@
+import {hasPermission,publicPermissions} from './access.js';
 import {createServer} from 'node:http';
 import {FrameworkError} from './catalog.js';
 import {safeData} from './data.js';
@@ -33,13 +34,13 @@ export function createApiHandler({framework,resolveIdentity,allowedOrigin,expose
       if(rateLimit&&!rateLimit({actor,request,mutation:method==='POST'}))throw new FrameworkError('RATE_LIMITED','Too many requests; try again shortly',429);
       const publicGet=method==='GET' && (path==='/api/catalog' || path==='/api/availability' || path==='/api/public-albums' || /^\/api\/albums\/[^/]+$/.test(path));
       if(!publicGet && !actor?.userId) throw new FrameworkError('UNAUTHENTICATED','Sign in to continue',401);
-      if(path.startsWith('/api/operator/')){if(!exposeOperators||actor?.role!=='admin')throw new FrameworkError('FORBIDDEN','Operator authority required',403);}
+      if(path.startsWith('/api/operator/')){if(!exposeOperators||!hasPermission(actor,({'GET /api/operator/catalog':'catalog.read','GET /api/operator/audit':'audit.read','POST /api/operator/import/preview':'catalog.preview','POST /api/operator/import/commit':'catalog.publish'})[method+' '+path]))throw new FrameworkError('FORBIDDEN','Operator authority required',403);}
       const input=method==='POST'?await body(request,path.startsWith('/api/operator/')?8*1024*1024:1048576):undefined;
       const options={};for(const key of ['limit','after','search','sort'])if(url.searchParams.has(key))options[key]=key==='limit'?Number(url.searchParams.get(key)):url.searchParams.get(key);
       let result;
       if(method==='GET') {
         const routes={
-          '/api/catalog':()=>framework.catalog(), '/api/me':()=>({...framework.me(actor),role:actor.role==='admin'?'admin':'player'}),
+          '/api/catalog':()=>framework.catalog(), '/api/me':()=>({...framework.me(actor),role:actor.role==='admin'?'admin':'player',permissions:publicPermissions(actor)}),
           '/api/availability':()=>framework.availability(),'/api/pity':()=>framework.pityProgress(actor),
           '/api/wallet':()=>framework.wallet(actor), '/api/history':()=>framework.history(actor),
           '/api/inventory':()=>url.searchParams.has('limit')?framework.inventoryPage(actor,options):framework.inventory(actor), '/api/packs':()=>framework.packs(actor),

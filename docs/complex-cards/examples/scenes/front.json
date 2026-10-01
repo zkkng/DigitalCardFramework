@@ -2,242 +2,35 @@
   "dialect": "dc.scene2d@0.1",
   "nodes": [
     {
-      "id": "sky",
+      "id": "art",
       "type": "image",
-      "asset": "sky",
-      "transform": {
-        "x": 0,
-        "y": 0,
-        "width": 1000,
-        "height": 1500
+      "asset": "art",
+      "x": 0,
+      "y": 0,
+      "width": 1000,
+      "height": 1500,
+      "bindings": {
+        "rotation": [
+          "mul",
+          [
+            "input",
+            "tilt.x"
+          ],
+          12
+        ],
+        "material.angle": [
+          "input",
+          "angle"
+        ]
       },
-      "parallax": {
-        "x": 2,
-        "y": 1
-      },
-      "opacity": 1
-    },
-    {
-      "id": "firework",
-      "type": "image",
-      "asset": "firework",
-      "transform": {
-        "x": 180,
-        "y": 170,
-        "width": 256,
-        "height": 256
-      },
-      "parallax": {
-        "x": 9,
-        "y": 5
-      },
-      "opacity": 1,
       "material": {
-        "recipe": "dc.material.bloom@0.1",
-        "mask": "source-alpha",
-        "parameters": {
-          "progress": 0.5,
-          "feather": 0.22,
-          "intensity": 1.25
-        }
+        "kind": "glitter",
+        "size": 12,
+        "density": 0.4,
+        "roughness": 0.2,
+        "seed": 42,
+        "intensity": 2.2
       }
-    },
-    {
-      "id": "lake",
-      "type": "image",
-      "asset": "lake",
-      "transform": {
-        "x": 0,
-        "y": 850,
-        "width": 1000,
-        "height": 650
-      },
-      "parallax": {
-        "x": 5,
-        "y": 2
-      },
-      "opacity": 1,
-      "material": {
-        "recipe": "dc.material.water@0.1",
-        "mask": "source-alpha",
-        "parameters": {
-          "angle": 0,
-          "width": 0.18,
-          "intensity": 0.9
-        }
-      }
-    },
-    {
-      "id": "companion",
-      "type": "atlas-sequence",
-      "asset": "companion",
-      "transform": {
-        "x": 690,
-        "y": 1280,
-        "width": 128,
-        "height": 160
-      },
-      "parallax": {
-        "x": 18,
-        "y": 8
-      },
-      "opacity": 1,
-      "sequence": [
-        {
-          "rect": [
-            0,
-            0,
-            128,
-            160
-          ],
-          "pivot": [
-            64,
-            150
-          ],
-          "durationMs": 140
-        },
-        {
-          "rect": [
-            128,
-            0,
-            128,
-            160
-          ],
-          "pivot": [
-            64,
-            150
-          ],
-          "durationMs": 120
-        },
-        {
-          "rect": [
-            256,
-            0,
-            128,
-            160
-          ],
-          "pivot": [
-            64,
-            150
-          ],
-          "durationMs": 180
-        }
-      ]
-    },
-    {
-      "id": "petal",
-      "type": "image",
-      "asset": "petal",
-      "transform": {
-        "x": 440,
-        "y": 760,
-        "width": 42,
-        "height": 42,
-        "rotation": 27,
-        "pivotX": 21,
-        "pivotY": 21
-      },
-      "parallax": {
-        "x": 52,
-        "y": 26
-      },
-      "opacity": 1,
-      "material": {
-        "recipe": "dc.material.glitter@0.1",
-        "mask": "source-alpha",
-        "parameters": {
-          "angle": 0,
-          "flakeSize": 0.12,
-          "density": 0.28,
-          "intensity": 1.35
-        }
-      }
-    }
-  ],
-  "tracks": [
-    {
-      "id": "firework-bloom",
-      "node": "firework",
-      "property": "material.parameters.progress",
-      "input": "tilt.x",
-      "interpolation": "linear",
-      "outside": "clamp",
-      "keys": [
-        [
-          -1,
-          0
-        ],
-        [
-          -0.1,
-          0.2
-        ],
-        [
-          0.8,
-          1
-        ]
-      ]
-    },
-    {
-      "id": "lake-shimmer",
-      "node": "lake",
-      "property": "material.parameters.angle",
-      "input": "tilt.x",
-      "interpolation": "linear",
-      "outside": "clamp",
-      "keys": [
-        [
-          -1,
-          -1
-        ],
-        [
-          1,
-          1
-        ]
-      ]
-    },
-    {
-      "id": "petal-foil",
-      "node": "petal",
-      "property": "material.parameters.angle",
-      "input": "tilt.y",
-      "interpolation": "linear",
-      "outside": "clamp",
-      "keys": [
-        [
-          -1,
-          -0.7
-        ],
-        [
-          1,
-          0.9
-        ]
-      ]
-    },
-    {
-      "id": "companion-hop",
-      "node": "companion",
-      "property": "sequence.progress",
-      "input": "tilt.x",
-      "interpolation": "linear",
-      "outside": "clamp",
-      "keys": [
-        [
-          -1,
-          0
-        ],
-        [
-          -0.2,
-          0.35
-        ],
-        [
-          0.65,
-          0.75
-        ],
-        [
-          1,
-          1
-        ]
-      ]
     }
   ]
 }

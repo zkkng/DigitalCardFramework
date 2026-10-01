@@ -16,6 +16,7 @@ jobs:
         with:
           version: '11.19.0'
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --dir src/presentation install --frozen-lockfile
       - run: node --test test/*.test.js
       - run: pnpm audit --prod
       - run: docker build --tag digital-card-framework:ci .

@@ -1,24 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://digital-card.example/schemas/0.1/manifest.schema.json",
-  "title": "Proposed portable card manifest 0.1 (illustrative subset)",
-  "description": "Structural schema for the supplied example; not archive/media safety validation or a complete implementation of all proposed extensions.",
+  "$id": "https://digital-card.invalid/schema/manifest-0.1.0.json",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "format",
-    "contractVersion",
-    "id",
-    "revision",
-    "title",
-    "summary",
-    "profile",
-    "canvas",
-    "faces",
-    "assets",
-    "capabilities",
-    "quality"
-  ],
   "properties": {
     "format": {
       "const": "digital-card"
@@ -28,8 +12,7 @@
     },
     "id": {
       "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
-      "maxLength": 100
+      "pattern": "^[a-zA-Z][\\w.-]{0,99}$"
     },
     "revision": {
       "type": "integer",
@@ -43,125 +26,114 @@
     "summary": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 2000
+      "maxLength": 4000
     },
     "profile": {
-      "enum": [
-        "portable"
-      ]
+      "const": "portable"
     },
     "canvas": {
       "type": "object",
       "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
+      },
       "required": [
         "width",
         "height"
-      ],
-      "properties": {
-        "width": {
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "maximum": 10000
-        },
-        "height": {
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "maximum": 10000
-        }
-      }
+      ]
     },
     "faces": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "front",
-        "back"
-      ],
       "properties": {
         "front": {
           "type": "object",
           "additionalProperties": false,
+          "properties": {
+            "scene": {
+              "type": "string"
+            },
+            "poster": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][\\w.-]{0,99}$"
+            },
+            "description": {
+              "type": "string"
+            }
+          },
           "required": [
             "scene",
             "poster",
             "description"
-          ],
-          "properties": {
-            "scene": {
-              "$ref": "#/$defs/path"
-            },
-            "poster": {
-              "$ref": "#/$defs/id"
-            },
-            "description": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 2000
-            }
-          }
+          ]
         },
         "back": {
           "type": "object",
           "additionalProperties": false,
+          "properties": {
+            "scene": {
+              "type": "string"
+            },
+            "poster": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][\\w.-]{0,99}$"
+            },
+            "description": {
+              "type": "string"
+            }
+          },
           "required": [
             "scene",
             "poster",
             "description"
-          ],
-          "properties": {
-            "scene": {
-              "$ref": "#/$defs/path"
-            },
-            "poster": {
-              "$ref": "#/$defs/id"
-            },
-            "description": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 2000
-            }
-          }
+          ]
         }
-      }
+      },
+      "required": [
+        "front",
+        "back"
+      ]
     },
     "assets": {
       "type": "array",
-      "minItems": 2,
-      "maxItems": 2000,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "id",
-          "path",
-          "mediaType",
-          "sha256",
-          "bytes",
-          "width",
-          "height",
-          "role"
-        ],
         "properties": {
           "id": {
-            "$ref": "#/$defs/id"
+            "type": "string",
+            "pattern": "^[a-zA-Z][\\w.-]{0,99}$"
           },
           "path": {
-            "$ref": "#/$defs/path"
+            "type": "string"
           },
           "mediaType": {
             "enum": [
               "image/png",
               "image/webp",
-              "video/mp4"
+              "image/jpeg",
+              "video/mp4",
+              "video/webm",
+              "audio/wav",
+              "audio/mpeg",
+              "model/gltf-binary",
+              "application/x-rive",
+              "application/zip"
             ]
           },
           "sha256": {
             "type": "string",
-            "pattern": "^[0-9a-f]{64}$"
+            "pattern": "^[a-f0-9]{64}$"
           },
           "bytes": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 262144000
           },
           "width": {
             "type": "integer",
@@ -173,46 +145,47 @@
             "minimum": 1,
             "maximum": 16384
           },
+          "duration": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 3600
+          },
           "role": {
-            "enum": [
-              "poster",
-              "color",
-              "atlas",
-              "video"
-            ]
+            "type": "string"
           }
-        }
-      }
+        },
+        "required": [
+          "id",
+          "path",
+          "mediaType",
+          "sha256",
+          "bytes",
+          "role"
+        ]
+      },
+      "minItems": 2,
+      "maxItems": 2000
     },
     "capabilities": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "required",
-        "optional"
-      ],
       "properties": {
         "required": {
           "type": "array",
-          "uniqueItems": true,
           "items": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9.-]+@[0-9]+\\.[0-9]+$"
-          }
+            "type": "string"
+          },
+          "minItems": 0,
+          "maxItems": 2000
         },
         "optional": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "id",
-              "fallback"
-            ],
             "properties": {
               "id": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9.-]+@[0-9]+\\.[0-9]+$"
+                "type": "string"
               },
               "fallback": {
                 "enum": [
@@ -221,88 +194,137 @@
                   "static-pose"
                 ]
               }
-            }
-          }
+            },
+            "required": [
+              "id",
+              "fallback"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 2000
         }
-      }
+      },
+      "required": [
+        "required",
+        "optional"
+      ]
     },
     "quality": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "poster",
-        "lite"
-      ],
       "properties": {
         "poster": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "maxEdge"
-          ],
           "properties": {
             "maxEdge": {
-              "type": "integer",
+              "type": "number",
               "minimum": 64,
               "maximum": 4096
             }
-          }
+          },
+          "required": [
+            "maxEdge"
+          ]
         },
         "lite": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "maxEdge"
-          ],
           "properties": {
             "maxEdge": {
-              "type": "integer",
+              "type": "number",
               "minimum": 64,
               "maximum": 4096
             }
-          }
+          },
+          "required": [
+            "maxEdge"
+          ]
         },
         "standard": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "maxEdge"
-          ],
           "properties": {
             "maxEdge": {
-              "type": "integer",
+              "type": "number",
               "minimum": 64,
               "maximum": 4096
             }
-          }
+          },
+          "required": [
+            "maxEdge"
+          ]
         },
         "ultra": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "maxEdge"
-          ],
           "properties": {
             "maxEdge": {
-              "type": "integer",
+              "type": "number",
               "minimum": 64,
               "maximum": 4096
             }
-          }
+          },
+          "required": [
+            "maxEdge"
+          ]
         }
-      }
-    }
-  },
-  "$defs": {
-    "path": {
-      "type": "string",
-      "pattern": "^(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*$",
-      "maxLength": 240
+      },
+      "required": [
+        "poster",
+        "lite"
+      ]
     },
-    "id": {
-      "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
-      "maxLength": 100
-    }
-  }
+    "credits": {},
+    "inputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "enum": [
+              "number",
+              "boolean"
+            ]
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "min": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "type",
+          "default"
+        ]
+      }
+    },
+    "extensions": {}
+  },
+  "required": [
+    "format",
+    "contractVersion",
+    "id",
+    "revision",
+    "title",
+    "summary",
+    "profile",
+    "canvas",
+    "faces",
+    "assets",
+    "capabilities",
+    "quality"
+  ]
 }

@@ -1,3 +1,4 @@
+import {hasPermission} from './access.js';
 import {randomInt, randomUUID, createHash} from 'node:crypto';
 import {check, integer, text, jsonObject, validateCatalog} from './catalog.js';
 import {MemoryStore} from './store.js';
@@ -24,10 +25,10 @@ export class CardFramework {
     this.#bindings=bindings; this.#policies=policies;this.#limits={...limits};
   }
   close() { this.#store.close(); }
-  audit(actor){this.#admin(actor);return this.#store.read(auditState);}
-  #admin(actor) { check(actor?.role==='admin','FORBIDDEN','Operator authority required',403); }
+  audit(actor){this.#admin(actor,'audit.read');return this.#store.read(auditState);}
+  #admin(actor,permission) { check(hasPermission(actor,permission),'FORBIDDEN','Operator authority required: '+permission,403); }
   #user(s,actor) {
-    check(actor?.userId && s.users[actor.userId],'UNAUTHENTICATED','A verified framework user is required',401);
+    check(actor?.disabled!==true && actor?.userId && s.users[actor.userId],'UNAUTHENTICATED','A verified framework user is required',401);
     return s.users[actor.userId];
   }
   #catalog(s) {check(s.catalog,'NO_CATALOG','Publish a catalog first',409); return s.catalog;}
@@ -88,17 +89,17 @@ export class CardFramework {
       }
   }
   publishCatalog(actor,manifest) {
-    this.#admin(actor); const catalog=validateCatalog(manifest);
+    this.#admin(actor,'catalog.publish'); const catalog=validateCatalog(manifest);
     return this.#store.transact(s=>{
       this.#validateRevision(catalog,s.catalog);
       s.catalog=catalog; this.#event(s,'catalog.published',{version:catalog.version});
       return this.#publicCatalog(catalog);
     });
   }
-  operatorCatalog(actor){this.#admin(actor);return this.#store.read(s=>this.#catalog(s));}
-  previewImport(actor,input){this.#admin(actor);return this.#store.read(s=>{const preview=prepareImport({...input,base:s.catalog});this.#validateRevision(preview.manifest,s.catalog);return preview;});}
+  operatorCatalog(actor){this.#admin(actor,'catalog.read');return this.#store.read(s=>this.#catalog(s));}
+  previewImport(actor,input){this.#admin(actor,'catalog.preview');return this.#store.read(s=>{const preview=prepareImport({...input,base:s.catalog});this.#validateRevision(preview.manifest,s.catalog);return preview;});}
   commitImport(actor,{key,manifest,digest,expectedVersion}) {
-    this.#admin(actor);text(key,'import key',128);
+    this.#admin(actor,'catalog.publish');text(key,'import key',128);
     return this.#store.transact(s=>{
       s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,inputHash=contentDigest({manifest,digest,expectedVersion});
       if(s.operatorRequests[token]){check(s.operatorRequests[token].hash===inputHash,'IDEMPOTENCY_CONFLICT','Import key already used',409);return s.operatorRequests[token].result;}
@@ -119,7 +120,7 @@ export class CardFramework {
   }
   catalog() {return this.#store.read(s=>this.#publicCatalog(this.#catalog(s)));}
   registerUser(actor,{provider,subject,displayName}) {
-    this.#admin(actor); text(provider,'identity provider',2048); text(subject,'identity subject',300); text(displayName,'display name',100);
+    this.#admin(actor,'accounts.register'); text(provider,'identity provider',2048); text(subject,'identity subject',300); text(displayName,'display name',100);
     return this.#store.transact(s=>{
       const existing=Object.values(s.users).find(u=>u.provider===provider && u.subject===subject);
       if (existing) {existing.displayName=displayName; return existing;}
@@ -131,7 +132,7 @@ export class CardFramework {
     });
   }
   grantCurrency(actor,{userId,currencyId,amount,reason,key}) {
-    this.#admin(actor); integer(amount,'grant amount'); text(reason,'grant reason');
+    this.#admin(actor,'currency.grant'); integer(amount,'grant amount'); text(reason,'grant reason');
     return this.#command({userId},key,'currency.granted',{currencyId,amount,reason},s=>{
       this.#currency(s,currencyId); this.#adjust(s,userId,currencyId,amount,'grant',reason);
       return {userId,currencyId,amount,balance:s.balances[userId][currencyId]};
@@ -372,7 +373,7 @@ export class CardFramework {
   #expire(s) {
     for(const trade of Object.values(s.trades)) if(trade.status==='pending' && Date.parse(trade.expiresAt)<=Date.parse(this.#clock())) this.#release(s,trade,'expired');
   }
-  sweepExpiredTrades(actor) {this.#admin(actor);if(!this.#store.read(s=>Object.values(s.trades).some(t=>t.status==='pending'&&Date.parse(t.expiresAt)<=Date.parse(this.#clock()))))return {ok:true};return this.#store.transact(s=>{this.#expire(s); return {ok:true};});}
+  sweepExpiredTrades(actor) {this.#admin(actor,'maintenance.run');if(!this.#store.read(s=>Object.values(s.trades).some(t=>t.status==='pending'&&Date.parse(t.expiresAt)<=Date.parse(this.#clock()))))return {ok:true};return this.#store.transact(s=>{this.#expire(s); return {ok:true};});}
   trades(actor) {
     const current=this.#store.read(s=>{const u=this.#user(s,actor);return {expired:Object.values(s.trades).some(t=>t.status==='pending'&&Date.parse(t.expiresAt)<=Date.parse(this.#clock())),items:Object.values(s.trades).filter(t=>t.fromUserId===u.id||t.toUserId===u.id).map(t=>({...t,digest:this.#tradeDigest(t),fromName:s.users[t.fromUserId].displayName,toName:s.users[t.toUserId].displayName}))};});if(!current.expired)return current.items;
     return this.#store.transact(s=>{const u=this.#user(s,actor); this.#expire(s); return Object.values(s.trades).filter(t=>t.fromUserId===u.id || t.toUserId===u.id).map(t=>({...t,digest:this.#tradeDigest(t),fromName:s.users[t.fromUserId].displayName,toName:s.users[t.toUserId].displayName}));});
@@ -463,7 +464,7 @@ export class CardFramework {
   bindings(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return Object.values(s.copies).filter(c=>c.state==='owned')
     .flatMap(c=>Object.entries(c.bindings).filter(([,b])=>b.holderId===u.id).map(([namespace,b])=>({copyId:c.id,namespace,...clone(b)})));});}
   events(actor,{after=0,limit=100}={}) {
-    this.#admin(actor); integer(after,'event cursor',0); integer(limit,'event limit',1,1000);
+    this.#admin(actor,'events.read'); integer(after,'event cursor',0); integer(limit,'event limit',1,1000);
     return this.#store.read(s=>s.events.filter(e=>e.sequence>after).slice(0,limit));
   }
 }

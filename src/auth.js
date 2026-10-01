@@ -41,12 +41,12 @@ export async function createOIDCProvider({issuer,clientId,clientSecret,origin,di
   };
 }
 
-export function createAuthHost({framework,sessions,provider,origin,adminSubjects=[],sessionTTL=7*86400000,secure=true,rateLimit=()=>true}){
+export function createAuthHost({framework,sessions,provider,origin,adminSubjects=[],resolveAccess,sessionTTL=7*86400000,secure=true,rateLimit=()=>true}){
   if(secure&&new URL(origin).protocol!=='https:')throw new Error('Authentication requires an HTTPS origin');
   const sessionName=secure?'__Host-dc_session':'dc_session',flowName=secure?'__Host-dc_flow':'dc_flow';
   const admins=new Set(adminSubjects),setCookie=(name,value,maxAge)=>`${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure?'; Secure':''}`;
   return {
-    resolveIdentity(request){const session=sessions.get(cookie(request,sessionName),'session');return session?{userId:session.userId,role:admins.has(session.subject)?'admin':'player'}:null;},
+    resolveIdentity(request){const session=sessions.get(cookie(request,sessionName),'session');if(!session)return null;const access=resolveAccess?resolveAccess({issuer:session.issuer,subject:session.subject,userId:session.userId}):{role:admins.has(session.subject)?'admin':'player'};if(!access||access.disabled||access.then)return null;return {userId:session.userId,role:access.role==='admin'?'admin':'player',permissions:Array.isArray(access.permissions)?access.permissions.filter(p=>typeof p==='string'):[]};},
     async handle(req,res){const url=new URL(req.url,origin);if(!url.pathname.startsWith('/auth/'))return false;
       res.setHeader('Cache-Control','no-store');
       try{
@@ -58,7 +58,7 @@ export function createAuthHost({framework,sessions,provider,origin,adminSubjects
           const flow=sessions.get(cookie(req,flowName),'flow',{consume:true});if(!flow)throw new Error('Login expired');
           const identity=await provider.finish(url,flow);if(!identity?.issuer||!identity?.subject)throw new Error('Invalid identity');
           const user=framework.registerUser({role:'admin'},{provider:identity.issuer,subject:identity.subject,displayName:identity.displayName});
-          sessions.revoke(cookie(req,sessionName));const secret=sessions.create('session',{userId:user.id,subject:identity.subject},sessionTTL);
+          sessions.revoke(cookie(req,sessionName));const secret=sessions.create('session',{userId:user.id,issuer:identity.issuer,subject:identity.subject},sessionTTL);
           res.setHeader('Set-Cookie',[setCookie(flowName,'',0),setCookie(sessionName,secret,Math.floor(sessionTTL/1000))]);res.statusCode=303;res.setHeader('Location','/');res.end();
         }else if(url.pathname==='/auth/logout'&&req.method==='POST'){
           if(req.headers.origin!==origin){res.statusCode=403;res.end('Origin rejected');return true;}

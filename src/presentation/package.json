@@ -1,0 +1,47 @@
+{
+  "name": "@digital-card/presentation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Portable layered cards, creator tools and lifecycle-managed rendering",
+  "exports": {
+    ".": "./index.js",
+    "./package": "./package.js",
+    "./compiler": "./compiler.js",
+    "./studio": "./studio.js",
+    "./studio.css": "./studio.css",
+    "./adapters": "./adapters.js",
+    "./integration": "./integration.js",
+    "./extensions": "./extensions.js",
+    "./service": "./service.js",
+    "./program": "./program.js",
+    "./identity": "./identity.js",
+    "./signatures": "./signatures.js",
+    "./authoring": "./authoring.js",
+    "./layered-source": "./layered-source.js",
+    "./layered-package": "./layered-package.js",
+    "./layered-import": "./layered-import.js"
+  },
+  "dependencies": {
+    "@lottiefiles/dotlottie-web": "0.80.0",
+    "@rive-app/canvas": "2.44.0",
+    "@xmldom/xmldom": "0.9.12",
+    "ag-psd": "31.0.2",
+    "ethers": "6.17.0",
+    "siwe": "3.0.0",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "prettier": "3.9.9"
+  },
+  "engines": {
+    "node": ">=24.14.0"
+  },
+  "bin": {
+    "dcard": "./cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test ../../test/presentation*.test.js"
+  }
+}

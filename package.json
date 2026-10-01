@@ -22,7 +22,15 @@
     "./player-ui": "./src/player-ui.js",
     "./auth": "./src/auth.js",
     "./encryption": "./src/encryption.js",
-    "./contracts": "./src/contracts.js"
+    "./contracts": "./src/contracts.js",
+    "./presentation": "./src/presentation/index.js",
+    "./presentation/studio": "./src/presentation/studio.js",
+    "./presentation/service": "./src/presentation/service.js",
+    "./presentation/authoring": "./src/presentation/authoring.js",
+    "./presentation/compiler": "./src/presentation/compiler.js",
+    "./presentation/layered-source": "./src/presentation/layered-source.js",
+    "./presentation/layered-package": "./src/presentation/layered-package.js",
+    "./access": "./src/access.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",

@@ -1,0 +1,256 @@
+.dcard-studio {
+  --studio-bg: #101722;
+  --studio-panel: #18212e;
+  --studio-border: #334258;
+  --studio-accent: #e5c394;
+  font:
+    15px/1.45 system-ui,
+    sans-serif;
+  color: #e9edf4;
+  background: var(--studio-bg);
+  min-height: 100vh;
+  padding: 20px;
+  box-sizing: border-box;
+}
+.dcard-studio * {
+  box-sizing: border-box;
+}
+.dcard-studio button,
+.dcard-studio input,
+.dcard-studio select {
+  font: inherit;
+}
+.dcard-studio button {
+  padding: 8px 12px;
+  background: #233147;
+  color: #e9edf4;
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.dcard-studio button:hover,
+.dcard-studio button:focus-visible {
+  border-color: var(--studio-accent);
+}
+.dcs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.dcs-layout {
+  display: grid;
+  grid-template-columns: 210px minmax(260px, 1fr) 280px;
+  gap: 20px;
+  align-items: start;
+}
+.dcs-layers,
+.dcs-properties {
+  background: var(--studio-panel);
+  padding: 16px;
+  border: 1px solid var(--studio-border);
+  border-radius: 10px;
+  max-height: 80vh;
+  overflow: auto;
+}
+.dcs-layers h2,
+.dcs-properties h2 {
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+.dcs-layers button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 5px;
+  overflow-wrap: anywhere;
+}
+.dcs-layers .is-selected {
+  border-color: var(--studio-accent);
+  background: #35435a;
+}
+.dcs-center {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+}
+.dcs-region {
+  position: relative;
+  width: min(100%, 430px);
+  aspect-ratio: 2/3;
+  border: 1px solid #65718b;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.dcs-slot {
+  position: absolute;
+  inset: 0;
+}
+.dcs-center > input {
+  width: min(90%, 430px);
+  accent-color: var(--studio-accent);
+}
+.dcs-properties label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 10px 0;
+  color: #bfcbdb;
+}
+.dcs-properties input,
+.dcs-properties select {
+  width: 100%;
+  background: #101722;
+  color: #fff;
+  border: 1px solid var(--studio-border);
+  border-radius: 4px;
+  padding: 6px;
+  min-height: 34px;
+}
+.dcs-position {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+.dcs-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.dcs-properties button {
+  margin: 5px 5px 5px 0;
+}
+.dcs-properties details {
+  border-top: 1px solid var(--studio-border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.dcs-properties summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--studio-accent);
+}
+.dcs-properties h3 {
+  font-size: 14px;
+}
+.dcs-status {
+  color: #bac7d9;
+  min-height: 24px;
+  margin: 18px 0 0;
+}
+.dcs-mask {
+  position: absolute;
+  z-index: 4;
+  cursor: crosshair;
+  opacity: 0.6;
+  outline: 2px solid #edca91;
+  touch-action: none;
+}
+.dcard-studio a {
+  color: var(--studio-accent);
+}
+@media (max-width: 850px) {
+  .dcs-layout {
+    grid-template-columns: 160px minmax(200px, 1fr);
+  }
+  .dcs-properties {
+    grid-column: 1/-1;
+    max-height: none;
+  }
+  .dcs-region {
+    max-width: 360px;
+  }
+  .dcard-studio {
+    padding: 12px;
+  }
+}
+@media (max-width: 480px) {
+  .dcs-layout {
+    display: flex;
+    flex-direction: column;
+  }
+  .dcs-center {
+    order: -1;
+    width: 100%;
+  }
+  .dcs-layers,
+  .dcs-properties {
+    width: 100%;
+  }
+  .dcs-layers {
+    max-height: 220px;
+  }
+}
+.dcs-paint-dialog {
+  background: #18212e;
+  color: #e9edf4;
+  border: 1px solid #67778e;
+  border-radius: 10px;
+  padding: 20px;
+  width: min(700px, 92vw);
+}
+.dcs-paint-dialog::backdrop {
+  background: #030711cc;
+}
+.dcs-paint-dialog h2 {
+  margin: 0;
+}
+.dcs-paint-dialog p {
+  font-size: 14px;
+  color: #bfcbdb;
+}
+.dcs-paint-surface {
+  position: relative;
+  max-height: 60vh;
+  max-width: 100%;
+  width: min(450px, 60vw);
+  margin: 15px auto;
+  background: repeating-conic-gradient(#263244 0% 25%, #17212f 0% 50%) 50%/20px
+    20px;
+}
+.dcs-paint-surface canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.dcs-paint-dialog button {
+  margin: 8px 8px 0 0;
+}
+.dcs-paint-dialog label {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.dcs-paint-dialog input {
+  width: 70px;
+}
+
+.dcs-import-report {
+  max-width: 720px;
+  max-height: 85vh;
+  background: #172235;
+  color: #edf1f7;
+  border: 1px solid #62718b;
+  border-radius: 16px;
+  padding: 24px;
+}
+.dcs-import-report li {
+  margin: 12px 0;
+}
+.dcs-import-report button {
+  margin: 6px;
+}
+.dcs-import-report::backdrop {
+  background: #050b17cc;
+}
+.dcs-properties textarea {
+  width: 100%;
+  min-height: 110px;
+  font: 12px monospace;
+  background: #0d1626;
+  color: #dce7f4;
+  border: 1px solid #46536a;
+  border-radius: 8px;
+}

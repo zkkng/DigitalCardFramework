@@ -1,6 +1,6 @@
 # Portable complex cards
 
-**Design specification, 1 October 2026. Proposed contract version 0.1.0. The new package format, player, compiler and studio described here are not implemented yet.**
+**Runtime 0.1.0, 1 October 2026. The portable package, player, importer, creator APIs and studio are implemented. Start with the [runtime guide](runtime.md), [headless creator API](creator-api.md), [access model](../access-and-identity.md) and [verified coverage/limits](implementation-status.md). The larger specification remains a design roadmap.**
 
 ## The answer
 
@@ -46,7 +46,7 @@ flowchart LR
 1. [Full specification](specification.md): package, scene model, effects, video, player, website integration, customization, security, identity and authoring.
 2. [Implementation plan](implementation-plan.md): actual repository changes, milestones, migration of the current cards, acceptance gates and remaining decisions.
 3. [Research](research.md): alternatives, primary sources, recommendations and their limits.
-4. [Proposed API contracts](contracts.d.ts): lifecycle and host integration types; illustrative, not current exports.
+4. [Runtime API contracts](contracts.d.ts): key lifecycle and authoring types; concrete module documentation covers advanced adapters.
 5. [Example presentation](examples/lakeside.card.json): art-free structural example with layered front and video back.
 6. [Validation checklist](acceptance.md): required runtime, import, portability and real-device tests.
 

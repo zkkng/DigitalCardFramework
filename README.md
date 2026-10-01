@@ -89,6 +89,6 @@ Real identity-provider configuration, DNS/TLS and protected credentials are requ
 - [Customization recipes](docs/customization-recipes.md)
 - [Architecture](docs/customization-architecture.md) and [production decisions](docs/adr-002-production-profile.md)
 - [Release verification](docs/verification-0.2.0.md)
-- [Portable complex-card design](docs/complex-cards/README.md), tracked separately from this collector release
+- [Portable complex-card runtime](docs/complex-cards/README.md), [creator API](docs/complex-cards/creator-api.md), and [access/identity](docs/access-and-identity.md)
 
 Framework code, generic examples, tests and documentation belong here. Artwork, licensed card data and MapleStory/Quiet Grove integration belong outside this repository.
