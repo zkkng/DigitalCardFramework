@@ -10,10 +10,12 @@
   "exports": {
     ".": "./src/index.js",
     "./sqlite": "./src/sqlite.js",
+    "./ui": "./src/ui.js",
     "./client": "./src/client.js",
     "./http": "./src/http.js"
   },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "start": "node examples/server.js"
   }
 }
