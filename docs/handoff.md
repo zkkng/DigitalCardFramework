@@ -21,4 +21,4 @@ Repository: https://github.com/zkkng/DigitalCardFramework (private), main. Local
 
 Another task owns src/presentation, its test/presentation* files, docs/complex-cards/implementation-status.md and any related integration edits such as the catalog presentation reference. They were preserved and excluded from collector commits. Do not overwrite or stage those changes as cleanup. Consult that task's independent status/conformance report before claiming advanced media/package features are complete.
 
-The collector's cardRenderer/inspectorRenderer/comparisonRenderer/view contracts are the integration points for that player. Generic source, tests and docs belong here; artwork/game data and MapleStory host wiring stay external.
+The collector's cardRenderer/inspectorRenderer/comparisonRenderer/view contracts are the integration points for that player. Generic source, tests and docs belong here; artwork/game data and host-specific host wiring stay external.

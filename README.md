@@ -83,6 +83,8 @@ Real identity-provider configuration, DNS/TLS and protected credentials are requ
 
 ## Documentation and evidence
 
+- [Future GitHub wiki specification](docs/wiki-spec/README.md): section plan, writing standards, acceptance criteria and feature-change audits.
+
 - [Current coverage and suggestions](docs/implementation-status.md)
 - [Research white paper](docs/white-paper.md)
 - [API](docs/core-api.md) and [generated OpenAPI](docs/openapi.json)
@@ -91,4 +93,4 @@ Real identity-provider configuration, DNS/TLS and protected credentials are requ
 - [Release verification](docs/verification-0.2.0.md)
 - [Portable complex-card runtime](docs/complex-cards/README.md), [creator API](docs/complex-cards/creator-api.md), and [access/identity](docs/access-and-identity.md)
 
-Framework code, generic examples, tests and documentation belong here. Artwork, licensed card data and MapleStory/Quiet Grove integration belong outside this repository.
+Framework code, generic examples, tests and documentation belong here. Artwork, licensed card data and host-specific integration belong outside this repository.

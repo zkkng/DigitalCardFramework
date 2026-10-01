@@ -12,7 +12,7 @@ The portable implementation is under `src/presentation`. The broader design is a
 - Immutable presentation references in catalog and issued-copy snapshots, poster grids and interactive inspectors, alternative standalone host composition.
 - Durable bounded import jobs, authorization callback, scanner boundary, atomic content publication, quarantine and retention review.
 - Granular server administrative permissions, replaceable identity/access mapping, default collector restrictions and current-session permission revocation.
-- Two companion cards migrated using approved artwork outside Git; accurate renderer-generated face posters. Generic source stays separate from the Maple integration tools and media.
+- Two companion cards migrated using approved artwork outside Git; accurate renderer-generated face posters. Generic source stays separate from the host-specific integration tools and media.
 
 ## Verification
 

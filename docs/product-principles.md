@@ -1,10 +1,10 @@
 # Digital card framework — product and architecture principles
 
-Confirmed user direction, 30 September 2026. This clarification takes precedence over narrower MapleStory wording in earlier planning documents. It records ongoing product and architecture requirements. See [implementation coverage](implementation-status.md) for the current executable core and remaining work.
+Confirmed user direction, 30 September 2026. This clarification takes precedence over narrower host-specific wording in earlier planning documents. It records ongoing product and architecture requirements. See [implementation coverage](implementation-status.md) for the current executable core and remaining work.
 
 ## Open by default, easy to integrate
 
-Build a reusable digital card platform that can be connected to many host systems with a small, documented integration layer. MapleStory / Quiet Grove is one content package, theme and host integration. The core must work with unrelated card subjects, art styles, account systems, currencies and external applications.
+Build a reusable digital card platform that can be connected to many host systems with a small, documented integration layer. host-specific is one content package, theme and host integration. The core must work with unrelated card subjects, art styles, account systems, currencies and external applications.
 
 The reusable experience covers pack creation and opening, persistent collecting, collection browsing, albums, trading, and future features. Trading is part of the intended platform, while its first release timing and exact policies remain undecided. Future modules must build on the same stable catalog and owned-copy model, without requiring a rewrite or a fork for each host.
 
@@ -16,11 +16,11 @@ Customization is a primary requirement in every phase. Hosts and mod authors can
 
 - **Core:** catalog identities, pack rules and persisted outcomes, ownership, albums, transfer state, extension contracts and transaction history.
 - **Presentation:** configurable pack opening, card rendering, effects, collection and album views. Card art and effects are data-driven assets with optional presentation profiles.
-- **Content packages:** any card subject, line taxonomy, tags, rarity/variant definitions, pack pools, display fields, albums and policies. No universal MapleStory mob fields, class list or combat stats.
+- **Content packages:** any card subject, line taxonomy, tags, rarity/variant definitions, pack pools, display fields, albums and policies. No universal host-specific mob fields, class list or combat stats.
 - **Host adapters:** account identity, points/currency authorization and spending, eligibility, optional delivery/redemption and external state. Build a real adapter for each supported host rather than promising zero-work compatibility with every system.
 - **Optional modules:** trading, rewards/codes, achievements, recipes and future additions using documented APIs, events and capabilities. Missing optional modules do not prevent basic collecting.
 
-Keep domain assumptions out of the generic core. NX is the Quiet Grove adapter's currency; another host can use points, credits, tokens or its own balance. A product references a configured currency/provider rather than a hard-coded NX field. Distribution can also use grants or other configured acquisition rules. The host controls issuance and economy policy.
+Keep domain assumptions out of the generic core. configured currency is the reference host adapter's currency; another host can use points, credits, tokens or its own balance. A product references a configured currency/provider rather than a hard-coded configured currency field. Distribution can also use grants or other configured acquisition rules. The host controls issuance and economy policy.
 
 Make adoption practical: a standalone demo, validated sample content, a small adapter SDK, documented API/event contracts, clear capability discovery, migration/versioning rules and adapter conformance examples. Support embedding existing UI or consuming the API with another frontend. Measure ease of integration through a second unrelated demo integration, not just claims in documentation.
 

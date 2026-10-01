@@ -4,19 +4,19 @@ This preserved proposal predates runtime 0.1.0. See [current coverage](../implem
 
 # Art Card Pack Framework Specification
 
-Version 1.0 design proposal · 30 September 2026 · Prepared for the Quiet Grove project and future framework adopters
+Version 1.0 design proposal · 30 September 2026 · Prepared for the reference host project and future framework adopters
 
-**Latest confirmed architecture direction:** [Card-Framework-Product-Principles.md](../product-principles.md) takes precedence over host-specific wording in this proposal. The platform is open-ended by default and easy to connect through documented adapters: pack opening, collecting, albums, trading and future modules must work with unrelated card sets and host systems. Game accounts and NX below describe the first Quiet Grove integration, not universal core requirements. Trading is part of the intended product, with first-release timing undecided. Codes/rewards are optional examples of namespaced attributes and bindings; extension schemas, copy/definition scope, privacy, transfer and use lifecycles must be explicit. GPT/local-AI generation is an optional content-authoring workflow. These requirements are recorded for design; they are not a claim that the system is implemented.
+**Latest confirmed architecture direction:** [Card-Framework-Product-Principles.md](../product-principles.md) takes precedence over host-specific wording in this proposal. The platform is open-ended by default and easy to connect through documented adapters: pack opening, collecting, albums, trading and future modules must work with unrelated card sets and host systems. Game accounts and configured currency below describe the first reference host integration, not universal core requirements. Trading is part of the intended product, with first-release timing undecided. Codes/rewards are optional examples of namespaced attributes and bindings; extension schemas, copy/definition scope, privacy, transfer and use lifecycles must be explicit. GPT/local-AI generation is an optional content-authoring workflow. These requirements are recorded for design; they are not a claim that the system is implemented.
 
-This specification defines a reusable system for collecting digital art cards: sign in through a game account, purchase packs with the host server’s currency, open them, organize the cards into albums, and optionally redeem associated game rewards. Quiet Grove is the first intended integration. The framework must also run with a demonstration adapter and support other servers without changes to its core.
+This specification defines a reusable system for collecting digital art cards: sign in through a game account, purchase packs with the host server’s currency, open them, organize the cards into albums, and optionally redeem associated game rewards. reference host is the first intended integration. The framework must also run with a demonstration adapter and support other servers without changes to its core.
 
 This is a specification for future implementation. It does not claim that purchases, cards, rewards, or adapters are implemented, tested, or deployed. Existing website authentication is useful integration groundwork; its existence does not establish that the economic integration is safe.
 
-**Confirmed requirements** come from the project discussion. **Proposed defaults** resolve engineering choices so that implementation can proceed coherently after review. Example counts, prices, percentages, product names, and reward contents are illustrative and are not approved Quiet Grove economy settings. Requirements using **must** describe the intended acceptance contract for the proposed framework.
+**Confirmed requirements** come from the project discussion. **Proposed defaults** resolve engineering choices so that implementation can proceed coherently after review. Example counts, prices, percentages, product names, and reward contents are illustrative and are not approved reference host economy settings. Requirements using **must** describe the intended acceptance contract for the proposed framework.
 
 ## 1 Product definition
 
-**Development repositories:** Framework source and ongoing design are maintained in a dedicated Git repository and pushed to GitHub. Exclude artwork and game assets. Keep MapleStory/Quiet Grove integration in a separate repository that consumes versioned framework contracts. Local roots: `DigitalCardFramework/` and `MapleStoryCardIntegration/`. Read [repository boundaries](../repository-boundaries.md); this proposal predates runtime implementation.
+**Development repositories:** Framework source and ongoing design are maintained in a dedicated Git repository and pushed to GitHub. Exclude artwork and game assets. Keep host-specific integration in a separate repository that consumes versioned framework contracts. Local roots: `DigitalCardFramework/` and `HostIntegration/`. Read [repository boundaries](../repository-boundaries.md); this proposal predates runtime implementation.
 
 The product is a digital art collection platform with game account integration. Its main attraction is owning beautiful cards, discovering variants, completing collections, and arranging personal albums. A card can be valuable to its owner through its art, subject, treatment, provenance, or associated reward. No combat statistics are necessary.
 
@@ -27,12 +27,12 @@ The reusable distribution has four parts:
 3. **Integration adapters:** authentication, account eligibility, wallet operations, character lookup, and optional reward delivery.
 4. **Content packages:** lines, artwork references, card definitions, visual treatments, pack rules, reward policies, translations, and official album layouts.
 
-Quiet Grove supplies its branding, content, adapter configuration, and server-specific bridge. The generic core must contain no MapleStory table names, password algorithms, item IDs, server addresses, or assumptions about NX credit versus prepaid balances.
+reference host supplies its branding, content, adapter configuration, and server-specific bridge. The generic core must contain no host-specific table names, password algorithms, item IDs, server addresses, or assumptions about configured currency credit versus prepaid balances.
 
 ### Confirmed scope
 
-- Accounts use the host's identity provider; Quiet Grove ties them to an existing game account.
-- Players purchase different types of packs using configured host-controlled currency or points; Quiet Grove uses NX.
+- Accounts use the host's identity provider; reference host ties them to an existing game account.
+- Players purchase different types of packs using configured host-controlled currency or points; reference host uses configured currency.
 - Lines organize artwork, products, opening presentation, and reward rules.
 - Pack openings are polished and support rarity-specific presentation.
 - Each acquired card copy persists and can be organized into virtual albums.
@@ -47,7 +47,7 @@ Quiet Grove supplies its branding, content, adapter configuration, and server-sp
 
 The initial release does not implement a card battler, matchmaking, real-money checkout, cash-out, an NFT system, a trading marketplace, or Marvel Machine. Trading, duplicate conversion, achievements, and gameplay integrations have extension boundaries described below. They are separate delivery milestones, not hidden prerequisites for basic collecting.
 
-**NX correction:** the host decides how players receive NX. There is no assumed unlimited free NX faucet or simulated checkout requirement. Prices must be chosen alongside the eventual allocation policy. The framework does not mint host currency as part of ordinary purchases.
+**configured currency correction:** the host decides how players receive configured currency. There is no assumed unlimited free configured currency faucet or simulated checkout requirement. Prices must be chosen alongside the eventual allocation policy. The framework does not mint host currency as part of ordinary purchases.
 
 ### Success criteria
 
@@ -101,7 +101,7 @@ The following directions preserve the owner’s requested themes. Final titles, 
 
 Line identity should come from composition, palette, frames, typography, pack wrapper, card back, and audio. Rarity alone should not determine whether the artwork looks finished. Common cards must be attractive enough to display.
 
-**Proposed first production scope:** one line with 24 distinct artworks, three artwork rarity tiers, and a small subset demonstrating advanced finishes. This is a budgeting proposal, not a required number. A separate fictional demo line should prove configurable behavior without requiring additional MapleStory art or a running game server.
+**Proposed first production scope:** one line with 24 distinct artworks, three artwork rarity tiers, and a small subset demonstrating advanced finishes. This is a budgeting proposal, not a required number. A separate fictional demo line should prove configurable behavior without requiring additional host-specific art or a running game server.
 
 Avoid making every artwork in every finish merely to inflate a checklist. Authors explicitly list allowed variants and decide which belong in base, finish, or master completion goals. A line can expand through a new release while keeping the original release’s checklist stable.
 
@@ -109,13 +109,13 @@ Avoid making every artwork in every finish merely to inflate a checklist. Author
 
 **Proposed implementation baseline:** a TypeScript modular service, PostgreSQL for authoritative framework state, a worker process from the same codebase, a React reference frontend, and a framework-independent HTTP client and event contract. The website can mount the reference frontend under a route or build its own interface against the API. The core does not require React or a particular hosting vendor.
 
-These are recommendations for a new reusable package, not requirements to replace the existing Quiet Grove website backend. A service boundary lets the existing site authenticate users and mount collection pages while the new service owns card transactions. The game’s MariaDB remains under the game’s ownership.
+These are recommendations for a new reusable package, not requirements to replace the existing reference host website backend. A service boundary lets the existing site authenticate users and mount collection pages while the new service owns card transactions. The game’s MariaDB remains under the game’s ownership.
 
 Start with one service codebase and one framework database. A PostgreSQL outbox and job table are sufficient for initial asynchronous work. Redis, Kafka, Kubernetes, and separate microservices are optional future deployment choices, not mandatory installation dependencies. Asset storage can be a local directory in demo mode and an S3-compatible store or static host in production.
 
 ```mermaid
 flowchart TD
-  Site[Quiet Grove or another website] --> API[Framework API]
+  Site[reference host or another website] --> API[Framework API]
   UI[Reference collection frontend] --> API
   API --> DB[(Framework database)]
   API --> Assets[Artwork and presentation assets]
@@ -131,7 +131,7 @@ flowchart TD
   Events --> Plugins[Optional integrations]
 ```
 
-The framework database is the authority for card ownership and its transaction state. The host wallet is the authority for NX. The reward provider is the authority for actual delivered game items. Neither service infers completion from a browser animation or an HTTP timeout.
+The framework database is the authority for card ownership and its transaction state. The host wallet is the authority for configured currency. The reward provider is the authority for actual delivered game items. Neither service infers completion from a browser animation or an HTTP timeout.
 
 ### Package boundaries
 
@@ -146,7 +146,7 @@ The framework database is the authority for card ownership and its transaction s
 | `card-renderer` | Static card composition and optional effects; no economic authority. |
 | `adapter-sdk` | Account, wallet and reward contracts and conformance harness. |
 | `adapter-demo` | Local fictional accounts, test currency, mock rewards and failure injection. |
-| `adapter-quiet-grove` | Explicitly versioned server bridge and field mappings. |
+| `adapter-reference-host` | Explicitly versioned server bridge and field mappings. |
 | `content-tools` | Import, validation, simulation, asset checks and release publishing. |
 | `plugin-sdk` | Versioned events, permission declarations and extension contracts. |
 
@@ -166,7 +166,7 @@ The interface shows useful empty states: no packs yet, no cards matching a filte
 
 1. The player signs in through the host account flow.
 2. They select a product and quantity and receive a short-lived server quote.
-3. Confirmation shows the total NX, wallet type, pack size, odds link, duplicate policy, and whether rewards are possible. No real-money language is needed.
+3. Confirmation shows the total configured currency, wallet type, pack size, odds link, duplicate policy, and whether rewards are possible. No real-money language is needed.
 4. They confirm once. The client creates one durable request key and keeps it while recovering the result.
 5. A receipt becomes completed, rejected, or processing. Processing is a visible recoverable state; it does not invite an immediate second purchase.
 6. Completed packs appear in My Packs with **Open now** and **Open later**.
@@ -309,7 +309,7 @@ If enabled, protection can prefer definitions never acquired in that release. Pr
 
 ## 9 Probability and economy design
 
-There is no universally correct artwork count or rarity table. The host’s NX allocation pace, intended collection lifetime, duplicate tolerance, available artwork budget, and item rewards all affect the design. Operators must be able to model these together before publication.
+There is no universally correct artwork count or rarity table. The host’s configured currency allocation pace, intended collection lifetime, duplicate tolerance, available artwork budget, and item rewards all affect the design. Operators must be able to model these together before publication.
 
 **Illustrative configuration only:** a three-card pack draws two distinct Base definitions from a 12-card pool and one spotlight from six Gallery cards at 80%, four Showcase cards at 18%, or two Master cards at 2%. This uses 24 artworks. The pools are disjoint, with uniform weights inside each rarity. A particular Master therefore appears in 1% of these packs. The probability of at least one copy after 100 independent packs is `1 − 0.99^100`, approximately 63.4%; it is not guaranteed. The expected pack count for one particular Master is 100, with substantial variation.
 
@@ -317,7 +317,7 @@ An independent finish distribution could be 75% standard, 20% foil and 5% holo f
 
 The simulator must report expected copies, percentiles for first target and completion, duplicate proportions over time, finish completion, pity effects, finite supply exhaustion, and expected reward quantities per 1,000 packs. Include seedable reproducibility for simulation only. Report sample size and uncertainty when estimates come from simulation. Exact enumeration should validate small rule sets.
 
-Economy review inputs include NX granted per player per week, pack price, activity differences, alternate-account rules, line availability, prize quantities and game progression impact. If average allocation is `A` NX/week and pack price is `P`, the simple budget is `A/P` packs/week before other NX spending. The framework supplies tools and reports; the host sets the policy.
+Economy review inputs include configured currency granted per player per week, pack price, activity differences, alternate-account rules, line availability, prize quantities and game progression impact. If average allocation is `A` configured currency/week and pack price is `P`, the simple budget is `A/P` packs/week before other configured currency spending. The framework supplies tools and reports; the host sets the policy.
 
 Published odds must distinguish per slot, per card, per pack, and conditional guarantees. Avoid using “1 in N” as a promise of delivery by purchase N. Collection progress must distinguish base checklist completion from all variants and from capped cards unavailable to most players.
 
@@ -356,7 +356,7 @@ Use relational records for identities, ownership and economic state. JSON is app
 | `jobs` | Type, deduplication key, available time, lease, attempt count, last safe error. |
 | `audit_events` | Actor, action, affected IDs, before/after hashes, reason, correlation ID and time. |
 
-Use database timestamps in UTC with explicit units at integration boundaries. Store currency and quantities as integers; use sufficiently wide database types and decimal strings in JSON where values could exceed the client’s safe integer range. No floating-point NX arithmetic. Game adapters enforce their own narrower limits before accepting an operation.
+Use database timestamps in UTC with explicit units at integration boundaries. Store currency and quantities as integers; use sufficiently wide database types and decimal strings in JSON where values could exceed the client’s safe integer range. No floating-point configured currency arithmetic. Game adapters enforce their own narrower limits before accepting an operation.
 
 Mandatory uniqueness includes one allocation per pack, one copy per allocation entry, one source entitlement per applicable copy/policy, one capture reference per purchase, one successful claim per entitlement, one provider operation ID per delivery component, and unique edition serial within its edition.
 
@@ -368,7 +368,7 @@ Database operations require explicit concurrency control. Lock relevant ownershi
 
 ### Required invariants
 
-1. One accepted purchase operation captures its specified NX amount at most once.
+1. One accepted purchase operation captures its specified configured currency amount at most once.
 2. A completed purchase has exactly its purchased number of packs and their exact card counts.
 3. Every completed pack has one durable allocation; opening cannot replace it.
 4. A rejected unpaid purchase does not issue usable copies or consume committed pity progress.
@@ -397,9 +397,9 @@ The proposed hold lease is renewable. Capture and expiry must be atomically orde
 ### End to end purchase sequence
 
 1. **Accept:** validate session, eligibility, quote, quantity and request digest. Insert a durable purchase in `created` state and its outbox/job record. Concurrent requests with the same key converge here.
-2. **Reserve NX:** request the host hold with the purchase’s stable operation ID. Persist the confirmed provider receipt. An unknown outcome enters reconciliation.
+2. **Reserve configured currency:** request the host hold with the purchase’s stable operation ID. Persist the confirmed provider receipt. An unknown outcome enters reconciliation.
 3. **Prepare allocation:** under local concurrency control, acquire the account’s policy scope and required supply. Select and persist all pack outcomes, rewards, next counters and supply reservations in one transaction. The result is hidden and unusable. Store `allocation_prepared` before asking for capture.
-4. **Capture NX:** call capture for the same host operation. If the answer is unknown, retain the staged allocation and supply reservation and show processing.
+4. **Capture configured currency:** call capture for the same host operation. If the answer is unknown, retain the staged allocation and supply reservation and show processing.
 5. **Finalize:** once capture is confirmed, commit the staged copies as owned-but-sealed, packs as sealed, entitlements as sealed, supply as issued, and policy counters as advanced. Record purchase `completed` and committed events in the same database transaction.
 6. **Respond:** return the receipt and My Packs links. If the response is lost, the client reads or retries the same operation.
 
@@ -432,7 +432,7 @@ V1 does not promise discretionary self-service pack refunds. An operator can rev
 
 Automatic compensation is reserved for documented failure cases. A manual goodwill grant is a separate operation, not a rewritten purchase. It records operator, reason, quantity, source policy and whether supply/pity are affected. Proposed default: grants consume edition capacity, do not advance pity, and are labeled in provenance. Administrative grants must never bypass finite caps unless the operator creates a separately identified edition.
 
-## 12 Account and Quiet Grove integration
+## 12 Account and reference host integration
 
 ### Account provider
 
@@ -444,15 +444,9 @@ The adapter exposes account state, permitted currencies, optional characters and
 
 Use secure session cookies, explicit CSRF protection for cookie-authenticated writes, session renewal and revocation, account-level authorization on every resource, and recent authentication for sensitive linking or token reveal operations. Authentication errors should not disclose account existence, and throttling should be implemented at the appropriate account and network scopes. These controls align with the general guidance in the [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html).
 
-### Observed Quiet Grove source constraints
-
-The inspected server’s `server/CashShop.java` holds NX fields in memory and its `save(Connection)` writes absolute NX values back into the accounts table. A separate website debit can therefore be overwritten by a later save unless every writer is coordinated. Its current `CouponCodeHandler` reads a code, checks the retriever and later updates the retriever before completing the broader item processing. That code path by itself does not establish an atomic, owner-bound, crash-recoverable reward contract.
-
-These are observations from the local SoloMapling-v83 source inspected for this specification, not claims that a new bridge already exists. Reinspect the exact server revision during implementation.
-
 ### Required host bridge
 
-The Quiet Grove wallet adapter must introduce a durable NX operation ledger and account-scoped serialization shared with game spending and NX grants. It must also coordinate cached balance reads, updates and saves. Acceptable designs include moving all NX mutations through one wallet service or implementing a durable account-level operation authority with versioned cache updates and stale-save rejection. The engineering review must choose one design and demonstrate that every NX writer follows it.
+The reference host wallet adapter must introduce a durable configured currency operation ledger and account-scoped serialization shared with game spending and configured currency grants. It must also coordinate cached balance reads, updates and saves. Acceptable designs include moving all configured currency mutations through one wallet service or implementing a durable account-level operation authority with versioned cache updates and stale-save rejection. The engineering review must choose one design and demonstrate that every configured currency writer follows it.
 
 Logging out a character is not sufficient synchronization unless the server enforces an account lease across login, all channels, offline operations and saves. A database-only adapter must advertise itself as demo/unsupported until this enforcement is verified. An “offline purchases only” mode is acceptable only with a durable server-recognized account lock, a fresh flush, and a release protocol that excludes simultaneous login.
 
@@ -460,7 +454,7 @@ The first bridge must test game spending, website spending, grants, channel chan
 
 For item rewards, prefer a durable account delivery inbox in the game service. The framework submits a unique delivery command; the host records it once and lets an eligible character collect the contents safely. Distinguish **available in game inbox** from **collected by character**. If the host instead grants directly to character inventory, it must provide an equivalent durable deduplication ledger and transactional item persistence.
 
-The existing `nxcode` table has a 17-character code field in the inspected SQL. A legacy coupon profile therefore needs an explicit shorter token format or a server/client compatibility change. Do not silently truncate a standard token or reuse the old random generator.
+Legacy redemption providers must declare token length and format constraints. Validate compatibility before enabling a provider.
 
 ### Adapter capability declaration
 
@@ -468,14 +462,14 @@ The existing `nxcode` table has a 17-character code field in the inspected SQL. 
 | --- | --- |
 | `identity.verify` | All authenticated ownership. |
 | `identity.status` | Purchase and claim eligibility checks. |
-| `wallet.balance` | NX display and purchase preparation. |
+| `wallet.balance` | configured currency display and purchase preparation. |
 | `wallet.reserve`, `wallet.capture`, `wallet.release`, `wallet.lookup` | Production pack sales. |
-| `wallet.refund` | Automated or operator-controlled compensation that credits NX. |
+| `wallet.refund` | Automated or operator-controlled compensation that credits configured currency. |
 | `characters.list`, `characters.verifyOwner` | Character-specific claims. |
 | `rewards.validate`, `rewards.deliver`, `rewards.lookup` | Optional game reward lines. |
 | `rewards.inbox` | Account delivery inbox presentation. |
 | `coupons.ownerBound`, `coupons.redeem` | Codes entered through a supported game flow. |
-| `wallet.cacheCoherent` | Acceptance of the Quiet Grove live adapter. |
+| `wallet.cacheCoherent` | Acceptance of the reference host live adapter. |
 
 Publication rejects a product requiring unsupported capabilities. Reward-disabled lines remain usable with identity and wallet support. A content preview can render without any economic adapters.
 
@@ -493,7 +487,7 @@ Reward rules apply per line with the compiled overrides described earlier. Each 
 
 V1 permits a weighted pool entry to resolve to a fixed bundle. It does not permit arbitrary recursive random/choice trees. A choice list may contain fixed bundles; each option is fully displayed before confirmation. Bound nesting and component counts in the schema.
 
-A reward descriptor contains a provider namespace, catalog item reference, quantity, permitted target, bind/trade flags, optional expiration and versioned provider metadata. The core does not interpret Maple item IDs. The adapter validates IDs, item properties, quantities, inventory category, stack limits and availability before publication. Claims revalidate conditions that can change, such as character eligibility and inventory space, without rerolling the prize.
+A reward descriptor contains a provider namespace, catalog item reference, quantity, permitted target, bind/trade flags, optional expiration and versioned provider metadata. The core does not interpret host item IDs. The adapter validates IDs, item properties, quantities, inventory category, stack limits and availability before publication. Claims revalidate conditions that can change, such as character eligibility and inventory space, without rerolling the prize.
 
 Allocate random prizes with the card’s purchase result. A later configuration change cannot turn an already won reward into a different item. Choice options are fixed at allocation; the player’s one-time selection is then persisted before delivery. Changing a character after an ambiguous delivery is prohibited until the original outcome is resolved.
 
@@ -612,7 +606,7 @@ The quote already determines product revision, principal, amount and quantity. T
 {
   "purchaseId": "purchase_demo_01",
   "status": "processing",
-  "amount": { "currency": "host:nx", "value": "1000" },
+  "amount": { "currency": "host:configured currency", "value": "1000" },
   "quantity": 1,
   "productRevision": "sleeping-forest-demo@1",
   "rulesHash": "sha256:example-only",
@@ -720,7 +714,7 @@ The principal threats are forged ownership, repeated debits/grants, concurrent s
 
 Ownership APIs should not expose private player inventories to arbitrary plugins or public catalog consumers. A future game obtains owner-authorized access with restricted scopes and duration. Public album access grants no right to mint or transfer its cards.
 
-Asset rights and code licenses are tracked separately. A reusable framework release should include original or clearly redistributable demonstration art. MapleStory-themed packages can be separately supplied by an operator under the permissions applicable to their assets; do not label a software license as granting rights to unrelated art, names or audio.
+Asset rights and code licenses are tracked separately. A reusable framework release should include original or clearly redistributable demonstration art. domain-specific packages can be separately supplied by an operator under the permissions applicable to their assets; do not label a software license as granting rights to unrelated art, names or audio.
 
 ## 19 Performance and accessibility
 
@@ -748,7 +742,7 @@ A card’s accessible description names the subject, title, rarity and finish wi
 
 ## 20 Deployment and operations
 
-Ship a local demo profile and a documented production profile. The demo includes fictional sample cards, demonstration currency, mock login, mock rewards and controlled failure injection. It must work without MapleStory assets, a game database, external paid services or private credentials.
+Ship a local demo profile and a documented production profile. The demo includes fictional sample cards, demonstration currency, mock login, mock rewards and controlled failure injection. It must work without host-specific assets, a game database, external paid services or private credentials.
 
 The proposed production topology is reverse proxy/TLS, API, worker, PostgreSQL and asset storage. Use separate credentials and network boundaries for the game bridge. Environment configuration names every external origin, provider, secret source, asset root, allowed currency and feature flag. There must be no dependency on a developer’s Windows path or personal host address.
 
@@ -778,13 +772,13 @@ Existing repositories provide useful bounded components, but none inspected so f
 
 | Candidate | Proposed use | Important boundary |
 | --- | --- | --- |
-| [Draftmancer](https://github.com/Senryoku/Draftmancer) | Study/adapt pack slots, custom card pools, collation tests and configuration. | MIT repository; MTG-specific rules need extraction. It does not supply our persistent NX ownership protocol. |
+| [Draftmancer](https://github.com/Senryoku/Draftmancer) | Study/adapt pack slots, custom card pools, collation tests and configuration. | MIT repository; MTG-specific rules need extraction. It does not supply our persistent configured currency ownership protocol. |
 | [Bindarr](https://github.com/thenotoriousJeremy/bindarr) | Study/adapt binder page organization, collection interactions and import/export patterns. | MIT application; manually entered physical collections cannot be authoritative acquired digital ownership. Exclude unnecessary scanning/model dependencies. |
 | [Vanilla Tilt](https://github.com/micku7zu/vanilla-tilt.js) | Evaluate a small independent tilt/glare interaction layer. | MIT source inspected previously; still requires touch, reduced-motion and Safari testing. Holo materials are additional work. |
 | [Pokemon Cards CSS](https://github.com/simeydotme/pokemon-cards-css) | Visual reference or a license-compatible effects component. | GPL-3.0 code cannot simply be relabeled MIT; included visual assets require their own review. |
 | [Pokemonpacks](https://github.com/hongyime/pokemonpacks) | Review opening/swipe interactions and browser tests. | Apache-2.0 candidate; browser storage does not establish backend ownership. |
 | [Altare TCG](https://github.com/elysiumdelivery/altare-tcg) | Reference for a themed art collection and reveal experience. | Root MIT notice and borrowed GPL effect provenance require file-level review; inspected browser logic is not an economic backend. |
-| [Nakama](https://github.com/heroiclabs/nakama) | Optional alternative if broader game services become necessary. | Apache-2.0 server; additional infrastructure and its own wallet do not resolve the host’s NX cache by themselves. |
+| [Nakama](https://github.com/heroiclabs/nakama) | Optional alternative if broader game services become necessary. | Apache-2.0 server; additional infrastructure and its own wallet do not resolve the host’s configured currency cache by themselves. |
 
 The earlier `hover-tilt` audit found differing root/package license declarations; hold adoption until the exact chosen artifact’s terms are clarified. The `garug/gacha` candidate did not establish sufficient production functionality or license clarity to make the shortlist.
 
@@ -807,8 +801,8 @@ Tests should establish the invariants at actual service boundaries. Use a provid
 | A05 | Repeating one purchase key 100 times concurrently creates one operation, one capture and one pack allocation. |
 | A06 | Reusing a purchase key with a different quote returns conflict without another debit. |
 | A07 | Two legitimate concurrent purchases cannot overspend the host balance. |
-| A08 | Simultaneous game spending, website spending and autosave preserve the correct NX ledger and cache values. |
-| A09 | Crash before/after each hold, allocation, capture and finalization boundary recovers without lost NX or duplicate copies. |
+| A08 | Simultaneous game spending, website spending and autosave preserve the correct configured currency ledger and cache values. |
+| A09 | Crash before/after each hold, allocation, capture and finalization boundary recovers without lost configured currency or duplicate copies. |
 | A10 | Capture timeout after a successful host debit resolves to the original packs, with no second debit. |
 | A11 | Hold expiration racing capture has one provider outcome; local resources reconcile accordingly. |
 | A12 | Publication, pause and price changes invalidate/retain quotes according to the documented policy. |
@@ -837,7 +831,7 @@ Tests should establish the invariants at actual service boundaries. Use a provid
 | A35 | Desktop 16:9 and mobile flows pass keyboard, touch, reduced-motion, no-audio and screen-reader checks. |
 | A36 | Recorded load test meets the selected targets or publishes measured limits and adjusted safe configuration. |
 | A37 | Refund interruption freezes affected assets and resumes safely; grants cannot bypass edition limits. |
-| A38 | A new adapter passes the published conformance suite without access to Quiet Grove internals. |
+| A38 | A new adapter passes the published conformance suite without access to reference host internals. |
 | A39 | Catalog/economic metadata remains immutable after publication; cosmetic revisions retain their history. |
 | A40 | An independent developer can author a new line and install the example plugin from documentation alone. |
 
@@ -850,7 +844,7 @@ Use property-based tests for allocation counts, bounds, supply conservation and 
 | Quickstart | Clean demo setup, first purchase, opening, album and safe reset of demo data. |
 | Architecture | Ownership of data, package boundaries, trust model and sequence diagrams. |
 | Production installation | Supported versions, TLS, secrets, storage, database, worker and game bridge setup. |
-| Quiet Grove adapter guide | Exact supported server revision, NX writers, cache coordination, coupon changes and deployment checks. |
+| reference host adapter guide | Exact supported server revision, configured currency writers, cache coordination, coupon changes and deployment checks. |
 | Adapter author guide | Contracts, capability matrix, idempotency, unknown outcomes and conformance harness. |
 | Content author guide | Line/release/card identities, schema, slots, odds, supply, rewards and publication. |
 | Art preparation guide | Templates, crops, masks, layers, credits, formats, compression and visual quality checks. |
@@ -876,7 +870,7 @@ Milestones are ordered by dependency and acceptance evidence. No completion perc
 | 1 Portable core demo | Identity demo, catalog publication, database ownership, fixed packs and basic collection. | Clean install and immutable allocation tests; two differently configured lines. |
 | 2 Reliable purchasing | Quotes, reservations, capture, receipts, worker and reconciliation. | Failure-injection and concurrency cases A05–A12 pass against demo provider. |
 | 3 Collection experience | Art renderer, polished opening, inspection, search and albums. | Desktop/mobile and accessibility acceptance with representative real assets. |
-| 4 Quiet Grove wallet integration | Account assertion, host ledger, cache coherence and supported adapter. | Game/web concurrency, autosave and crash recovery demonstrated on a test server. |
+| 4 reference host wallet integration | Account assertion, host ledger, cache coherence and supported adapter. | Game/web concurrency, autosave and crash recovery demonstrated on a test server. |
 | 5 Optional rewards | Entitlements, claim UI, durable delivery, optional code bridge. | Cross-channel redemption and delivery interruption cases pass. |
 | 6 Operator and extension release | Publishing tools, plugin SDK, example plugin, content import/export and conformance tests. | Independent content/adapter author walkthrough and audit controls. |
 | 7 Release readiness | Documentation, performance characterization, restore drill and dependency provenance. | Reproducible release candidate and completed acceptance report. |
@@ -890,14 +884,14 @@ These decisions are not blockers to writing the specification. They must be expl
 
 | Decision | Proposed default | Needed before |
 | --- | --- | --- |
-| Framework name | Choose a neutral name separate from Quiet Grove. | Public repository release. |
+| Framework name | Choose a neutral name separate from reference host. | Public repository release. |
 | Code license | Apache-2.0 core, separately licensed assets. | Adopting/distributing source. |
 | Stack | TypeScript service, PostgreSQL, React reference UI, independent API SDK. | Implementation kickoff. |
 | First art line | Sleeping forest monsters. | Commissioning/producing launch art. |
 | Launch count | 24 distinct artworks as a manageable pilot. | Final checklist approval. |
 | Pack size and odds | Use the three-card example only in demo until economy review. | Production product publication. |
-| Pack price and NX kind | Explicit host-selected currency and price; no fallback between prepaid/credit. | Production sales. |
-| NX allocation policy | Owned by the host, supplied as economy-model inputs. | Final balancing. |
+| Pack price and configured currency kind | Explicit host-selected currency and price; no fallback between prepaid/credit. | Production sales. |
+| configured currency allocation policy | Owned by the host, supplied as economy-model inputs. | Final balancing. |
 | Outcome timing | Allocate at purchase; reveal at opening. | Purchase implementation. |
 | Unopened packs | Persist indefinitely; no V1 trading. | Pack schema and UI. |
 | Within-pack duplicates | Prevent duplicate definitions where product pools support it. | Product publication. |
@@ -923,7 +917,7 @@ The first implementation task should create the repository structure, architectu
 Before the first production pack is sold, confirm all of the following:
 
 - The published checklist, pack composition, price, wallet and odds are intentionally selected.
-- Every NX writer in the supported server follows the chosen wallet authority model.
+- Every configured currency writer in the supported server follows the chosen wallet authority model.
 - A captured purchase survives process failure and resumes with the same cards.
 - A delivered reward cannot be repeated through either website or in-game code entry.
 - Public albums, logs and exports have been checked for secret leakage.
@@ -932,14 +926,14 @@ Before the first production pack is sold, confirm all of the following:
 - A clean installation and restore drill were completed by following the documentation.
 - Production configuration enables only capabilities that passed their acceptance tests.
 
-The framework is complete when another server owner can install it, supply adapters and original content, and obtain the same reliable collection behavior. Quiet Grove’s first beautiful line demonstrates that framework; the line does not define its architectural limits.
+The framework is complete when another server owner can install it, supply adapters and original content, and obtain the same reliable collection behavior. reference host’s first beautiful line demonstrates that framework; the line does not define its architectural limits.
 
 ## Appendix A Related project records
 
 The following existing project documents preserve the discussion and source research used here:
 
 - `Art-card-Astra-pre-spec-brief.txt` — confirmed direction, requested themes and unresolved choices.
-- `Art-card-framework-current-direction.txt` — current requirements and the correction about host-allocated NX.
+- `Art-card-framework-current-direction.txt` — current requirements and the correction about host-allocated configured currency.
 - `Art-card-GitHub-reuse-research.txt` — repository audit, pinned commits and implementation boundaries.
 - `Art-card-visual-reuse-addendum.txt` — additional tilt renderer candidate and licensing observations.
 - `../research/github-audit/manifest.json` — locally archived repository inspection evidence.

@@ -12,7 +12,7 @@
 | `renderInspector`, `renderAlbum`, `mountOpener`, `mountFramework` | Callback composition and DOM replacement | Own and dispose renderer resources on every replacement/close/unmount |
 | New inspector/comparison work in the working tree | Additional UI composition is being developed | Integrate through its public renderer slot; do not assume it supplies GPU cleanup |
 | `src/importer.js` in the working tree | Catalog/configuration import work | Add a separate bounded media-package importer, then connect verified digests to catalog import |
-| Maple demo outside this repo | Bespoke page scripts and external artwork | Convert scene/effect data; keep all artwork outside framework Git |
+| host-specific demo outside this repo | Bespoke page scripts and external artwork | Convert scene/effect data; keep all artwork outside framework Git |
 
 Raising the catalog's 24-layer limit is not a sufficient complex-card implementation. The missing functionality includes media packaging, a renderer lifecycle, compilation, resource ownership, feature negotiation and authoring tools.
 
@@ -32,7 +32,7 @@ examples/presentation/ inspector, opener and alternate host wiring
 docs/complex-cards/     this specification, extension cookbook, conformance records
 ```
 
-Generic source and synthetic fixtures belong here. Game-specific import mapping and host identity/economy wiring belong in the integration repository. Real artwork, generated frames, video and game data belong in external content storage. Tests can generate simple geometric assets at runtime; do not commit Maple art as a convenient fixture.
+Generic source and synthetic fixtures belong here. Game-specific import mapping and host identity/economy wiring belong in the integration repository. Real artwork, generated frames, video and game data belong in external content storage. Tests can generate simple geometric assets at runtime; do not commit host-specific art as a convenient fixture.
 
 ## Milestone 0: contracts and a measured rendering decision
 
@@ -80,7 +80,7 @@ This is the first real integration deliverable, implemented in the separate inte
 
 Port the visible behavior, not the incidental implementation. The bespoke page's numerous prebaked frames and DOM images are not requirements. Preserve the existing visual reference before replacing it; compare fixed tilt values and transitions. Keep the original demo available until the imported version is verified.
 
-**Exit gate:** both cards and their assembly load from package descriptors. No special case named after a Maple character enters generic core. Frame poses retain the approved art style. The same package displays in the standalone example and the host integration.
+**Exit gate:** both cards and their assembly load from package descriptors. No special case named after a host-specific character enters generic core. Frame poses retain the approved art style. The same package displays in the standalone example and the host integration.
 
 ## Milestone 3: video backs and sustained performance
 
@@ -130,7 +130,7 @@ These can proceed independently after the player/content boundaries exist. They 
 3. Add a `cardViewFactory` option alongside `cardRenderer`. Existing DOM callbacks continue to work through a wrapper; do not infer cleanup by observing DOM removal.
 4. Give each mounted UI scope a resource registry. Dispose view handles before `replaceChildren`, dialog close, navigation and app teardown. Teach pack reveal updates to reuse stable copy views where appropriate.
 5. Extend generic presentation DTOs and client APIs without exposing owner-only bindings. Document DTO projection tests.
-6. Wire the Maple integration using its own provider/composition configuration. Upload art packages through content storage; commit only manifests/references and integration code to its repository.
+6. Wire the host-specific integration using its own provider/composition configuration. Upload art packages through content storage; commit only manifests/references and integration code to its repository.
 7. Version migrations and preserve rollback to posters/legacy views. A failed renderer deployment must not require rolling back domain inventory transactions.
 
 ## Open decisions and owners

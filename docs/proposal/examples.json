@@ -357,7 +357,7 @@
       "product": {
         "id": "demo.forest.three",
         "price": {
-          "currency": "demo:nx",
+          "currency": "demo:credits",
           "amount": "1000"
         },
         "packSize": 3,
@@ -482,7 +482,7 @@
       "product": {
         "id": "demo.places.single",
         "price": {
-          "currency": "demo:nx",
+          "currency": "demo:credits",
           "amount": "250"
         },
         "packSize": 1,

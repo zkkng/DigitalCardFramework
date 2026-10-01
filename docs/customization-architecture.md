@@ -56,7 +56,7 @@ Operators can replace domain policies through server-side contracts. Required pl
 
 Version schemas, extension contracts and provider interfaces. Document compatibility ranges, deprecations and migration examples. Public extension-point removal or an incompatible behavior change is a compatibility change even if the default screen looks identical. Publish release notes and retain a supported upgrade path.
 
-Every recipe records the changed public contract, where code/config belongs, an executable example and its expected effect. Recipes should cover layout reordering, one-component replacement, complete opener replacement, custom metadata display, a host provider and a domain policy. The framework repository owns generic recipes; MapleStory-specific wiring stays in the integration repository. Artwork stays outside both code repositories.
+Every recipe records the changed public contract, where code/config belongs, an executable example and its expected effect. Recipes should cover layout reordering, one-component replacement, complete opener replacement, custom metadata display, a host provider and a domain policy. The framework repository owns generic recipes; host-specific wiring stays in the integration repository. Artwork stays outside both code repositories.
 
 ## Acceptance scenarios to implement
 
