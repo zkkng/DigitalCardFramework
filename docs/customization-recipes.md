@@ -67,3 +67,49 @@ Identity is replaced at the HTTP resolver and registerUser linkage, independentl
 ## Verification
 
 Core and HTTP tests verify optional switches, ownership, private binding filtering, custom policies, per-line products and recipe settings. Client tests exercise alternate reveal control, disposal, retries and durable keys. Storage tests race separate worker-thread SQLite connections for last-copy issuance and duplicate requests. Browser QA exercises both actual compositions; it complements the transaction tests.
+
+## Version 0.2 extension contracts
+
+`mountFramework` accepts `views:{id:(model,context)=>nodeOrDisposable}` and `viewLabels`. Use `sections` to choose order/visibility and `navigation:'tabs'` for navigation. A view returns a DOM node or `{node,dispose}`; cleanup runs on navigation, refresh and unmount. The model contains catalog, me, wallet, packs, inventory, albums, trades, availability and pity. Context exposes client, cardRenderer, albumRenderer, layouts, inspect, inspectTogether, action, mutate, refresh, navigate and a mount-local `state` object for namespaced presentation state. Never place authority or private credentials in presentation state. Existing section-function composition remains available.
+
+```js
+import {mountFramework,element} from '../src/ui.js';
+import {renderCollection} from '../src/collection-ui.js';
+mountFramework(container,{
+  client,sections:['welcome','collection'],navigation:'tabs',
+  viewLabels:{welcome:'My collection world'},
+  views:{
+    welcome:(model,context)=>{
+      const node=element('section');
+      node.append(element('h2','',model.me.displayName));
+      return {node,dispose(){ /* release your own observers/media here */ }};
+    },
+    collection:renderCollection
+  }
+});
+```
+
+The bundled `examples/app.js` is an executable public-API composition with collection, albums, trading, studio and account views. `examples/alternate.js` changes page order, theme, backs, metadata, album layout and the complete opener. No core edits are needed. `test/ui.test.js` verifies real complete-view disposal and renderer contracts.
+
+| Customization | Public input/entrypoint | Executable example/evidence |
+| --- | --- | --- |
+| Collection, favorites, wishlist | `renderCollection(model,context)` or complete `views.collection` replacement | Reference app; collection selection/stat-search tests |
+| Visual offers | `renderTrading` and `createTradeDraft({client,userId,catalog,storage,initial,parentTradeId})` | Reference trade desk; controller/privacy/review/counter tests |
+| Album editor/layout | `renderAlbums`, `albumRenderer`, `layouts[id](model,options)`, arbitrary layout/placement data | Alternate journal layout; private album/round-trip tests |
+| Individual camera | `inspectorRenderer(copy,options)`, public `renderInspector`/`render3DInspector`; `renderTiltInspector` preserves compact legacy interaction | Reference inspector and orbit tests |
+| Shared/card combinations | `comparisonRenderer(copies,options)`; `inspectTogether(copies)` | Horizon pair in `examples/catalog.js`, default shared stage |
+| Metadata/stats/layers | Catalog fields/schemas/displayFields; `metadataRenderer`, `cardRenderer`, `backRenderer` | JSON/YAML Moonbridge patches and alternate renderer |
+| Creator experience | `renderStudio` or own preview/publish view calling client previewImport/commitImport | Reference studio, real preview/stale-generation tests |
+| Account/social | `renderActivity` or own preferences/notification view | Reference app and authorization tests |
+| Odds/pity/windows/recipes | Validated product/recipe data, independent feature switches | Nightfall/sample products; pity/exhaustion/rollback tests |
+| Host deployment | Trusted `HOST_MODULE` exports; `createApiHandler({resolveIdentity,...})`, auth/provider/session/store contracts | Production entrypoint and real-entrypoint integration test |
+
+`createTradeDraft` exposes subscribe/getState/load/more/add/remove/setCurrency/setMessage/review/buildOffer/clear/dispose. Edits clear review. Loads ignore obsolete recipients and late completion after disposal. Built offers include copy versions. Saved drafts contain IDs/intentions, not card snapshots or binding codes. The authoritative server still validates every transfer.
+
+`action(fn,{refreshAfter,message})` serializes UI actions, reports errors and refreshes committed models by default. `mutate(command,input)` uses a persisted idempotency key and coalesces identical in-flight intentions. When Web Storage is unavailable, keys survive retries within that mounted session; reload durability then requires host storage/recovery. Never reroll committed results based on presentation completion.
+
+`CardFramework({limits})` accepts users/copies/packs/requests/albums/trades/copiesPerUser/packsPerUser positive integer caps. `policies.canTransfer` is a synchronous eligibility veto. Named `bindings` factories synchronously generate copy data before commit. A custom store implements synchronous detached `read(fn)`, atomic `transact(fn)` and `close()`. Async/network work inside a transaction is unsupported.
+
+A production `HOST_MODULE` exports any of bindings, policies, limits, sessionOptions, rateLimits, rateLimiter, identityProvider or handleStatic. `sessionOptions.maxSessions` controls the bounded active session/challenge capacity. `identityProvider.begin()` returns `{url,data}` for the login challenge; `finish(callbackUrl,data)` returns a verified `{issuer,subject,displayName}`. This module is trusted server code. The default OIDC provider and public imports remain separate. `test/host.test.js` supplies an executable fixture module and exercises the real host.
+
+Portable presentation packaging has its own public contract/status. It can be integrated through the card/inspector replacement boundaries after its independent conformance gates pass.

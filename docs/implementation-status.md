@@ -1,25 +1,48 @@
-# Implementation coverage — 0.1.0
+# Implementation coverage — 0.2.0
 
-30 September 2026. This file describes the executable core added after the planning scaffold.
+1 October 2026. This describes executable collector behavior and the supported standalone production profile. The original proposal remains design guidance.
 
-| User requirement | Current implementation |
+| User requirement | Implementation/evidence |
 | --- | --- |
-| User-linked inventory | Stable provider/subject linkage, persisted owned copies and account authorization |
-| Definable/multiple currencies | Integer balances, rational relative values, operator grants, conversion receipts and ledger |
-| Variable pack prices by line/type | Product prices, currency, independent weighted slots, quote revision checks |
-| Lines/rarity/1-of-1 limits | Open taxonomy, rarity ranks, finite per-variant lifetime supply and edition serials |
-| Fully customizable albums | Private/public albums, placements/layout data, default grid, complete renderer/CSS replacement |
-| Optional duplicates/trade-ups | Pack/inventory protection with explicit fallback; configurable input counts and output pools |
-| Default appearances/back | Scoped default theme, CSS card back, host callbacks and asset overrides |
-| Special data/codes | Namespaced public/private per-copy bindings, factories and local single-use state |
-| Who opened/time/X of Y | Snapshot provenance, original opener and UTC time, finite edition serial/total |
-| Optional player card/currency trades | Independent flags; mixed escrow offers, atomic acceptance, cancellation/expiry |
-| View others' albums | Optional public browsing with private binding filtering |
-| Album card inspector/3D | Click/touch inspection, tilt via pointer/keyboard, front/back, metadata |
-| Layers/parallax/effects | Ordered image layers, depth/blend/opacity, gloss/holo/masks/emissive, replaceable renderer |
+| User inventory | Immutable issuer/subject linkage, persisted copies and ownership; identity/HTTP/restart tests |
+| Multiple definable currencies | Integer balances, exact rational conversions, ledgers, independent trade flags; overflow/retry/rollback tests |
+| Pack types/prices/rates by line | Weighted slots, quote revisions, release windows, availability and optional pity; allocation/revision/exhaustion tests |
+| Rarity/finite editions/1 of 1 | Lifetime supply includes sealed allocations, serials never reused; two-process last-copy tests |
+| Duplicate systems/trade-ups | Optional pack/inventory protection, explicit fallback, configured counts/outputs and rollback |
+| Beautiful replaceable defaults | Card Atelier, runtime sample imagery, full view/renderer/layout replacement, alternate composition and cleanup tests |
+| Custom albums | Private/public, ordered placements, layout JSON, isolated CSS, export/import, optimistic edits and transfer cleanup |
+| Special data/codes | Owner/public bindings, factories and follow/retain/block rules; privacy/local-use tests |
+| Stats/metadata/opener/time/X of Y | Structured data, local schemas, display labels, snapshots and provenance |
+| Visual player trading | Two inventories, drag/drop or Add/Remove, card/currency trays, immutable review, counters and atomic escrow/acceptance |
+| Optional trading | Independent flags, currency policies, cancel when disabled, inventory privacy/blocking and expiry |
+| View other albums | Optional public browsing with protected binding filtering |
+| Layered/3D card inspection | Crop/depth/blend/opacity, parallax/effects, backs, orbit/flip/zoom/reset, keyboard and reduced motion |
+| Multiple/combinable inspection | Select up to 24 copies; shared stage, creator grid, missing pieces and seamless demo panorama |
+| Bulk JSON/YAML | Full manifests/ID patches, stats/metadata/layers/combinations, digest/version review, atomic publication and CLI |
+| Production profile | OIDC entrypoint, encrypted state/sessions, origin/principal controls, limits/quotas, audit, health, logs, backup/restore and key migration |
 
-The broad earlier proposal also describes capabilities beyond this core: PostgreSQL, a React kit, external NX/wallet holds and reconciliation, rewards delivery, pity, release/checklist completion, a plugin package registry, multilingual default controls, operator dashboards, simulator tooling, operational monitoring, signed webhooks and backup restore reconciliation. These remain unimplemented. Trading and trade-ups are implemented now because the latest user request brought them into the core.
+## Supported boundaries
 
-The standalone wallet has a complete local atomic boundary; it cannot safely coordinate unrelated writes to an external live game balance without a new adapter and recovery protocol. The local demo login is not production authentication. Valuable external codes require a protected store and issuer/redeemer lifecycle integration. The first storage adapter is a small-installation state document, with the scaling limits described in ADR 001.
+The standalone profile uses local framework currencies and binding state. SQLite is a bounded whole-state adapter; limits and measurements are in [operations](production.md). Real OIDC verification fixtures and a trusted provider integration fixture test the executable host. Live credentials, DNS/TLS and an actual deployment are operational requirements.
 
-All framework source and generic docs are tracked here. Production artwork and MapleStory integration remain outside this repository.
+CSS 3D inspection renders front/back surfaces and layered parallax. It does not reconstruct unseen artwork, merge ownership or execute imported code. Portable `.dcard` packaging and its advanced player are a separate effort; consult that effort's own status.
+
+Public view/renderer/layout overrides, reveal/trade controllers, imports, policies, binding factories, identity and store contracts are implemented. An automatic plugin marketplace/registry, compatibility negotiator and React-specific adapter are separate work.
+
+## Optional suggestions
+
+| Extension | Boundary |
+| --- | --- |
+| High-volume Postgres | Normalized store, migration and recovery gates |
+| External wallets/paid packs | Holds, reconciliation and durable transaction coordinator |
+| External code/reward redemption | Host delivery adapter, rotation/revocation and receipts |
+| Signed webhooks/email | Durable outbox worker and delivery policy |
+| Achievements/decks/combat | Namespaced module using generic definitions/stats |
+| Auctions/marketplace | Separate market service and settlement/moderation rules |
+| Wishlist matching | Optional read-only suggestions with explicit offer review |
+| Complete localization | Host view/label replacement, then localization catalog |
+| Video/shader/3D packages | Lifecycle-managed presentation adapter and device budgets |
+| Asset uploads/moderation | Licensed content service with quotas and validation |
+| Distributed deployment | Shared sessions, database locking, distributed limits and failover |
+
+Suggestions are extension work, not silently enabled or described as complete. The requested collector, pack, inventory, opening, import, trade and album behavior above is implemented.
