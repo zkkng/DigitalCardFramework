@@ -1,13 +1,13 @@
 # Digital Card Framework
 
-Reusable digital card infrastructure: configurable packs and opening, ownership, collections, albums, trading, presentation, and optional namespaced bindings.
+Headless digital card core with durable SQLite persistence and a verified-host HTTP boundary.
 
-This repository currently contains design and repository boundaries. Runtime implementation has not started here.
+Requires Node.js 24.14 or newer. No dependencies or build step are needed.
 
-Read [product principles](docs/product-principles.md) and [repository boundaries](docs/repository-boundaries.md) before development.
+Run node --test test/*.test.js to verify user-linked inventories, currencies, pack products, finite editions, retry protection, duplicate recipes, private/public albums, binding privacy and atomic card/currency trades.
 
-Customization is central: read [the customization contract](docs/customization-architecture.md) and [its research basis](docs/customization-research.md). Default UI, layouts, workflows and providers must have documented replacement/composition paths, verified through working examples.
+Import CardFramework from src/index.js and SQLiteStore from src/sqlite.js. The examples/catalog.js manifest demonstrates unrelated lines and independent pack prices. The host supplies verified operator/player contexts; currencies originate in operator grants into framework-managed wallets.
 
-Framework source, migrations, tests, tools and generic documentation belong here. Artwork, generated imagery, sprite sheets, game files, content asset bundles and MapleStory integration code do not.
+The browser client and reveal controller are exported separately through /client. A public HTTP contract is in docs/openapi.json. The UI composition is the next implementation commit.
 
-MapleStory integration is maintained in a separate repository and consumes the framework through its published contracts. A GitHub destination is pending the owner's account/repository selection.
+Artwork and host-specific game integration stay outside this repository.

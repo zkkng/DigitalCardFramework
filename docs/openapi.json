@@ -1,0 +1,1511 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Digital Card Framework",
+    "version": "0.1.0",
+    "description": "Host resolves a verified session to a framework principal; no user identity is accepted from JSON commands. Same-origin writes are required. The demo cookie name is illustrative."
+  },
+  "servers": [
+    {
+      "url": "/api"
+    }
+  ],
+  "paths": {
+    "/quote": {
+      "post": {
+        "operationId": "quote",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result; repeating the same principal/key/input returns the original result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quote"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Verified host identity required"
+          },
+          "403": {
+            "description": "Origin/feature/authority rejected"
+          },
+          "409": {
+            "description": "Funds, inventory, supply, quote, version or request-key conflict"
+          }
+        }
+      }
+    },
+    "/purchase": {
+      "post": {
+        "operationId": "purchase",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Purchase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result; repeating the same principal/key/input returns the original result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Verified host identity required"
+          },
+          "403": {
+            "description": "Origin/feature/authority rejected"
+          },
+          "409": {
+            "description": "Funds, inventory, supply, quote, version or request-key conflict"
+          }
+        }
+      }
+    },
+    "/open": {
+      "post": {
+        "operationId": "openPack",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Open"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result; repeating the same principal/key/input returns the original result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Receipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Verified host identity required"
+          },
+          "403": {
+            "description": "Origin/feature/authority rejected"
+          },
+          "409": {
+            "description": "Funds, inventory, supply, quote, version or request-key conflict"
+          }
+        }
+      }
+    },
+    "/convert": {
+      "post": {
+        "operationId": "convert",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Convert"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result; repeating the same principal/key/input returns the original result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Verified host identity required"
+          },
+          "403": {
+            "description": "Origin/feature/authority rejected"
+          },
+          "409": {
+            "description": "Funds, inventory, supply, quote, version or request-key conflict"
+          }
+        }
+      }
+    },
+    "/trade-up": {
+      "post": {
+        "operationId": "tradeUp",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradeUp"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result; repeating the same principal/key/input returns the original result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Copy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Verified host identity required"
+          },
+          "403": {
+            "description": "Origin/feature/authority rejected"
+          },
+          "409": {
+            "description": "Funds, inventory, supply, quote, version or request-key conflict"
+          }
+        }
+      }
+    },
+    "/albums": {
+      "post": {
+        "operationId": "saveAlbum",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAlbum"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result; repeating the same principal/key/input returns the original result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Verified host identity required"
+          },
+          "403": {
+            "description": "Origin/feature/authority rejected"
+          },
+          "409": {
+            "description": "Funds, inventory, supply, quote, version or request-key conflict"
+          }
+        }
+      },
+      "get": {
+        "operationId": "albums",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        }
+      }
+    },
+    "/trades": {
+      "post": {
+        "operationId": "proposeTrade",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeTrade"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result; repeating the same principal/key/input returns the original result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Verified host identity required"
+          },
+          "403": {
+            "description": "Origin/feature/authority rejected"
+          },
+          "409": {
+            "description": "Funds, inventory, supply, quote, version or request-key conflict"
+          }
+        }
+      },
+      "get": {
+        "operationId": "trades",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        }
+      }
+    },
+    "/trades/accept": {
+      "post": {
+        "operationId": "acceptTrade",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradeCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result; repeating the same principal/key/input returns the original result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Verified host identity required"
+          },
+          "403": {
+            "description": "Origin/feature/authority rejected"
+          },
+          "409": {
+            "description": "Funds, inventory, supply, quote, version or request-key conflict"
+          }
+        }
+      }
+    },
+    "/trades/cancel": {
+      "post": {
+        "operationId": "cancelTrade",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradeCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result; repeating the same principal/key/input returns the original result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Verified host identity required"
+          },
+          "403": {
+            "description": "Origin/feature/authority rejected"
+          },
+          "409": {
+            "description": "Funds, inventory, supply, quote, version or request-key conflict"
+          }
+        }
+      }
+    },
+    "/bindings/use": {
+      "post": {
+        "operationId": "consumeBinding",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UseBinding"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result; repeating the same principal/key/input returns the original result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Verified host identity required"
+          },
+          "403": {
+            "description": "Origin/feature/authority rejected"
+          },
+          "409": {
+            "description": "Funds, inventory, supply, quote, version or request-key conflict"
+          }
+        }
+      }
+    },
+    "/catalog": {
+      "get": {
+        "operationId": "catalog",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "operationId": "me",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        }
+      }
+    },
+    "/wallet": {
+      "get": {
+        "operationId": "wallet",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        }
+      }
+    },
+    "/history": {
+      "get": {
+        "operationId": "history",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        }
+      }
+    },
+    "/inventory": {
+      "get": {
+        "operationId": "inventory",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        }
+      }
+    },
+    "/packs": {
+      "get": {
+        "operationId": "packs",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        }
+      }
+    },
+    "/albums/{albumId}": {
+      "get": {
+        "operationId": "viewAlbum",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        },
+        "parameters": [
+          {
+            "name": "albumId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/cards/{copyId}": {
+      "get": {
+        "operationId": "inspectCard",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        },
+        "parameters": [
+          {
+            "name": "copyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/public-albums": {
+      "get": {
+        "operationId": "publicAlbums",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        }
+      }
+    },
+    "/bindings": {
+      "get": {
+        "operationId": "bindings",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detached view; private fields are filtered for the viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Identity required"
+          },
+          "403": {
+            "description": "Optional feature disabled"
+          },
+          "404": {
+            "description": "Unknown or inaccessible resource"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "hostSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "host_session",
+        "description": "Replace with your verified host session; this adapter does not implement login."
+      }
+    },
+    "schemas": {
+      "QuoteRequest": {
+        "type": "object",
+        "required": [
+          "productId"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 1
+          }
+        }
+      },
+      "Purchase": {
+        "type": "object",
+        "required": [
+          "key",
+          "productId",
+          "quantity",
+          "productRevision",
+          "catalogVersion"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "productId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "productRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "catalogVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "Open": {
+        "type": "object",
+        "required": [
+          "key",
+          "packId"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "packId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "Convert": {
+        "type": "object",
+        "required": [
+          "key",
+          "from",
+          "to",
+          "amount",
+          "catalogVersion"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "catalogVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "rounding": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "floor"
+            ],
+            "default": "exact"
+          }
+        }
+      },
+      "TradeUp": {
+        "type": "object",
+        "required": [
+          "key",
+          "recipeId",
+          "copyIds"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "recipeId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "copyIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "ProposeTrade": {
+        "type": "object",
+        "required": [
+          "key",
+          "toUserId",
+          "give",
+          "receive"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "toUserId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "give": {
+            "type": "object",
+            "required": [
+              "copyIds",
+              "currencies"
+            ],
+            "properties": {
+              "copyIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "maxItems": 100
+              },
+              "currencies": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "currencyId",
+                    "amount"
+                  ],
+                  "properties": {
+                    "currencyId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                },
+                "maxItems": 20
+              }
+            }
+          },
+          "receive": {
+            "type": "object",
+            "required": [
+              "copyIds",
+              "currencies"
+            ],
+            "properties": {
+              "copyIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "maxItems": 100
+              },
+              "currencies": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "currencyId",
+                    "amount"
+                  ],
+                  "properties": {
+                    "currencyId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                },
+                "maxItems": 20
+              }
+            }
+          },
+          "expiresInSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 604800,
+            "default": 86400
+          }
+        }
+      },
+      "TradeCommand": {
+        "type": "object",
+        "required": [
+          "key",
+          "tradeId"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "tradeId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "SaveAlbum": {
+        "type": "object",
+        "required": [
+          "key",
+          "name"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "albumId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "private",
+              "public"
+            ],
+            "default": "private"
+          },
+          "layout": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "placements": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "required": [
+                "copyId"
+              ],
+              "properties": {
+                "copyId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "position": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100000
+                },
+                "data": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "UseBinding": {
+        "type": "object",
+        "required": [
+          "key",
+          "copyId",
+          "namespace"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "copyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "namespace": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "Quote": {
+        "type": "object",
+        "required": [
+          "productId",
+          "quantity",
+          "productRevision",
+          "catalogVersion",
+          "price"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "productRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "catalogVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "price": {
+            "type": "object",
+            "required": [
+              "currencyId",
+              "amount"
+            ],
+            "properties": {
+              "currencyId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "amount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            }
+          }
+        }
+      },
+      "Copy": {
+        "type": "object",
+        "required": [
+          "id",
+          "ownerId",
+          "cardId",
+          "variantId",
+          "lineId",
+          "rarityId",
+          "state",
+          "definition",
+          "variant",
+          "bindings",
+          "metadata"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ownerId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "variantId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lineId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rarityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "sealed",
+              "owned",
+              "consumed"
+            ]
+          },
+          "serialNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "editionTotal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "openedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "definition": {
+            "type": "object"
+          },
+          "variant": {
+            "type": "object"
+          },
+          "bindings": {
+            "type": "object"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "Receipt": {
+        "type": "object",
+        "required": [
+          "id",
+          "openedAt",
+          "cards"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "openedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Copy"
+            }
+          }
+        }
+      }
+    }
+  }
+}

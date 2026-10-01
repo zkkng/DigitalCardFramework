@@ -1,0 +1,19 @@
+{
+  "name": "@digital-card/framework",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless digital card collection core and replaceable web presentation",
+  "engines": {
+    "node": ">=24.14.0"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./sqlite": "./src/sqlite.js",
+    "./client": "./src/client.js",
+    "./http": "./src/http.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}
