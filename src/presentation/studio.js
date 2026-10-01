@@ -1,3 +1,4 @@
+import { analyzePerformance, enforcePerformance } from "./performance.js";
 import {
   createProject,
   loadDraft,
@@ -20,7 +21,12 @@ const allNodes = (nodes) =>
 /** Optional creator UI. Uses exactly the public player and compiler contracts. */
 export function mountStudio(
   root,
-  { initialPackage, onPublish, presets = materialPresets } = {},
+  {
+    initialPackage,
+    onPublish,
+    performance = {},
+    presets = materialPresets,
+  } = {},
 ) {
   presets = { ...presets };
   try {
@@ -54,6 +60,7 @@ export function mountStudio(
     slot = el("div"),
     properties = el("aside"),
     status = el("p"),
+    diagnostics = el("details"),
     scrub = el("input");
   toolbar.className = "dcs-toolbar";
   layout.className = "dcs-layout";
@@ -67,7 +74,25 @@ export function mountStudio(
   region.append(slot);
   center.append(region);
   layout.append(layers, center, properties);
-  root.append(toolbar, layout, status);
+  root.append(toolbar, layout, diagnostics, status);
+  function showPerformance(pkg) {
+    const result = analyzePerformance(pkg, performance);
+    diagnostics.replaceChildren(
+      el("summary", `Mobile performance: ${result.issues.length} warnings`),
+    );
+    diagnostics.append(el("p", result.caveat));
+    for (const issue of result.issues)
+      button(
+        `${issue.face}${issue.path}: ${issue.message} ${issue.remedy}`,
+        async () => {
+          side = issue.face;
+          selected = issue.layerId;
+          await rebuild();
+        },
+        diagnostics,
+      );
+    return result;
+  }
   const report = (message) => (status.textContent = message);
   function button(label, fn, parent = toolbar) {
     const b = el("button", label);
@@ -139,6 +164,7 @@ export function mountStudio(
     if (disposed || revision !== rebuildRevision) return;
     renderLayers();
     renderProperties();
+    showPerformance(pkg);
     report(
       `${project.manifest.title} · ${project.manifest.assets.length} assets`,
     );
@@ -211,7 +237,7 @@ export function mountStudio(
     dialog.showModal();
   }
   button("Import layered artwork", () =>
-    upload(".psd,.ora,.zip", importArtwork),
+    upload(".psd,.ora,.zip,.gif", importArtwork),
   );
   button("Make card from image", () =>
     upload("image/png,image/webp,image/jpeg", async (file) =>
@@ -246,6 +272,35 @@ export function mountStudio(
           height: a.height * scale,
         };
       project.edit(() => scene().nodes.push(node));
+      selected = node.id;
+      await rebuild();
+    }),
+  );
+  button("Add animated GIF layer", () =>
+    upload(".gif,image/gif", async (file) => {
+      if (!project) throw new Error("Open a card first");
+      const conversion = await importLayeredFile(file),
+        pkg = await conversion.build();
+      const prefix = "gif-" + crypto.randomUUID().replaceAll("-", "") + "-";
+      const node = structuredClone(
+        pkg.scenes.get(pkg.manifest.faces.front.scene).nodes[0],
+      );
+      project.edit((p) => {
+        for (const asset of pkg.manifest.assets) {
+          const next = {
+            ...asset,
+            id: prefix + asset.id,
+            path: "assets/" + prefix + asset.id + ".png",
+          };
+          p.manifest.assets.push(next);
+          p.assets.set(next.path, pkg.files.get(asset.path));
+        }
+        node.id = prefix + node.id;
+        node.asset = prefix + node.asset;
+        for (const frame of node.animation?.frames ?? [])
+          frame.asset = prefix + frame.asset;
+        scene().nodes.push(node);
+      });
       selected = node.id;
       await rebuild();
     }),
@@ -385,6 +440,7 @@ export function mountStudio(
   button("Capture posters", capturePosters);
   button("Export .dcard", async () => {
     const pkg = await project.export();
+    enforcePerformance(showPerformance(pkg));
     const url = URL.createObjectURL(
         new Blob([pkg.archive], { type: "application/zip" }),
       ),
@@ -400,6 +456,7 @@ export function mountStudio(
   if (onPublish)
     button("Publish", async () => {
       const pkg = await project.export();
+      enforcePerformance(showPerformance(pkg));
       await onPublish(pkg);
       report("Published.");
     });
@@ -633,6 +690,13 @@ export function mountStudio(
           ["circle", "hexagon", "shard", "star"],
           m.shape ?? "circle",
           (v) => edit(() => (m.shape = v)),
+          advanced,
+        );
+        pick(
+          "Custom flake coloring",
+          ["holo", "texture"],
+          m.flakeColor ?? "holo",
+          (v) => edit(() => (m.flakeColor = v)),
           advanced,
         );
         button(
@@ -943,7 +1007,7 @@ export function mountStudio(
       const f = e.dataTransfer.files[0];
       if (f)
         try {
-          if (/\.(psd|ora|zip)$/i.test(f.name)) await importArtwork(f);
+          if (/\.(psd|ora|zip|gif)$/i.test(f.name)) await importArtwork(f);
           else if (/\.(dcard|dcproject)$/i.test(f.name))
             await open(
               await importPackage(new Uint8Array(await f.arrayBuffer())),

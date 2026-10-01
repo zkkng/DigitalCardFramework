@@ -15,6 +15,21 @@ const pw = await import(
 );
 const base = fileURLToPath(new URL("../", import.meta.url));
 const pkg = await build(fixture());
+const { gifFixture } = await import("./gif-fixture.mjs");
+const { build: bundle } =
+  await import("../src/presentation/node_modules/esbuild/lib/main.js");
+const workerBundle = await bundle({
+  entryPoints: [path.join(base, "src/presentation/layered-worker.js")],
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  external: ["node:*"],
+  write: false,
+});
+const special = new Map([
+  ["/synthetic.gif", gifFixture(3)],
+  ["/worker.js", workerBundle.outputFiles[0].contents],
+]);
 const server = createServer(async (req, res) => {
   try {
     const pathname = decodeURIComponent(
@@ -36,9 +51,11 @@ const server = createServer(async (req, res) => {
       resolved = path.resolve(base, relative);
     if (!resolved.startsWith(base) || relative.includes(".."))
       throw Error("path");
-    const data = pathname.startsWith("/card/")
-      ? pkg.files.get(pathname.slice(6))
-      : await readFile(resolved);
+    const data = special.has(pathname)
+      ? special.get(pathname)
+      : pathname.startsWith("/card/")
+        ? pkg.files.get(pathname.slice(6))
+        : await readFile(resolved);
     if (!data) throw Error("missing");
     res.setHeader(
       "content-type",
@@ -201,16 +218,14 @@ try {
     optional.manifest.capabilities.optional = [
       { id: "mod.decor@0.1", fallback: "omit-decorative" },
     ];
-    optional.scenes
-      .get("scenes/front.json")
-      .nodes.push({
-        id: "decor",
-        type: "adapter",
-        adapter: "mod.decor",
-        width: 100,
-        height: 100,
-        data: {},
-      });
+    optional.scenes.get("scenes/front.json").nodes.push({
+      id: "decor",
+      type: "adapter",
+      adapter: "mod.decor",
+      width: 100,
+      height: 100,
+      data: {},
+    });
     const os = createPlayerStage({ root }),
       ov = os.mount(root, { resolver: optional });
     await ov.ready;
@@ -309,7 +324,7 @@ try {
     const texture = gpu.texture(art),
       asset = { texture, width: 2, height: 1 },
       node = { x: 0, y: 0, width: 128, height: 128 };
-    const draw = (n, mask) => {
+    const draw = (n, mask, flake) => {
       gpu.begin(128, 128);
       gpu.draw(
         { ...node, ...n },
@@ -317,6 +332,7 @@ try {
         [1, 0, 0, 1, 0, 0],
         [0, 0, 128, 128],
         mask,
+        flake,
       );
       const pixels = new Uint8Array(128 * 128 * 4);
       gpu.gl.readPixels(
@@ -382,6 +398,44 @@ try {
         [...green],
       ),
     );
+    const flakeCanvas = document.createElement("canvas");
+    flakeCanvas.width = flakeCanvas.height = 1;
+    const fc = flakeCanvas.getContext("2d");
+    fc.fillStyle = "#00ff00";
+    fc.fillRect(0, 0, 1, 1);
+    const flakeTexture = gpu.texture(flakeCanvas),
+      flakeAsset = { texture: flakeTexture, width: 1, height: 1 };
+    const mat = {
+      kind: "glitter",
+      size: 12,
+      density: 1,
+      intensity: 2,
+      roughness: 1,
+      angle: 0.5,
+      color: "#ff0000",
+    };
+    const tinted = draw(
+      { material: { ...mat, flakeColor: "holo" } },
+      undefined,
+      flakeAsset,
+    );
+    const textured = draw(
+      { material: { ...mat, flakeColor: "texture" } },
+      undefined,
+      flakeAsset,
+    );
+    let gain = 0;
+    for (let y = 0; y < 128; y += 4)
+      for (let x = 0; x < 128; x += 4)
+        gain += textured(x, y)[1] - tinted(x, y)[1];
+    results.push(
+      check(
+        gain > 1000,
+        "custom flake artwork contributes its own color to GPU glitter",
+        { greenGain: gain },
+      ),
+    );
+    gpu.release(flakeTexture);
     gpu.dispose();
     // A real 1,000-card DOM gallery must not resolve all packages on connect.
     let loads = 0,
@@ -457,6 +511,146 @@ try {
       ),
     );
     program.dispose();
+    const { importLayeredFile } =
+      await import("/src/presentation/layered-import.js");
+    const { browserResolver } = await import("/src/presentation/package.js");
+    const gif = new File(
+      [await (await fetch("/synthetic.gif")).arrayBuffer()],
+      "test.gif",
+      { type: "image/gif" },
+    );
+    const converted = await importLayeredFile(gif, { workerURL: "/worker.js" });
+    const animated = await converted.build();
+    const gr = browserResolver(animated),
+      gs = createPlayerStage({ root });
+    const gv = gs.mount(root, { resolver: gr });
+    const ready = await gv.ready;
+    const hashes = [];
+    for (const x of [-1, 0, 1]) {
+      gv.setInputs({ tilt: { x, y: 0 } });
+      await settle();
+      hashes.push(
+        await (
+          await gv.snapshot()
+        )
+          .arrayBuffer()
+          .then((b) => crypto.subtle.digest("SHA-256", b))
+          .then((b) => [...new Uint8Array(b)].join(",")),
+      );
+    }
+    results.push(
+      check(
+        ready.mode === "interactive" &&
+          hashes[0] !== hashes[1] &&
+          hashes[0] === hashes[2],
+        "worker GIF transparency/disposal survives angle-driven GPU rendering",
+      ),
+    );
+    const idleFrames = gs.diagnostics().frames;
+    await settle();
+    results.push(
+      check(
+        gs.diagnostics().frames === idleFrames,
+        "angle-driven GIF has no idle animation loop",
+      ),
+    );
+    gv.dispose();
+    gs.dispose();
+    gr.dispose();
+    const { mountAssembly } = await import("/src/presentation/integration.js");
+    const ar = await directoryResolver("/card/");
+    const ref = {
+      contract: "digital-card@0.1",
+      digest: ar.digest,
+      baseURL: "/card/",
+    };
+    ar.dispose();
+    const as = createPlayerStage({ root });
+    const assembly = await mountAssembly({
+      stage: as,
+      root,
+      interaction: { rotate: true },
+      descriptor: {
+        version: 1,
+        members: [
+          {
+            id: "left",
+            presentation: ref,
+            bounds: [0, 0, 50, 100],
+            motion: { syncGroup: "pair" },
+          },
+          {
+            id: "right",
+            presentation: ref,
+            bounds: [50, 0, 50, 100],
+            motion: {
+              syncGroup: "pair",
+              limits: { x: [-0.25, 0.25], y: [-0.5, 0.5] },
+            },
+          },
+        ],
+      },
+    });
+    await Promise.all(assembly.views.map((v) => v.ready));
+    const left = root.querySelector('[data-member="left"]');
+    left.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+    );
+    assembly.setMemberInputs("left", { tilt: { x: 1, y: 1 } });
+    results.push(
+      check(
+        assembly.snapshot().left.tilt.x === 1 &&
+          assembly.snapshot().right.tilt.x === 0.25 &&
+          root
+            .querySelector('[data-member="right"]')
+            .style.transform.includes("3deg"),
+        "assembly mounts independently owned cards with bounded synchronized rotation",
+      ),
+    );
+    assembly.dispose();
+    as.dispose();
+    results.push(
+      check(
+        !root.querySelector("[data-member]") && as.diagnostics().textures === 0,
+        "assembly disposal releases slots and GPU resources",
+      ),
+    );
+    const { starFieldAdapter } =
+      await import("/examples/custom-card-effects.js");
+    const mr = await directoryResolver("/card/");
+    mr.manifest.capabilities.optional = [
+      { id: "example.stars@0.1", fallback: "omit-decorative" },
+    ];
+    mr.scenes
+      .get("scenes/front.json")
+      .nodes.push({
+        id: "mod-stars",
+        type: "adapter",
+        adapter: "example.stars",
+        width: 1000,
+        height: 1500,
+        data: { count: 20 },
+      });
+    const ms = createPlayerStage({ root, adapters: [starFieldAdapter()] });
+    const mv = ms.mount(root, { resolver: mr });
+    const modReady = await mv.ready;
+    mv.setInputs({ tilt: { x: 0.7, y: 0 } });
+    await settle();
+    results.push(
+      check(
+        modReady.mode === "interactive",
+        "host-installed custom effect executes through public adapter API",
+      ),
+    );
+    mv.dispose();
+    ms.dispose();
+    mr.dispose();
+    results.push(
+      check(
+        ms.diagnostics().estimatedGpuBytes === 0,
+        "custom effect disposal releases its resources",
+      ),
+    );
     return results;
   });
   checks.push(...result);

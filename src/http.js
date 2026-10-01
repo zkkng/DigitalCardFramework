@@ -13,7 +13,7 @@ async function body(request,maxBytes) {
   try {const value=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');if(!value||typeof value!=='object'||Array.isArray(value))throw new Error();return safeData(value,{maxBytes});}
   catch(error){if(error instanceof FrameworkError)throw error;throw new FrameworkError('INVALID_JSON','JSON request must be an object');}
 }
-export function createApiHandler({framework,resolveIdentity,allowedOrigin,exposeOperators=false,requireTradeReview=false,requirePrincipal=false,rateLimit,onRequest}={}) {
+export function createApiHandler({framework,currencyGateway,resolveIdentity,allowedOrigin,exposeOperators=false,requireTradeReview=false,requirePrincipal=false,rateLimit,onRequest}={}) {
   if(typeof resolveIdentity!=='function') throw new Error('A trusted identity resolver is required');
   return async (request,response) => {
     const url=new URL(request.url,'http://localhost'), path=url.pathname;
@@ -63,9 +63,12 @@ export function createApiHandler({framework,resolveIdentity,allowedOrigin,expose
           ,'/api/trades/counter':'counterTrade','/api/preferences':'setPreferences','/api/notifications/read':'readNotifications',
           '/api/operator/import/preview':'previewImport','/api/operator/import/commit':'commitImport'
         };
+        if(path==='/api/currency/reconcile' && currencyGateway) result=await currencyGateway.reconcile(actor,input);
+        else {
         const command=routes[path]; if(!command) throw new FrameworkError('NOT_FOUND','Unknown API route',404);
         if(requireTradeReview&&['acceptTrade','counterTrade'].includes(command)&&typeof input.expectedDigest!=='string')throw new FrameworkError('REVIEW_REQUIRED','Review the immutable trade contents first',409);
         result=framework[command](actor,input);
+        }
       }
       response.end(JSON.stringify(result));
     } catch(error) {

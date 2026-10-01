@@ -20,6 +20,7 @@ export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={})
     notifications:options=>call('/notifications'+query(options)),readNotifications:input=>call('/notifications/read',input),
     operatorCatalog:()=>call('/operator/catalog'),previewImport:input=>call('/operator/import/preview',input),commitImport:input=>call('/operator/import/commit',input),
     purchase:input=>call('/purchase',input), openPack:input=>call('/open',input),
+    reconcileCurrency:input=>call('/currency/reconcile',input),
     convert:input=>call('/convert',input), tradeUp:input=>call('/trade-up',input),
     albums:()=>call('/albums'), saveAlbum:input=>call('/albums',input), viewAlbum:albumId=>call('/albums/'+encodeURIComponent(albumId)),
     publicAlbums:()=>call('/public-albums'), trades:()=>call('/trades'), proposeTrade:input=>call('/trades',input),

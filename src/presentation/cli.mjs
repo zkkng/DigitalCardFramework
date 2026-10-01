@@ -26,6 +26,7 @@ export async function batchBuild(jobs, { root = process.cwd(), signal } = {}) {
         out: path.resolve(root, job.output),
         archivePath: job.archive ? path.resolve(root, job.archive) : undefined,
         signal,
+        performance: job.performance,
       });
       results.push({ id: job.id ?? job.source, ok: true, ...result.report });
     } catch (error) {

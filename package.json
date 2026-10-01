@@ -41,7 +41,13 @@
     "./presentation/schema": "./src/presentation/schema.js",
     "./presentation/project": "./src/presentation/project.js",
     "./presentation/motion": "./src/presentation/motion.js",
-    "./presentation/layered-import": "./src/presentation/layered-import.js"
+    "./presentation/layered-import": "./src/presentation/layered-import.js",
+    "./presentation/performance": "./src/presentation/performance.js",
+    "./presentation/album-motion": "./src/presentation/album-motion.js",
+    "./presentation/gif-source": "./src/presentation/gif-source.js",
+    "./currency-gateway": "./src/currency-gateway.js",
+    "./presentation/png-encode": "./src/presentation/png-encode.js",
+    "./presentation/node-http": "./src/presentation/node-http.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",

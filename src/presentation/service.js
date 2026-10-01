@@ -21,6 +21,7 @@ import {
   safePath,
 } from "./data.js";
 import { publishPackage } from "./compiler.js";
+import { performancePolicy, enforcePerformance } from "./performance.js";
 import { DEFAULT_LIMITS } from "./package.js";
 
 const atomic = async (file, value) => {
@@ -30,11 +31,11 @@ const atomic = async (file, value) => {
 };
 export async function validateInWorker(
   file,
-  { limits = DEFAULT_LIMITS, timeoutMs = 30000, signal } = {},
+  { limits = DEFAULT_LIMITS, timeoutMs = 30000, signal, performance } = {},
 ) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./import-worker.js", import.meta.url), {
-      workerData: { path: file, limits },
+      workerData: { path: file, limits, performance },
       resourceLimits: {
         maxOldGenerationSizeMb: 256,
         maxYoungGenerationSizeMb: 32,
@@ -78,6 +79,7 @@ export async function createPresentationStore({
   limits = {},
   scan = async () => {},
   scanTimeoutMs = 30000,
+  performance = {},
   allowCapabilities = null,
   maxPendingPerActor = 3,
   maxStoredUploadBytes = 512 * 1024 * 1024,
@@ -95,6 +97,7 @@ export async function createPresentationStore({
     "LIMIT",
     "Invalid scan timeout",
   );
+  performance = performancePolicy(performance);
   root = path.resolve(root);
   const jobsDir = path.join(root, "jobs"),
     uploads = path.join(root, "quarantine"),
@@ -158,8 +161,11 @@ export async function createPresentationStore({
       await save(job);
       const validation = await validateInWorker(job.uploadPath, {
         limits: ceiling,
+        performance,
         signal: controller.signal,
       });
+      job.report = validation.report;
+      enforcePerformance(job.report.performance);
       if (allowCapabilities)
         ensure(
           validation.capabilities.required.every((c) =>
@@ -212,6 +218,7 @@ export async function createPresentationStore({
     }
   }
   return {
+    checkAccess: permitted,
     async import(actor, bytes, { idempotencyKey } = {}) {
       await permitted(actor, "import");
       ensure(
@@ -310,7 +317,7 @@ export async function createPresentationStore({
         if (job.state === "published") return publicJob(job);
         const result = await publishPackage(
           new Uint8Array(await readFile(job.uploadPath)),
-          { contentRoot, limits: ceiling },
+          { contentRoot, limits: ceiling, performance },
         );
         ensure(
           result.digest === job.digest,
@@ -430,6 +437,7 @@ export function presentationRoutes(
         parts = route.split("/").filter(Boolean);
       let result;
       if (request.method === "POST" && route === "/imports") {
+        await store.checkAccess(actor, "import");
         ensure(
           !request.headers.get("content-encoding"),
           "UPLOAD",

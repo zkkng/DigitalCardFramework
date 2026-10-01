@@ -1,3 +1,4 @@
+import { createAlbumMotion } from "./album-motion.js";
 import { ensure, clamp } from "./data.js";
 import { directoryResolver } from "./resolver.js";
 
@@ -61,6 +62,7 @@ export async function mountPresentation({
   quality = "lite",
   hostInputs = {},
   onEvent,
+  inputMode = "drag",
   signal,
 }) {
   const ref = validatePresentationReference(definition.presentation);
@@ -71,7 +73,7 @@ export async function mountPresentation({
     const view = stage.mount(
       target,
       { title: definition.title ?? definition.name, resolver },
-      { quality, inputMode: "drag", onEvent },
+      { quality, inputMode, onEvent },
     );
     view.setInputs({ host: publicInputs(resolver.manifest, hostInputs) });
     let disposed = false;
@@ -101,6 +103,7 @@ export async function mountAssembly({
   root,
   descriptor,
   resolve,
+  interaction = {},
   missing = (member) => member.title ?? "Card unavailable",
   signal,
 }) {
@@ -111,6 +114,13 @@ export async function mountAssembly({
     "ASSEMBLY",
     "Invalid assembly",
   );
+  createAlbumMotion({
+    members: descriptor.members.map((m) => ({
+      ...m,
+      motion: { ...(m.tilt ? { scale: m.tilt } : {}), ...m.motion },
+    })),
+    defaults: interaction.defaults,
+  }).dispose();
   const views = [],
     slots = [],
     ids = new Set();
@@ -147,6 +157,7 @@ export async function mountAssembly({
         stage,
         target: slot,
         definition: member,
+        inputMode: "host",
         resolve,
         signal,
       });
@@ -157,24 +168,106 @@ export async function mountAssembly({
     slots.forEach((s) => s.remove());
     throw error;
   }
+  const events = new AbortController();
+  const controller = createAlbumMotion({
+    members: views.map(({ member }) => ({
+      ...member,
+      motion: {
+        ...(member.tilt ? { scale: member.tilt } : {}),
+        ...member.motion,
+      },
+    })),
+    defaults: interaction.defaults,
+    onChange(id, value) {
+      const entry = views.find((v) => v.member.id === id);
+      entry.view.setInputs(value);
+      const slot = slots.find((s) => s.dataset.member === id);
+      if (
+        interaction.rotate === true &&
+        !globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      )
+        slot.style.transform = `perspective(1000px) rotateX(${value.rotation.x}deg) rotateY(${value.rotation.y}deg)`;
+      interaction.onChange?.(id, value);
+    },
+  });
+  for (const slot of slots) {
+    if (
+      !views.some((v) => v.member.id === slot.dataset.member) ||
+      interaction.inputMode === "host"
+    )
+      continue;
+    slot.tabIndex = 0;
+    slot.setAttribute(
+      "aria-label",
+      "Card; use arrow keys to turn, Home to reset",
+    );
+    const set = (tilt) => controller.setInputs(slot.dataset.member, { tilt });
+    const move = (e) => {
+      const r = slot.getBoundingClientRect();
+      if (r.width && r.height)
+        set({
+          x: ((e.clientX - r.left) / r.width) * 2 - 1,
+          y: ((e.clientY - r.top) / r.height) * 2 - 1,
+        });
+    };
+    slot.addEventListener(
+      "pointermove",
+      (e) => {
+        if (e.pointerType !== "touch" || e.buttons) move(e);
+      },
+      { signal: events.signal },
+    );
+    slot.addEventListener("pointerdown", move, { signal: events.signal });
+    for (const event of ["pointerleave", "pointercancel", "blur"])
+      slot.addEventListener(event, () => set({ x: 0, y: 0 }), {
+        signal: events.signal,
+      });
+    slot.addEventListener(
+      "keydown",
+      (e) => {
+        if (
+          !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home"].includes(
+            e.key,
+          )
+        )
+          return;
+        e.preventDefault();
+        const tilt = controller.snapshot()[slot.dataset.member].tilt;
+        if (e.key === "Home") tilt.x = tilt.y = 0;
+        else
+          tilt[e.key === "ArrowLeft" || e.key === "ArrowRight" ? "x" : "y"] += [
+            "ArrowLeft",
+            "ArrowUp",
+          ].includes(e.key)
+            ? -0.15
+            : 0.15;
+        set(tilt);
+      },
+      { signal: events.signal },
+    );
+  }
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    events.abort();
+    controller.dispose();
+    views.forEach(({ view }) => view.dispose());
+    slots.forEach((s) => s.remove());
+    signal?.removeEventListener("abort", dispose);
+  };
+  signal?.addEventListener("abort", dispose, { once: true });
+  if (signal?.aborted) dispose();
   return {
     views: views.map((x) => x.view),
     setInputs(input) {
-      for (const { view, member } of views) {
-        const map = member.tilt ?? [1, 1];
-        view.setInputs({
-          ...input,
-          tilt: {
-            x: (input.tilt?.x ?? 0) * map[0],
-            y: (input.tilt?.y ?? 0) * map[1],
-          },
-        });
-      }
+      controller.setAll(input);
     },
-    dispose() {
-      views.forEach(({ view }) => view.dispose());
-      slots.forEach((s) => s.remove());
+    setMemberInputs(id, input) {
+      controller.setInputs(id, input);
     },
+    snapshot: controller.snapshot,
+    dispose,
   };
 }
 

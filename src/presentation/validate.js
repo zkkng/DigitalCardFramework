@@ -431,6 +431,7 @@ export function validateScene(scene, manifest) {
         "shape",
         "color",
         "flakeAsset",
+        "flakeColor",
         "maskAsset",
         "mode",
         "roughness",
@@ -454,6 +455,7 @@ export function validateScene(scene, manifest) {
             "shape",
             "color",
             "flakeAsset",
+            "flakeColor",
             "maskAsset",
             "mode",
           ].includes(k)
@@ -470,6 +472,12 @@ export function validateScene(scene, manifest) {
             "MATERIAL",
             "Unknown material image",
           );
+      if (n.material.flakeColor !== undefined)
+        ensure(
+          ["holo", "texture"].includes(n.material.flakeColor),
+          "MATERIAL",
+          "Invalid flake color mode",
+        );
       if (n.material.shape)
         ensure(
           ["circle", "hexagon", "shard", "star"].includes(n.material.shape),
@@ -528,7 +536,11 @@ export function validateScene(scene, manifest) {
         );
         rect(f.rect, assets.get(f.asset));
         for (const k of ["x", "y", "width", "height", "duration"])
-          number(f[k], k === "duration" ? 1 : -20000, 20000);
+          number(
+            f[k],
+            k === "duration" ? 1 : -20000,
+            k === "duration" ? 3600000 : 20000,
+          );
       }
     }
     if (n.video) {

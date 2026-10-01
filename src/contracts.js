@@ -1549,3 +1549,23 @@ Object.assign(openapi.paths,{
 openapi.paths['/inventory'].get.parameters=pageParameters;
 openapi.paths['/inventory'].get.responses['200'].content['application/json'].schema={oneOf:[{type:'array',items:ref('Copy')},ref('Page')]};
 for(const value of Object.values(openapi.paths))for(const [method,operation]of Object.entries(value))if(method==='post'&&!operation.parameters.some(p=>p.name==='X-DC-Principal'))operation.parameters.push({name:'X-DC-Principal',in:'header',schema:str,description:'Required by the production host; verified principal binding.'});
+
+openapi.paths['/currency/reconcile'] = {post: {
+  operationId:'reconcileCurrency', description:'Optional external-currency provider bridge. The server verifies final settlement; body amounts and identities are never trusted. Deduplicated by provider and transaction, not client retry key.',
+  security:[{hostSession:[]}], parameters:[{name:'Origin',in:'header',required:true,schema:{type:'string'}},{name:'X-DC-Principal',in:'header',required:true,schema:{type:'string'}}],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object', required: ['providerId', 'transactionId'],
+          properties: {
+            providerId: { type: 'string', maxLength: 100 },
+            transactionId: { type: 'string', maxLength: 300 },
+          },
+        },
+      },
+    },
+  },
+  responses:{200:{description:'Verified settlement credited exactly once'},400:{description:'Invalid provider or units'},401:{description:'Authentication required'},403:{description:'Origin or ownership rejected'},404:{description:'Gateway/provider not configured'},409:{description:'Pending or conflicting settlement'}}
+}};

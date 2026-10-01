@@ -1,3 +1,4 @@
+import { gifFixture } from "./gif-fixture.mjs";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
@@ -110,11 +111,43 @@ try {
     ),
     18,
   );
+  const chooser = page.waitForEvent("filechooser");
+  await page
+    .getByRole("button", { name: "Add animated GIF layer", exact: true })
+    .click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "synthetic.gif",
+    mimeType: "image/gif",
+    buffer: Buffer.from(gifFixture(3)),
+  });
+  await page.waitForFunction(() =>
+    window.cardStudio
+      .getProject()
+      .scenes.get("scenes/front.json")
+      .nodes.some(
+        (n) => n.id.startsWith("gif-") && n.animation?.frames.length === 3,
+      ),
+  );
+  const warnings = page
+    .locator("details")
+    .filter({
+      has: page.locator("summary", { hasText: "Mobile performance:" }),
+    })
+    .first();
+  await warnings.locator("summary").click();
+  await warnings.getByRole("button").first().click();
+  await page.waitForFunction(
+    () => !!document.querySelector(".dcs-layers .is-selected"),
+  );
   assert.deepEqual(errors, []);
   const result = {
     editor: "passed",
     mask: "painted and exported",
     draft: "saved and restored",
+    gif: "added transparent three-frame layer through file picker",
+    performance: "visible warnings select contributing layer",
     digest: checked.digest,
     assets: checked.manifest.assets.length,
     errors,

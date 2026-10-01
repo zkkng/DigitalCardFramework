@@ -53,6 +53,12 @@ export async function layeredPackage(doc, { poster, flatten = false } = {}) {
       await asset(id, n.bytes, "color");
       n.asset = id;
       delete n.bytes;
+      for (const frame of n.animation?.frames ?? []) {
+        const frameId = "raster-" + ++index;
+        await asset(frameId, frame.bytes, "color");
+        frame.asset = frameId;
+        delete frame.bytes;
+      }
     }
   }
   await convert(front);

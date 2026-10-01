@@ -21,3 +21,7 @@ export { createCardRenderer } from "./card-view.js";
 export { composeExtensions, resolveConfiguration } from "./extensions.js";
 
 export { createAuthoring, imagePackage } from "./authoring.js";
+
+export { analyzePerformance, performancePolicy, mobilePerformanceDefaults, enforcePerformance } from "./performance.js";
+
+export { createAlbumMotion } from "./album-motion.js";

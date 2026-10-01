@@ -1,3 +1,4 @@
+import { renderLayeredPoster } from "./layered-poster.js";
 import { ensure } from "./data.js";
 import { layeredPackage } from "./layered-package.js";
 /** One source file, bounded worker, a reviewable conversion report, then a normal .dcard. */
@@ -15,8 +16,8 @@ export async function importLayeredFile(
     "Layered file exceeds 64 MiB",
   );
   const ext = file.name.toLowerCase().split(".").at(-1),
-    format = { psd: "psd", ora: "ora", zip: "layer-zip" }[ext];
-  ensure(format, "LAYER_FORMAT", "Use PSD, OpenRaster (.ora), or a layer ZIP");
+    format = { psd: "psd", ora: "ora", zip: "layer-zip", gif: "gif" }[ext];
+  ensure(format, "LAYER_FORMAT", "Use GIF, PSD, OpenRaster (.ora), or a layer ZIP");
   const bytes = new Uint8Array(await file.arrayBuffer());
   signal?.throwIfAborted();
   const doc = await new Promise((resolve, reject) => {
@@ -47,6 +48,9 @@ export async function importLayeredFile(
     worker.postMessage({ bytes, format }, [bytes.buffer]);
     if (signal?.aborted) abort();
   });
+  signal?.throwIfAborted();
+  if (!doc.poster) doc.poster = await renderLayeredPoster(doc);
+  signal?.throwIfAborted();
   return {
     report: doc.report,
     sourceSize: { width: doc.width, height: doc.height },

@@ -1,4 +1,5 @@
 /** Authoring import only. Converts sources to the same portable scene contract. */
+import { parseGIFSource } from "./gif-source.js";
 import { readPsd, initializeCanvas } from "ag-psd";
 import { DOMParser } from "@xmldom/xmldom";
 import { ensure, parseJSON, text, safePath } from "./data.js";
@@ -78,6 +79,7 @@ export async function parseLayeredSource(
   bytes,
   { format, encodeRGBA, limits: overrides = {} },
 ) {
+  if (format === "gif") return parseGIFSource(bytes, { encodeRGBA, limits: overrides });
   const limits = { ...LIMITS, ...overrides };
   ensure(
     bytes instanceof Uint8Array && bytes.length <= limits.bytes,

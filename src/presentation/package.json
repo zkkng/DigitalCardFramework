@@ -20,7 +20,12 @@
     "./authoring": "./authoring.js",
     "./layered-source": "./layered-source.js",
     "./layered-package": "./layered-package.js",
-    "./layered-import": "./layered-import.js"
+    "./layered-import": "./layered-import.js",
+    "./performance": "./performance.js",
+    "./album-motion": "./album-motion.js",
+    "./gif-source": "./gif-source.js",
+    "./png-encode": "./png-encode.js",
+    "./node-http": "./node-http.js"
   },
   "dependencies": {
     "@lottiefiles/dotlottie-web": "0.80.0",
@@ -28,6 +33,7 @@
     "@xmldom/xmldom": "0.9.12",
     "ag-psd": "31.0.2",
     "ethers": "6.17.0",
+    "gifuct-js": "2.1.2",
     "siwe": "3.0.0",
     "three": "0.186.1"
   },

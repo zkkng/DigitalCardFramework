@@ -1,3 +1,4 @@
+import { analyzePerformance, enforcePerformance } from "./performance.js";
 import { ensure } from "./data.js";
 import { rasterDimensions } from "./media.js";
 import { buildPackage, importPackage } from "./package.js";
@@ -105,6 +106,7 @@ const defaultEffects = {
 
 /** Host-installed functions are trusted. Uploaded configuration contains data only. */
 export function createAuthoring({
+  performance = {},
   importers = {},
   effects = {},
   transform = async () => {},
@@ -204,7 +206,9 @@ export function createAuthoring({
           "IDENTITY",
           "A transform cannot change a requested stable card ID",
         );
-      emit({ type: "build.completed", operationId, digest: pkg.digest });
+      pkg.performance = analyzePerformance(pkg, performance);
+      enforcePerformance(pkg.performance);
+      emit({ type: "build.completed", operationId, digest: pkg.digest, performance: pkg.performance });
       return pkg;
     } catch (error) {
       emit({

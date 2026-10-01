@@ -1,3 +1,7 @@
+import {createPresentationStore} from "../src/presentation/service.js";
+import {createPresentationHandler} from "../src/presentation/node-http.js";
+import {authorizePresentation} from "../src/access.js";
+import {createCurrencyGateway} from "../src/currency-gateway.js";
 import {createServer} from 'node:http';
 import {readFile,mkdir} from 'node:fs/promises';
 import {resolve,dirname} from 'node:path';
@@ -29,8 +33,11 @@ const sessions=new SessionStore(dbPath,{encryptionKey,maxSessions:extension.sess
 if(!extension.identityProvider&&(!issuer?.startsWith('https://')||!clientId))throw new Error('Configure OIDC or a host identityProvider');
 const provider=extension.identityProvider??await createOIDCProvider({issuer,clientId,clientSecret:await secret('OIDC_CLIENT_SECRET'),origin});
 const auth=createAuthHost({framework,sessions,provider,origin,adminSubjects,resolveAccess:extension.resolveAccess,rateLimit});
-const api=createApiHandler({framework,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,exposeOperators:true,requireTradeReview:true,requirePrincipal:true,rateLimit,
+const currencyGateway=extension.currencyProviders?createCurrencyGateway({framework,providers:extension.currencyProviders}):undefined;
+const api=createApiHandler({framework,currencyGateway,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,exposeOperators:true,requireTradeReview:true,requirePrincipal:true,rateLimit,
   onRequest:event=>process.stdout.write(JSON.stringify({kind:'request',...event})+'\n')});
+const presentations=process.env.PRESENTATION_ROOT?await createPresentationStore({root:resolve(process.env.PRESENTATION_ROOT),...extension.presentationOptions,authorize:authorizePresentation}):null;
+const presentationHTTP=presentations?createPresentationHandler({store:presentations,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,rateLimit}):null;
 const assetOrigins=(process.env.ASSET_ORIGINS??'').split(',').filter(Boolean);for(const value of assetOrigins)if(new URL(value).origin!==value||!value.startsWith('https://'))throw new Error('ASSET_ORIGINS requires exact HTTPS origins');
 const server=createServer({requestTimeout:15000,headersTimeout:10000,maxHeaderSize:16384},async(req,res)=>{
   securityHeaders(res,{production:true});
@@ -38,12 +45,12 @@ const server=createServer({requestTimeout:15000,headersTimeout:10000,maxHeaderSi
     const path=new URL(req.url,origin).pathname;
     if(path==='/healthz'&&req.method==='GET'){res.setHeader('Content-Type','application/json');res.end('{"ok":true}');return;}
     if(path==='/host/config'&&req.method==='GET'){res.setHeader('Cache-Control','no-store');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({mode:'production',brand:process.env.SITE_NAME??'Card Atelier',loginUrl:'/auth/login'}));return;}
-    if(await auth.handle(req,res)||await api(req,res)||await extension.handleStatic?.(req,res)||await serveReference(req,res,{production:true,assetOrigins}))return;
+    if(await auth.handle(req,res)||await presentationHTTP?.(req,res)||await api(req,res)||await extension.handleStatic?.(req,res)||await serveReference(req,res,{production:true,assetOrigins}))return;
     res.statusCode=404;res.end('Not found');
   }catch{res.statusCode=500;res.end('Request could not be completed');}
 });
 server.maxRequestsPerSocket=1000;server.keepAliveTimeout=5000;
 const maintenance=setInterval(()=>{try{framework.sweepExpiredTrades({role:'admin'});}catch{process.stderr.write('Trade expiry maintenance failed\n');}},60000);maintenance.unref();
 server.listen(Number(process.env.PORT??8080),process.env.BIND_ADDRESS??'127.0.0.1',()=>console.log('Framework production host ready on '+origin));
-let closing=false;function shutdown(){if(closing)return;closing=true;clearInterval(maintenance);server.close(()=>{sessions.close();framework.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();}
+let closing=false;function shutdown(){if(closing)return;closing=true;clearInterval(maintenance);server.close(async()=>{await presentations?.close();sessions.close();framework.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();}
 process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);

@@ -10,7 +10,7 @@ try {
   parentPort.postMessage({
     ok: true,
     digest: pkg.digest,
-    report: buildReport(pkg),
+    report: buildReport(pkg, workerData.performance),
     capabilities: pkg.manifest.capabilities,
   });
 } catch (error) {

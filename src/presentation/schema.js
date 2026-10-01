@@ -138,6 +138,7 @@ const material = object(
     shape: { enum: ["circle", "hexagon", "shard", "star"] },
     color: string,
     flakeAsset: id,
+    flakeColor: { enum: ["holo", "texture"] },
     maskAsset: id,
     mode: { enum: ["surface", "overlay"] },
     roughness: number,

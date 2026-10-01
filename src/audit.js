@@ -9,6 +9,14 @@ export function auditState(s){
   for(const [userId,wallet]of Object.entries(s.balances))for(const [currencyId,amount]of Object.entries(wallet))if(!currencies.has(currencyId)||!Number.isSafeInteger(amount)||amount<0||amount!==(balances[userId+':'+currencyId]??0))add('BALANCE_INVALID',userId+':'+currencyId);
   for(const trade of Object.values(s.trades))if(trade.status==='pending')for(const copyId of trade.give.copyIds){const c=s.copies[copyId];if(!c||c.ownerId!==trade.fromUserId||c.state!=='owned'||c.lockedBy!==trade.id)add('ESCROW_INVALID',trade.id+':'+copyId);}
   for(const album of Object.values(s.albums)){const seen=new Set();for(const p of album.placements){const c=s.copies[p.copyId];if(seen.has(p.copyId)||!c||c.ownerId!==album.ownerId||c.state!=='owned')add('ALBUM_INVALID',album.id+':'+p.copyId);seen.add(p.copyId);}}
+  const credits=new Map();
+  for(const entry of s.ledger)if(entry.type==='external-credit'){const list=credits.get(entry.reference)??[];list.push(entry);credits.set(entry.reference,list);}
+  for(const [token,settlement]of Object.entries(s.externalSettlements??{})){
+    const rows=credits.get(token)??[],r=settlement.result;
+    if(rows.length!==1||!r||rows[0].userId!==r.userId||rows[0].currencyId!==r.currencyId||rows[0].delta!==r.amount)add('SETTLEMENT_LEDGER_MISMATCH',token);
+    credits.delete(token);
+  }
+  for(const token of credits.keys())add('SETTLEMENT_RECEIPT_MISSING',token);
   const identities=new Set();for(const u of Object.values(s.users)){const identity=JSON.stringify([u.provider,u.subject]);if(identities.has(identity))add('IDENTITY_DUPLICATE',u.id);identities.add(identity);}
   return {ok:issues.length===0,issues,revision:s.revision,counts:{users:Object.keys(s.users).length,copies:copies.length,packs:Object.keys(s.packs).length,trades:Object.keys(s.trades).length,events:s.events.length}};
 }

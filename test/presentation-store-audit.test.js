@@ -27,6 +27,38 @@ const wait = async (store, id) => {
   }
   throw Error("Job did not settle");
 };
+
+for (const mode of ["warn", "reject"])
+  test(
+    "upload performance policy " +
+      mode +
+      " persists actionable layer diagnostics",
+    async (t) => {
+      let store;
+      const root = await directory(t, () => store?.close());
+      store = await createPresentationStore({
+        root,
+        authorize: authorizePresentation,
+        performance: { mode, layerDownloadBytes: 1 },
+      });
+      const pkg = await build(fixture());
+      const job = await store.import(admin, pkg.archive, {
+        idempotencyKey: "performance-test",
+      });
+      const result = await wait(store, job.id);
+      assert.equal(result.state, mode === "warn" ? "ready" : "rejected");
+      assert.ok(
+        result.report.performance.issues.every(
+          (i) => i.layerId && i.path && i.remedy,
+        ),
+      );
+      assert.ok(result.report.performance.issues.length > 0);
+      if (mode === "warn")
+        assert.equal((await store.publish(admin, job.id)).state, "published");
+      else
+        await assert.rejects(store.publish(admin, job.id), { code: "STATE" });
+    },
+  );
 test("all grants are exact, disabled admins are denied, ownership protects import jobs", () => {
   for (const granted of PERMISSIONS)
     for (const requested of [...PERMISSIONS, "*", "unknown"])

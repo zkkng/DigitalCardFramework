@@ -207,6 +207,12 @@
               "type": "string",
               "pattern": "^[a-zA-Z][\\w.-]{0,99}$"
             },
+            "flakeColor": {
+              "enum": [
+                "holo",
+                "texture"
+              ]
+            },
             "maskAsset": {
               "type": "string",
               "pattern": "^[a-zA-Z][\\w.-]{0,99}$"

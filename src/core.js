@@ -65,7 +65,7 @@ export class CardFramework {
       if (previous) {check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409); return previous.result;}
       const result=fn(s,user);
       for(const field of ['copies','packs','requests','albums','trades'])if(this.#limits[field]!==undefined)
-        check(field==='requests'?Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length<this.#limits.requests:Object.keys(s[field]).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
+        check(field==='requests'?Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length+Object.keys(s.externalSettlements??{}).length<this.#limits.requests:Object.keys(s[field]).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
       if(this.#limits.copiesPerUser!==undefined){const counts={};for(const c of Object.values(s.copies))if(c.state!=='consumed')counts[c.ownerId]=(counts[c.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.copiesPerUser,'INVENTORY_CAPACITY','Collector inventory capacity reached',507);}
       if(this.#limits.packsPerUser!==undefined)check(Object.values(s.packs).filter(p=>p.ownerId===user.id).length<=this.#limits.packsPerUser,'PACK_CAPACITY','Collector pack capacity reached',507);
       s.requests[token]={hash,result:clone(result)};
@@ -103,7 +103,7 @@ export class CardFramework {
     return this.#store.transact(s=>{
       s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,inputHash=contentDigest({manifest,digest,expectedVersion});
       if(s.operatorRequests[token]){check(s.operatorRequests[token].hash===inputHash,'IDEMPOTENCY_CONFLICT','Import key already used',409);return s.operatorRequests[token].result;}
-      if(this.#limits.requests!==undefined)check(Object.keys(s.requests).length+Object.keys(s.operatorRequests).length<this.#limits.requests,'INSTALLATION_CAPACITY','Installation requests capacity reached',507);
+      if(this.#limits.requests!==undefined)check(Object.keys(s.requests).length+Object.keys(s.operatorRequests).length+Object.keys(s.externalSettlements??{}).length<this.#limits.requests,'INSTALLATION_CAPACITY','Installation requests capacity reached',507);
       check((s.catalog?.version??0)===expectedVersion,'STALE_IMPORT','Catalog changed; preview again',409);
       const catalog=validateCatalog(manifest);check(contentDigest(catalog)===digest,'IMPORT_CHANGED','Preview differs from the submitted catalog',409);
       this.#validateRevision(catalog,s.catalog);s.catalog=catalog;
@@ -136,6 +136,25 @@ export class CardFramework {
     return this.#command({userId},key,'currency.granted',{currencyId,amount,reason},s=>{
       this.#currency(s,currencyId); this.#adjust(s,userId,currencyId,amount,'grant',reason);
       return {userId,currencyId,amount,balance:s.balances[userId][currencyId]};
+    });
+  }
+  settleExternalCredit(actor, input) {
+    this.#admin(actor, 'currency.settle');
+    const {providerId,transactionId,userId,currencyId,amount,externalCurrency,externalUnits}=input;
+    for(const [name,value] of Object.entries({providerId,transactionId,userId,currencyId,externalCurrency,externalUnits})) text(value,name,300);
+    integer(amount,'external credit amount',1,Number.MAX_SAFE_INTEGER);
+    check(/^[1-9][0-9]{0,39}$/.test(externalUnits),'INVALID_INPUT','Invalid external units');
+    const token=fingerprint({providerId,transactionId}), hash=fingerprint({userId,currencyId,amount,externalCurrency,externalUnits});
+    return this.#store.transact(s=>{
+      this.#user(s,{userId});this.#currency(s,currencyId);s.externalSettlements??={};
+      const old=s.externalSettlements[token];
+      if(old){check(old.hash===hash,'SETTLEMENT_CONFLICT','External transaction already credited with different terms',409);return old.result;}
+      if(this.#limits.requests!==undefined)check(Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length+Object.keys(s.externalSettlements).length<this.#limits.requests,'INSTALLATION_CAPACITY','Settlement capacity reached',507);
+      this.#adjust(s,userId,currencyId,amount,'external-credit',token);
+      const result={providerId,transactionId,userId,currencyId,amount,balance:s.balances[userId][currencyId],at:this.#clock()};
+      s.externalSettlements[token]={hash,result,externalCurrency,externalUnits};
+      this.#event(s,'currency.external-settled',{providerId,transactionId,userId,currencyId,amount});
+      return result;
     });
   }
   #currency(s,currencyId) {
@@ -175,7 +194,7 @@ export class CardFramework {
       createdAt:this.#clock(),openedAt:null,openedBy:null,acquiredAt:this.#clock(),source,version:1,
       definition:clone(card),variant:clone({...variant,bindings:undefined}),bindings:{},metadata:{}};
     for (const [name,spec] of Object.entries(variant.bindings)) {
-      const factory=spec.factory && this.#bindings[spec.factory];
+      const factory=spec.factory && Object.hasOwn(this.#bindings,spec.factory) && this.#bindings[spec.factory];
       check(!spec.factory || factory,'MISSING_PROVIDER','Binding factory unavailable: '+spec.factory,409);
       const data=factory ? factory({copy:clone(copy),user:clone(s.users[ownerId]),spec:clone(spec)}) : spec.data;
       check(!data?.then,'INVALID_PROVIDER','Binding factories must be synchronous',500);

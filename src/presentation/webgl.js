@@ -12,7 +12,7 @@ uniform vec4 fillColor; uniform int hasFill;
 uniform int effect; uniform vec4 params; uniform vec4 details;
 uniform vec2 center; uniform vec2 nodeSize; uniform vec4 clip; uniform vec2 resolution;
 uniform int maskMode; uniform int polygonCount; uniform vec2 polygon[64]; uniform int hasMask; uniform int hasFlake;
-uniform int hasEffectMask; uniform int surface; uniform int flakeShape; uniform vec3 tint; uniform int hasTint;
+uniform int flakeColor; uniform int hasEffectMask; uniform int surface; uniform int flakeShape; uniform vec3 tint; uniform int hasTint;
 in vec2 tex; in vec2 point; out vec4 color;
 float hash(vec2 p){uvec2 q=uvec2(ivec2(floor(p)));uint n=q.x*1597334677u+q.y*3812015801u;n=(n^(n>>16u))*2246822519u;n=(n^(n>>13u))*3266489917u;return float((n^(n>>16u))&16777215u)/16777216.;}
 void main(){
@@ -25,7 +25,7 @@ void main(){
  float weight=hasEffectMask==1?texture(effectMaskArt,point).a:1.;
  if(effect==1){float d=length((point-center)*vec2(1.,nodeSize.y/nodeSize.x));float radius=params.x*1.3;c.a*=1.-smoothstep(max(0.,radius-details.x),radius+.001,d);}
  if(effect==2){vec2 direction=vec2(.927,.375);float line=dot(point*nodeSize,direction)/dot(nodeSize,direction);float distance=abs(line-params.x)/max(.01,details.x);float band=max(0.,1.-distance)*weight;float ripple=.65+.35*sin(point.y*420.+sin(point.x*29.)*2.);if(surface==1)c.rgb+=vec3(.7,.85,1.)*band*ripple*params.z;else{c.a*=band;c.rgb*=1.+ripple*params.z;}}
- if(effect==3){vec2 grid=point*nodeSize/max(.5,details.x);vec2 cell=floor(grid);float r=hash(cell+details.z);vec2 f=(fract(grid)-.5)/max(.1,1.-details.w*hash(cell+13.));float catchLight=pow(max(0.,cos(params.y*6.283185+hash(cell+7.)*6.283185)),mix(64.,3.,clamp(params.w,0.,1.)));float d=length(f);if(flakeShape==1)d=max(abs(f.y),dot(abs(f),vec2(.866,.5)));if(flakeShape==2)d=max(abs(f.x)*1.7,abs(f.y)*.8);if(flakeShape==3)d=length(f)/(.7+.3*cos(atan(f.y,f.x)*5.));float facet=step(r,details.y)*(1.-smoothstep(.3,.43,d));if(hasFlake==1)facet=step(r,details.y)*texture(flakeArt,fract(grid)).a;vec3 holo=hasTint==1?tint:.55+.45*cos(vec3(0.,2.,4.)+r*5.+params.y*5.);c.rgb+=mix(holo,vec3(1.),catchLight*.6)*facet*catchLight*params.z*weight;}
+ if(effect==3){vec2 grid=point*nodeSize/max(.5,details.x);vec2 cell=floor(grid);float r=hash(cell+details.z);vec2 f=(fract(grid)-.5)/max(.1,1.-details.w*hash(cell+13.));float catchLight=pow(max(0.,cos(params.y*6.283185+hash(cell+7.)*6.283185)),mix(64.,3.,clamp(params.w,0.,1.)));float d=length(f);if(flakeShape==1)d=max(abs(f.y),dot(abs(f),vec2(.866,.5)));if(flakeShape==2)d=max(abs(f.x)*1.7,abs(f.y)*.8);if(flakeShape==3)d=length(f)/(.7+.3*cos(atan(f.y,f.x)*5.));float facet=step(r,details.y)*(1.-smoothstep(.3,.43,d));if(hasFlake==1)facet=step(r,details.y)*texture(flakeArt,fract(grid)).a;vec3 holo=hasTint==1?tint:.55+.45*cos(vec3(0.,2.,4.)+r*5.+params.y*5.);if(hasFlake==1&&flakeColor==1)holo=texture(flakeArt,fract(grid)).rgb;c.rgb+=mix(holo,vec3(1.),catchLight*.6)*facet*catchLight*params.z*weight;}
  if(effect==4){float d=length((point-center)*vec2(1.,nodeSize.y/nodeSize.x));float spot=(1.-smoothstep(0.,max(.001,details.x),d))*weight;if(surface==1)c.rgb+=c.rgb*spot*params.z;else{c.a*=spot;c.rgb*=1.+params.z;}}
  if(effect==5){float band=pow(max(0.,1.-abs(point.x+point.y*.4-params.y)/max(.01,details.x)),2.);c.rgb+=(.5+.5*cos(vec3(0.,2.,4.)+point.y*6.+params.y*5.))*band*params.z*weight;}
  c.a*=opacity*edge;color=vec4(c.rgb*c.a,c.a);
@@ -97,6 +97,7 @@ export function createWebGLRenderer(canvas) {
     "hasEffectMask",
     "surface",
     "flakeShape",
+    "flakeColor",
     "tint",
     "hasTint",
   ];
@@ -269,6 +270,7 @@ export function createWebGLRenderer(canvas) {
           : [1, 1, 1],
       );
       gl.uniform1i(u.hasMask, mask ? 1 : 0);
+      gl.uniform1i(u.flakeColor, material.flakeColor === "texture" ? 1 : 0);
       gl.uniform1i(u.hasFlake, flake ? 1 : 0);
       const polygon = node.mask?.polygon ?? [];
       gl.uniform1i(u.polygonCount, polygon.length);

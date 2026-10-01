@@ -5,6 +5,7 @@ export const PERMISSIONS = Object.freeze([
   "catalog.publish",
   "accounts.register",
   "currency.grant",
+  "currency.settle",
   "audit.read",
   "events.read",
   "maintenance.run",

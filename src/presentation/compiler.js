@@ -13,6 +13,8 @@ import { randomUUID } from "node:crypto";
 import { ensure, parseJSON, text, safePath, canonical, utf8 } from "./data.js";
 import { buildPackage, importPackage } from "./package.js";
 
+import { analyzePerformance, enforcePerformance } from "./performance.js";
+
 export async function readWithin(root, relative) {
   safePath(relative);
   const base = await realpath(root),
@@ -32,6 +34,7 @@ export async function compileDirectory({
   archivePath,
   maxEdge = 1536,
   imageProcessor,
+  performance,
   signal,
 }) {
   const manifest = parseJSON(text(await readWithin(root, "card.json"))),
@@ -86,8 +89,10 @@ export async function compileDirectory({
   signal?.throwIfAborted();
   const result = await buildPackage(manifest, scenes, assets);
   signal?.throwIfAborted();
+  const report = buildReport(result, performance);
+  enforcePerformance(report.performance);
   await writeCompiled(result, { out, archivePath });
-  return { ...result, report: buildReport(result) };
+  return { ...result, report };
 }
 export async function writeCompiled(pkg, { out, archivePath }) {
   await mkdir(out, { recursive: true });
@@ -102,7 +107,7 @@ export async function writeCompiled(pkg, { out, archivePath }) {
     await writeFile(archivePath, pkg.archive);
   }
 }
-export function buildReport(pkg) {
+export function buildReport(pkg, performance) {
   const assets = pkg.manifest.assets;
   const report = {
     digest: pkg.digest,
@@ -113,6 +118,7 @@ export function buildReport(pkg) {
     assets: assets.length,
     profiles: {},
     warnings: [],
+    performance: analyzePerformance(pkg, performance),
   };
   for (const [name, { maxEdge }] of Object.entries(pkg.manifest.quality)) {
     let textureBytes = 0;
@@ -133,11 +139,12 @@ export function buildReport(pkg) {
   return report;
 }
 /** Content-addressed publication; importing content never creates an owned copy. */
-export async function publishPackage(bytes, { contentRoot, limits }) {
+export async function publishPackage(bytes, { contentRoot, limits, performance }) {
   const pkg = await importPackage(bytes, { limits }),
     folder = path.join(contentRoot, pkg.digest.slice(7)),
     staging = path.join(contentRoot, ".pending-" + randomUUID());
-  const report = buildReport(pkg);
+  const report = buildReport(pkg, performance);
+  enforcePerformance(report.performance);
   await mkdir(contentRoot, { recursive: true });
   try {
     await writeCompiled(
