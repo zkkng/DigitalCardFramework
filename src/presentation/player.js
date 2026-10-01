@@ -3,6 +3,26 @@ import { CAPABILITIES, validateScene } from "./validate.js";
 import { evaluate, normalizedInputs, selectFrame } from "./motion.js";
 import { createWebGLRenderer } from "./webgl.js";
 
+function validateBudget(value) {
+  const fields = {
+    estimatedGpuBytes: [1024, 2 ** 32],
+    maxDpr: [0.1, 4],
+    activeVideoDecoders: [0, 16],
+    maxGraphOperationsPerUpdate: [1, 1000000],
+  };
+  for (const [key, n] of Object.entries(value)) {
+    const range = fields[key];
+    ensure(
+      range &&
+        Number.isFinite(n) &&
+        n >= range[0] &&
+        n <= range[1] &&
+        (key === "maxDpr" || Number.isInteger(n)),
+      "BUDGET",
+      "Invalid stage budget " + key,
+    );
+  }
+}
 const qualities = ["poster", "lite", "standard", "ultra"];
 const compose = (a, b) => [
   a[0] * b[0] + a[2] * b[1],
@@ -48,6 +68,7 @@ export function createPlayerStage({
     "ROOT",
     "A stage root element is required",
   );
+  validateBudget(budget);
   const limits = {
     estimatedGpuBytes: 96 * 1024 * 1024,
     maxDpr: 1.5,
@@ -85,6 +106,7 @@ export function createPlayerStage({
     bytes = 0,
     decoders = 0,
     slow = 0,
+    lastDowngrade = -Infinity,
     layoutDirty = true;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   const staticMotion = () => motion === "static" || reduced.matches;
@@ -156,13 +178,15 @@ export function createPlayerStage({
         }
       })();
     }
-    entry.refs++;
-    view.leases.add(entry);
+    if (!view.leases.has(entry)) {
+      entry.refs++;
+      view.leases.add(entry);
+    }
     return entry.promise;
   }
   function release(entry) {
     if (--entry.refs <= 0) {
-      cache.delete(entry.key);
+      if (cache.get(entry.key) === entry) cache.delete(entry.key);
       if (entry.texture) gpu?.release(entry.texture);
       bytes -= entry.bytes;
       entry.bytes = 0;
@@ -203,6 +227,8 @@ export function createPlayerStage({
     view.assets.clear();
     for (const t of view.textures) gpu?.release(t);
     view.textures.clear();
+    bytes -= view.textBytes ?? 0;
+    view.textBytes = 0;
     for (const a of view.adapterInstances) {
       a.instance.dispose();
       if (a.texture) gpu?.release(a.texture);
@@ -211,6 +237,7 @@ export function createPlayerStage({
     view.adapterInstances = [];
   }
   async function loadSide(view, sceneOverride) {
+    if (disposed || view.disposed) return { mode: "cancelled" };
     const generation = ++view.generation;
     unload(view);
     view.readyToDraw = false;
@@ -238,7 +265,32 @@ export function createPlayerStage({
         });
         return { mode: "poster", quality: "poster" };
       }
-      const scene = sceneOverride ?? view.resolver.scenes.get(face.scene);
+      let scene = sceneOverride ?? view.resolver.scenes.get(face.scene);
+      const missingOptional = manifest.capabilities.optional.filter(
+        (c) =>
+          !CAPABILITIES.includes(c.id) &&
+          !adapters.some((a) => a.capabilities?.includes(c.id)),
+      );
+      if (missingOptional.some((c) => c.fallback !== "omit-decorative")) {
+        emit(view, {
+          type: "fallback",
+          reason:
+            "Optional capability unavailable; using declared static fallback",
+          side: view.side,
+        });
+        return { mode: "poster", quality: "poster" };
+      }
+      if (missingOptional.length) {
+        const omit = new Set(missingOptional.map((c) => c.id.split("@")[0]));
+        const filter = (nodes) =>
+          nodes
+            .filter((n) => !(n.type === "adapter" && omit.has(n.adapter)))
+            .map((n) =>
+              n.children ? { ...n, children: filter(n.children) } : n,
+            );
+        scene = { ...scene, nodes: filter(scene.nodes) };
+        emit(view, { type: "capabilityFallback", omitted: [...omit] });
+      }
       validateScene(scene, manifest);
       view.scene = scene;
       view.resourceSignature = resourceSignature(scene);
@@ -299,7 +351,7 @@ export function createPlayerStage({
           );
           view.media.set(node.id, media);
           video.addEventListener("loadeddata", wake, {
-            signal: cleanup.signal,
+            signal: view.loadAbort.signal,
           });
           video.addEventListener(
             "error",
@@ -309,7 +361,7 @@ export function createPlayerStage({
                 assetId: node.asset,
                 code: "VIDEO",
               }),
-            { signal: cleanup.signal },
+            { signal: view.loadAbort.signal },
           );
         }
         if (node.type === "audio") {
@@ -323,15 +375,32 @@ export function createPlayerStage({
           view.audio.set(node.id, audio);
         }
         if (node.type === "text") {
+          const edge = manifest.quality[view.quality]?.maxEdge ?? 768;
+          const ratio = Math.min(
+            1,
+            edge / Math.max(node.width, node.height * 1.4),
+          );
+          const width = Math.max(1, Math.ceil(node.width * ratio)),
+            height = Math.max(1, Math.ceil(node.height * 1.4 * ratio)),
+            cost = width * height * 4;
+          ensure(
+            bytes + cost + canvas.width * canvas.height * 4 <=
+              limits.estimatedGpuBytes,
+            "BUDGET",
+            "Text surface budget exceeded",
+          );
           const surface = document.createElement("canvas");
-          surface.width = Math.max(1, Math.ceil(node.width));
-          surface.height = Math.max(1, Math.ceil(node.height * 1.4));
+          surface.width = width;
+          surface.height = height;
           const ctx = surface.getContext("2d");
+          ctx.scale(ratio, ratio);
           ctx.fillStyle = node.color ?? "#ffffff";
           ctx.font = `${Math.round(node.height * 0.8)}px ${node.font ?? "Georgia"}`;
           ctx.textBaseline = "top";
           ctx.fillText(node.text, 0, 0, node.width);
           const texture = gpu.texture(surface);
+          bytes += cost;
+          view.textBytes = (view.textBytes ?? 0) + cost;
           view.textures.add(texture);
           view.assets.set(`text:${node.id}`, {
             texture,
@@ -443,19 +512,16 @@ export function createPlayerStage({
     lastTime = now;
     const started = performance.now();
     if (layoutDirty) layout();
-    const dpr = Math.max(
-        0.25,
-        Math.min(
-          devicePixelRatio || 1,
-          limits.maxDpr,
-          Math.sqrt(
-            Math.max(1, limits.estimatedGpuBytes - bytes) /
-              (Math.max(1, root.clientWidth * root.clientHeight) * 4),
-          ),
+    const dpr = Math.min(
+        devicePixelRatio || 1,
+        limits.maxDpr,
+        Math.sqrt(
+          Math.max(1, limits.estimatedGpuBytes - bytes) /
+            (Math.max(1, root.clientWidth * root.clientHeight) * 4),
         ),
       ),
-      w = Math.max(1, Math.round(root.clientWidth * dpr)),
-      h = Math.max(1, Math.round(root.clientHeight * dpr));
+      w = Math.max(1, Math.floor(root.clientWidth * dpr)),
+      h = Math.max(1, Math.floor(root.clientHeight * dpr));
     gpu.begin(w, h);
     let needsTime = false;
     for (const view of views) {
@@ -644,6 +710,13 @@ export function createPlayerStage({
         }
       }
       try {
+        gpu.background(
+          view.scene.background,
+          matrix,
+          viewport,
+          card.width,
+          card.height,
+        );
         drawNodes(view.scene.nodes, matrix);
       } catch (error) {
         view.readyToDraw = false;
@@ -668,8 +741,13 @@ export function createPlayerStage({
     const duration = performance.now() - started;
     if (duration > 25) slow++;
     else slow = Math.max(0, slow - 1);
-    if (slow > 90) {
-      limits.maxDpr = Math.max(0.75, limits.maxDpr * 0.8);
+    if (slow > 90 && now - lastDowngrade >= 10000 && limits.maxDpr > 0.1) {
+      lastDowngrade = now;
+      const nextDpr = Math.max(
+        0.1,
+        Math.min(limits.maxDpr, limits.maxDpr * 0.8),
+      );
+      limits.maxDpr = nextDpr;
       slow = 0;
       onDiagnostic({
         type: "qualityChanged",
@@ -823,15 +901,17 @@ export function createPlayerStage({
       const setInputs = (input) => {
         if (view.disposed) return;
         view.inputs = { ...view.inputs, ...input };
+        let pending;
         const flip = view.inputs.flipProgress;
         if (flip !== undefined) {
           const wanted = flip >= 0.5 ? "back" : "front";
           if (wanted !== view.side) {
             view.side = wanted;
-            loadSide(view);
+            pending = loadSide(view);
           }
         }
         wake();
+        return pending;
       };
       if (inputMode !== "host") {
         const point = (e) => {
@@ -901,6 +981,7 @@ export function createPlayerStage({
         }),
         setInputs,
         setVisibility(state) {
+          if (view.disposed) return;
           ensure(
             ["visible", "prewarm", "hidden"].includes(state),
             "VISIBILITY",
@@ -931,24 +1012,27 @@ export function createPlayerStage({
           }
         },
         setQuality(value) {
+          if (view.disposed) return;
           ensure(qualities.includes(value), "QUALITY", "Unknown quality");
           if (view.quality !== value) {
             const from = view.quality;
             view.quality = value;
-            loadSide(view);
+            const pending = loadSide(view);
             emit(view, {
               type: "qualityChanged",
               from,
               to: value,
               reason: "Host selected",
             });
+            return pending;
           }
         },
         setSide(value) {
           ensure(["front", "back"].includes(value), "SIDE", "Unknown face");
-          setInputs({ flipProgress: value === "back" ? 1 : 0 });
+          return setInputs({ flipProgress: value === "back" ? 1 : 0 });
         },
         setLayerVisible(id, visible) {
+          if (view.disposed) return;
           visible ? view.hiddenNodes.delete(id) : view.hiddenNodes.add(id);
           wake();
         },
@@ -978,6 +1062,7 @@ export function createPlayerStage({
           });
         },
         activate() {
+          if (view.disposed) return;
           view.activated = true;
           for (const media of view.media.values()) {
             media.failed = false;
@@ -986,6 +1071,14 @@ export function createPlayerStage({
           wake();
         },
         async snapshot() {
+          ensure(!view.disposed && !disposed, "DISPOSED", "View disposed");
+          ensure(
+            view.readyToDraw,
+            "SNAPSHOT",
+            "Interactive face is not ready for capture",
+          );
+          cancelAnimationFrame(raf);
+          raf = 0;
           draw(performance.now());
           const r = view.rect,
             dpr = canvas.width / root.clientWidth,
@@ -1029,8 +1122,18 @@ export function createPlayerStage({
       view.handle = handle;
       return handle;
     },
-    setBudget(next) {
+    async setBudget(next) {
+      ensure(!disposed, "DISPOSED", "Stage disposed");
+      validateBudget(next);
       Object.assign(limits, next);
+      const live = [...views];
+      for (const view of live) {
+        view.readyToDraw = false;
+        unload(view);
+        view.poster.hidden = false;
+      }
+      canvas.width = canvas.height = 1;
+      for (const view of live) await loadSide(view);
       wake();
     },
     invalidateLayout() {
@@ -1040,6 +1143,7 @@ export function createPlayerStage({
     diagnostics() {
       return {
         views: views.size,
+        pendingJobs: [...cache.values()].filter((e) => !e.texture).length,
         activeViews: [...views].filter(
           (v) => v.readyToDraw && v.visibility === "visible",
         ).length,
@@ -1065,6 +1169,7 @@ export function createPlayerStage({
       intersection.disconnect();
       gpu?.dispose();
       canvas.remove();
+      canvas.width = canvas.height = 0;
       root.style.position = priorPosition;
     },
   };

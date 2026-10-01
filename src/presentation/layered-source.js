@@ -58,7 +58,7 @@ function issue(report, layer, code, message) {
   report.issues.push({ layer, code, message });
 }
 function mode(value, report, name) {
-  if (blends[value ?? "normal"]) return blends[value ?? "normal"];
+  if (Object.hasOwn(blends,value ?? "normal")) return blends[value ?? "normal"];
   issue(
     report,
     name,

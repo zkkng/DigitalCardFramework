@@ -30,13 +30,27 @@
     "./presentation/compiler": "./src/presentation/compiler.js",
     "./presentation/layered-source": "./src/presentation/layered-source.js",
     "./presentation/layered-package": "./src/presentation/layered-package.js",
-    "./access": "./src/access.js"
+    "./access": "./src/access.js",
+    "./presentation/adapters": "./src/presentation/adapters.js",
+    "./presentation/extensions": "./src/presentation/extensions.js",
+    "./presentation/signatures": "./src/presentation/signatures.js",
+    "./presentation/integration": "./src/presentation/integration.js",
+    "./presentation/program": "./src/presentation/program.js",
+    "./presentation/identity": "./src/presentation/identity.js",
+    "./presentation/package": "./src/presentation/package.js",
+    "./presentation/schema": "./src/presentation/schema.js",
+    "./presentation/project": "./src/presentation/project.js",
+    "./presentation/motion": "./src/presentation/motion.js",
+    "./presentation/layered-import": "./src/presentation/layered-import.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
     "start": "node examples/server.js",
     "production": "node --env-file=.env host/server.js",
-    "contract": "node tools/generate-openapi.js"
+    "contract": "node tools/generate-openapi.js",
+    "test:browser": "node test/presentation-audit-browser.mjs",
+    "test:spec": "node docs/complex-cards/check-examples.mjs",
+    "test:coverage": "node --experimental-test-coverage --test test/*.test.js"
   },
   "dependencies": {
     "ajv": "8.20.0",
@@ -45,6 +59,7 @@
   },
   "packageManager": "pnpm@11.19.0",
   "devDependencies": {
-    "happy-dom": "20.14.5"
+    "happy-dom": "20.14.5",
+    "playwright": "1.62.1"
   }
 }

@@ -12,7 +12,7 @@ export interface ViewInputs {
 export interface ViewResult {mode:'interactive'|'poster'|'cancelled';quality?:Quality;fallbackReason?:string}
 export interface Package {
   manifest:Record<string,any>; scenes:Map<string,Record<string,any>>;
-  files:Map<string,Uint8Array>; archive:Uint8Array; digest:Digest;
+  files:Map<string,Uint8Array>; archive?:Uint8Array; digest:Digest;
 }
 export interface Resolver {
   manifest:Record<string,any>; scenes:Map<string,Record<string,any>>;
@@ -20,9 +20,9 @@ export interface Resolver {
 }
 export interface CardView {
   element:HTMLElement; ready:Promise<ViewResult>;
-  setInputs(input:ViewInputs):void;
-  setSide(side:Side):void;
-  setQuality(quality:Quality):void;
+  setInputs(input:ViewInputs):Promise<ViewResult|undefined>|undefined;
+  setSide(side:Side):Promise<ViewResult|undefined>|undefined;
+  setQuality(quality:Quality):Promise<ViewResult|undefined>|undefined;
   setVisibility(state:'visible'|'prewarm'|'hidden'):void;
   setLayerVisible(id:string,visible:boolean):void;
   setAudio(options:{enabled?:boolean;volume?:number}):void;
@@ -35,7 +35,7 @@ export interface PlayerStage {
     resolver?:Resolver;quality?:Quality;side?:Side;inputMode?:'host'|'pointer'|'drag';
     onEvent?:(event:Record<string,any>)=>void;
   }):CardView;
-  setBudget(budget:Budget):void; invalidateLayout():void;
+  setBudget(budget:Budget):Promise<void>; invalidateLayout():void;
   diagnostics():Record<string,number>; dispose():void;
 }
 export declare function createPlayerStage(options:{root:HTMLElement;budget?:Budget;motion?:'static'|'respect-preference';adapters?:any[];onDiagnostic?:(event:Record<string,any>)=>void}):PlayerStage;
@@ -62,3 +62,11 @@ export declare function createAuthoring(options?:{
   commitCatalog?:(catalog:any,context:{key:string;signal?:AbortSignal})=>Promise<unknown>;
   onEvent?:(event:Record<string,any>)=>unknown;
 }):Authoring;
+
+/** Poster capture is supplied by a browser player or a host compositor. */
+export interface Project {
+  manifest:Record<string,any>; scenes:Map<string,Record<string,any>>;assets:Map<string,Uint8Array>;
+  getRevision():number;edit(fn:(project:Project)=>void):void;undoEdit():boolean;redoEdit():boolean;
+  setPosters(posters:Partial<Record<Side,Blob>>):Promise<void>;
+  export(options?:{retainSources?:boolean}):Promise<Package>;
+}

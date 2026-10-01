@@ -18,7 +18,8 @@ The portable implementation is under `src/presentation`. The broader design is a
 
 Repeatable tests live in `test/presentation*.test.js`, `test/access.test.js`, and the existing core suite. They cover archive integrity/bombs, schema references, idempotent storage, failed policy decisions, signatures, bounded motion, real catalog acquisition/trade pinning, custom effects and headless publication. Browser scripts exercise migrated visuals, studio export/drafts/masks, three real optional adapters, a video back, early disposal, context recovery, reduced motion, PSD/ORA/ZIP import and separate-origin program rejection.
 
-Final verification: 95 automated tests passed; schema examples reject 12 invalid variants; the single-JPEG browser test confirms tilt changes glitter pixels. A 60-second touch/DPR-emulated trace kept 31 textures and 40,744,924 estimated GPU bytes, with first/last p95 frame intervals both 8 ms. Context recovery and early-dispose tests passed. Desktop Edge and touch/DPR emulation are the tested browser environments. Physical iPhone and other browsers still require device checks. Machine reports and screenshots live outside source Git in `outputs/PortableCardQA`; art/bundles live in `outputs/PortableCardAssets`.
+The resumed audit expanded verification from 95 to 137 Node tests, added a standalone synthetic browser suite and CI matrix, and found/fixed lifecycle, budget, mask, import and creator races. See the [full audit, requirement matrix, remaining gaps and repeatable commands](audit-2026-10-01.md). Edge, Firefox and WebKit pass the tested WebGL2 subset; physical iPhone qualification remains open. Reports and screenshots live outside source Git in `outputs/PortableCardQA`.
+
 
 ## Explicit limits
 

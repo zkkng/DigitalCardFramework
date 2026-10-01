@@ -57,11 +57,12 @@ export const materialPresets = Object.freeze({
   },
 });
 export function createProject(pkg) {
+  let revision = 0;
   const project = {
     manifest: structuredClone(pkg.manifest),
     scenes: structuredClone(pkg.scenes),
     assets: new Map(
-      pkg.manifest.assets.map((a) => [a.path, pkg.files.get(a.path)]),
+      pkg.manifest.assets.map((a) => [a.path, pkg.files.get(a.path).slice()]),
     ),
     undo: [],
     redo: [],
@@ -69,7 +70,7 @@ export function createProject(pkg) {
   const snapshot = () => ({
     manifest: structuredClone(project.manifest),
     scenes: structuredClone(project.scenes),
-    assets: new Map(project.assets),
+    assets: structuredClone(project.assets),
   });
   const restore = (s) => {
     project.manifest = s.manifest;
@@ -77,6 +78,7 @@ export function createProject(pkg) {
     project.assets = s.assets;
   };
   return Object.assign(project, {
+    getRevision: () => revision,
     edit(fn) {
       const previous = snapshot();
       try {
@@ -91,26 +93,32 @@ export function createProject(pkg) {
       project.undo.push(previous);
       if (project.undo.length > 30) project.undo.shift();
       project.redo = [];
+      revision++;
     },
     undoEdit() {
       if (!project.undo.length) return false;
       project.redo.push(snapshot());
       restore(project.undo.pop());
+      revision++;
       return true;
     },
     redoEdit() {
       if (!project.redo.length) return false;
       project.undo.push(snapshot());
       restore(project.redo.pop());
+      revision++;
       return true;
     },
     async export({ retainSources = false } = {}) {
       const manifest = structuredClone(project.manifest),
-        scenes = new Map(
-          [...project.scenes].filter(([path]) =>
-            Object.values(manifest.faces).some((f) => f.scene === path),
+        scenes = structuredClone(
+          new Map(
+            [...project.scenes].filter(([path]) =>
+              Object.values(manifest.faces).some((f) => f.scene === path),
+            ),
           ),
-        );
+        ),
+        assets = structuredClone(project.assets);
       if (!retainSources) {
         const used = new Set(
           Object.values(manifest.faces).map((f) => f.poster),
@@ -133,7 +141,7 @@ export function createProject(pkg) {
         for (const s of scenes.values()) collect(s.nodes);
         manifest.assets = manifest.assets.filter((a) => used.has(a.id));
       }
-      return buildPackage(manifest, scenes, project.assets);
+      return buildPackage(manifest, scenes, assets);
     },
     async addMedia(
       blob,
@@ -211,6 +219,52 @@ export function createProject(pkg) {
         p.assets.set(asset.path, bytes);
       });
       return asset;
+    },
+    async setPosters(posters) {
+      const expected = revision,
+        additions = [];
+      for (const [side, blob] of Object.entries(posters)) {
+        ensure(["front", "back"].includes(side), "SIDE", "Unknown face");
+        ensure(
+          ["image/png", "image/jpeg", "image/webp"].includes(blob.type) &&
+            blob.size <= 32 * 1024 * 1024,
+          "MEDIA",
+          "Invalid poster",
+        );
+        const bytes = new Uint8Array(await blob.arrayBuffer()),
+          dimensions = rasterDimensions(bytes, blob.type),
+          id = "poster-" + crypto.randomUUID().replaceAll("-", ""),
+          extension = {
+            "image/png": "png",
+            "image/jpeg": "jpg",
+            "image/webp": "webp",
+          }[blob.type];
+        additions.push({
+          side,
+          bytes,
+          asset: {
+            id,
+            path: `previews/${id}.${extension}`,
+            mediaType: blob.type,
+            ...dimensions,
+            role: "poster",
+            bytes: bytes.length,
+            sha256: await sha256(bytes),
+          },
+        });
+      }
+      ensure(
+        revision === expected,
+        "CONFLICT",
+        "Project changed while preparing posters; capture again",
+      );
+      project.edit((p) => {
+        for (const { side, bytes, asset } of additions) {
+          p.manifest.assets.push(asset);
+          p.assets.set(asset.path, bytes);
+          p.manifest.faces[side].poster = asset.id;
+        }
+      });
     },
     async saveDraft(key = "digital-card-studio") {
       const state = snapshot();

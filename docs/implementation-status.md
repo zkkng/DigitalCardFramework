@@ -25,7 +25,7 @@
 
 The standalone profile uses local framework currencies and binding state. SQLite is a bounded whole-state adapter; limits and measurements are in [operations](production.md). Real OIDC verification fixtures and a trusted provider integration fixture test the executable host. Live credentials, DNS/TLS and an actual deployment are operational requirements.
 
-CSS 3D inspection renders front/back surfaces and layered parallax. It does not reconstruct unseen artwork, merge ownership or execute imported code. Portable `.dcard` packaging and its advanced player are a separate effort; consult that effort's own status.
+CSS 3D inspection renders front/back surfaces and layered parallax. It does not reconstruct unseen artwork, merge ownership or execute imported code. Portable `.dcard` packaging and its advanced player are implemented in the presentation module; consult the [audited coverage and remaining gaps](complex-cards/audit-2026-10-01.md).
 
 Public view/renderer/layout overrides, reveal/trade controllers, imports, policies, binding factories, identity and store contracts are implemented. An automatic plugin marketplace/registry, compatibility negotiator and React-specific adapter are separate work.
 
@@ -41,8 +41,8 @@ Public view/renderer/layout overrides, reveal/trade controllers, imports, polici
 | Auctions/marketplace | Separate market service and settlement/moderation rules |
 | Wishlist matching | Optional read-only suggestions with explicit offer review |
 | Complete localization | Host view/label replacement, then localization catalog |
-| Video/shader/3D packages | Lifecycle-managed presentation adapter and device budgets |
-| Asset uploads/moderation | Licensed content service with quotas and validation |
+| Broader video/shader/3D support | Current portable runtime implements supported media subsets; additional codecs/backends require conformance |
+| Production uploads/moderation integration | Import store and authorization hooks exist; deploy with constrained scanning and approval policy |
 | Distributed deployment | Shared sessions, database locking, distributed limits and failover |
 
 Suggestions are extension work, not silently enabled or described as complete. The requested collector, pack, inventory, opening, import, trade and album behavior above is implemented.

@@ -37,3 +37,4 @@ secrets/
 content/
 *.sqlite-wal
 *.sqlite-shm
+test-results/

@@ -47,7 +47,7 @@ export function validateExpression(
       return;
     }
     ensure(
-      Array.isArray(e) && arities[e[0]],
+      Array.isArray(e) && Object.hasOwn(arities,e[0]),
       "GRAPH",
       "Unknown motion operation",
     );

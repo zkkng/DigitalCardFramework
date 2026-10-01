@@ -80,7 +80,11 @@ const defaultEffects = {
     return { ...node, material: structuredClone(parameters) };
   },
   preset(node, { name, ...overrides }) {
-    ensure(materialPresets[name], "EFFECT", "Unknown material preset " + name);
+    ensure(
+      Object.hasOwn(materialPresets, name),
+      "EFFECT",
+      "Unknown material preset " + name,
+    );
     const material = {
       ...structuredClone(materialPresets[name]),
       ...overrides,
@@ -122,11 +126,15 @@ export function createAuthoring({
     } catch {}
   };
   async function build(request, { signal } = {}) {
+    request = structuredClone(request);
     const operationId = request.id ?? crypto.randomUUID();
     emit({ type: "build.started", operationId });
     try {
       signal?.throwIfAborted();
-      const importer = sources[request.source?.format ?? "image"];
+      const format = request.source?.format ?? "image";
+      const importer = Object.hasOwn(sources, format)
+        ? sources[format]
+        : undefined;
       ensure(
         typeof importer === "function",
         "IMPORTER",
@@ -146,7 +154,9 @@ export function createAuthoring({
         if (request.id) p.manifest.id = request.id;
         if (request.title) p.manifest.title = request.title;
         for (const effect of request.effects ?? []) {
-          const recipe = recipes[effect.id];
+          const recipe = Object.hasOwn(recipes, effect.id)
+            ? recipes[effect.id]
+            : undefined;
           ensure(
             typeof recipe === "function",
             "EFFECT",
@@ -188,6 +198,12 @@ export function createAuthoring({
       await transform(project, { request, signal });
       signal?.throwIfAborted();
       pkg = await project.export();
+      if (request.id)
+        ensure(
+          pkg.manifest.id === request.id,
+          "IDENTITY",
+          "A transform cannot change a requested stable card ID",
+        );
       emit({ type: "build.completed", operationId, digest: pkg.digest });
       return pkg;
     } catch (error) {
@@ -206,6 +222,7 @@ export function createAuthoring({
       "BATCH",
       "Provide 1–1000 cards",
     );
+    requests = structuredClone(requests);
     const ids = new Set();
     for (const r of requests) {
       ensure(
@@ -235,6 +252,13 @@ export function createAuthoring({
       "CATALOG",
       "Supply a complete host catalog",
     );
+    ensure(
+      Array.isArray(cards) && cards.length > 0,
+      "BATCH",
+      "Provide cards to publish",
+    );
+    cards = structuredClone(cards);
+    catalog = structuredClone(catalog);
     const ids = new Set(catalog.cards.map((c) => c.id));
     ensure(
       ids.size === catalog.cards.length,

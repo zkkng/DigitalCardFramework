@@ -13,6 +13,7 @@ export function createCardRenderer({
   resolve = directoryResolver,
   budget,
   adapters = [],
+  preloadMargin = "300px",
   onDiagnostic = () => {},
 } = {}) {
   if (!customElements.get("dc-portable-card"))
@@ -54,9 +55,11 @@ export function createCardRenderer({
     node.append(art, caption);
     let current = null,
       pendingInputs = {},
-      pendingSide = "front";
-    node._start = async () => {
-      node._stop();
+      pendingSide = "front",
+      observer = null,
+      disposed = false;
+    const load = async () => {
+      if (disposed || current || !node.isConnected) return;
       const state = { controller: new AbortController() };
       current = state;
       try {
@@ -114,7 +117,22 @@ export function createCardRenderer({
         }
       }
     };
-    node._stop = () => {
+    node._start = () => {
+      if (disposed || observer || current) return;
+      if (typeof IntersectionObserver === "undefined") {
+        load();
+        return;
+      }
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) load();
+          else release();
+        },
+        { rootMargin: preloadMargin },
+      );
+      observer.observe(node);
+    };
+    const release = () => {
       if (current) {
         current.controller.abort();
         current.view?.dispose();
@@ -124,6 +142,11 @@ export function createCardRenderer({
       }
       art.replaceChildren();
     };
+    node._stop = () => {
+      observer?.disconnect();
+      observer = null;
+      release();
+    };
     node.setPresentationInputs = (input) => {
       pendingInputs = { ...pendingInputs, ...input };
       current?.view?.setInputs(pendingInputs);
@@ -132,7 +155,10 @@ export function createCardRenderer({
       pendingSide = side;
       return current?.view?.setSide(side);
     };
-    node.dispose = () => node._stop();
+    node.dispose = () => {
+      disposed = true;
+      node._stop();
+    };
     node.addEventListener("click", () => onSelect?.(copy));
     node.addEventListener("keydown", (event) => {
       if (onSelect && ["Enter", " "].includes(event.key)) {

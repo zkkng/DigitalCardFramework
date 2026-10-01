@@ -57,3 +57,7 @@ The example uses placeholder media references and hashes. It is not a distributa
 Build one portable export of the existing lakeside card, one importer and one lifecycle-managed player. Render the same imported card in an inspector, a pack reveal and a different host layout without editing core code. Include a video back and run a sustained test on a physical iPhone before growing the editor or adding more engines.
 
 The target is **one-click publishing for creators and one supported player contract for websites**. Complexity lives in reusable recipes, adapters and compilation rather than bespoke page scripts attached to every card.
+
+## Resumed audit
+
+See [the 1 October audit](audit-2026-10-01.md) for implemented fixes, requirements-to-tests mapping, exact testing commands and remaining proposal gaps.

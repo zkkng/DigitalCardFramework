@@ -31,6 +31,25 @@ const moduleInfo = (id, capability) => ({
   estimate: ({ width = 512, height = 768 } = {}) => width * height * 12,
 });
 
+function releaseScene(scene) {
+  const textures = new Set();
+  scene.traverse((obj) => {
+    obj.geometry?.dispose();
+    for (const m of Array.isArray(obj.material)
+      ? obj.material
+      : obj.material
+        ? [obj.material]
+        : []) {
+      for (const v of Object.values(m)) if (v?.isTexture) textures.add(v);
+      m.dispose();
+    }
+  });
+  for (const t of textures) {
+    t.source?.data?.close?.();
+    t.dispose();
+  }
+}
+
 export function gltfAdapter() {
   return {
     ...moduleInfo("dc.gltf", "dc.gltf@0.1"),
@@ -51,6 +70,7 @@ export function gltfAdapter() {
         gltf = await new GLTFLoader().parseAsync(bytes.buffer, "");
         context.signal.throwIfAborted();
       } catch (error) {
+        if (gltf) releaseScene(gltf.scene);
         renderer.dispose();
         renderer.forceContextLoss();
         throw error;
@@ -96,23 +116,7 @@ export function gltfAdapter() {
         dispose() {
           mixer.stopAllAction();
           mixer.uncacheRoot(gltf.scene);
-          const textures = new Set();
-          gltf.scene.traverse((obj) => {
-            obj.geometry?.dispose();
-            for (const m of Array.isArray(obj.material)
-              ? obj.material
-              : obj.material
-                ? [obj.material]
-                : []) {
-              for (const v of Object.values(m))
-                if (v?.isTexture) textures.add(v);
-              m.dispose();
-            }
-          });
-          for (const t of textures) {
-            t.source?.data?.close?.();
-            t.dispose();
-          }
+          releaseScene(gltf.scene);
           renderer.dispose();
           renderer.forceContextLoss();
           canvas.width = canvas.height = 0;
@@ -143,7 +147,12 @@ export function riveAdapter({ wasmURL, approvedDigests = [] } = {}) {
       const artboard = data.artboard
         ? file.artboardByName(data.artboard)
         : file.defaultArtboard();
-      ensure(artboard, "RIVE", "Missing artboard");
+      if (!artboard || context.signal.aborted) {
+        artboard?.delete();
+        file.delete();
+        context.signal.throwIfAborted();
+        ensure(false, "RIVE", "Missing artboard");
+      }
       artboard.volume = 0;
       const timeline = data.animation
           ? artboard.animationByName(data.animation)
@@ -214,22 +223,25 @@ export function dotLottieAdapter({ wasmURL } = {}) {
         });
       try {
         await new Promise((resolve, reject) => {
-          const timeout = setTimeout(
-              () => reject(new Error("Animation load timeout")),
+          const finish = (error) => {
+            clearTimeout(timeout);
+            context.signal.removeEventListener("abort", abort);
+            player.removeEventListener("load", loaded);
+            player.removeEventListener("loadError", failed);
+            error ? reject(error) : resolve();
+          };
+          const abort = () =>
+              finish(new DOMException("Disposed", "AbortError")),
+            loaded = () => finish(),
+            failed = () => finish(new Error("Unable to load animation")),
+            timeout = setTimeout(
+              () => finish(new Error("Animation load timeout")),
               10000,
-            ),
-            abort = () => reject(new DOMException("Disposed", "AbortError"));
+            );
           context.signal.addEventListener("abort", abort, { once: true });
-          player.addEventListener("load", () => {
-            clearTimeout(timeout);
-            context.signal.removeEventListener("abort", abort);
-            resolve();
-          });
-          player.addEventListener("loadError", () => {
-            clearTimeout(timeout);
-            context.signal.removeEventListener("abort", abort);
-            reject(new Error("Unable to load animation"));
-          });
+          player.addEventListener("load", loaded);
+          player.addEventListener("loadError", failed);
+          if (context.signal.aborted) abort();
         });
         context.signal.throwIfAborted();
       } catch (error) {

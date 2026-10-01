@@ -9,9 +9,14 @@ import {
 } from "./data.js";
 import { validateManifest, validateScene } from "./validate.js";
 import { rasterDimensions } from "./media.js";
-import { sniff } from "./package.js";
+import { sniff, readZip } from "./package.js";
+import { inspectGLB, inspectDotLottie } from "./advanced-media.js";
 /** Fetch a compiled directory without downloading/unzipping media for every card. */
 export async function directoryResolver(base, { digest, signal } = {}) {
+  const controller = new AbortController(),
+    requestSignal = signal
+      ? AbortSignal.any([signal, controller.signal])
+      : controller.signal;
   const root = new URL(base, globalThis.location?.href);
   ensure(
     ["http:", "https:"].includes(root.protocol),
@@ -22,7 +27,7 @@ export async function directoryResolver(base, { digest, signal } = {}) {
   async function bytes(path, max = 8 * 1024 * 1024) {
     safePath(path);
     const response = await fetch(new URL(path, root), {
-      signal,
+      signal: requestSignal,
       credentials: "omit",
       redirect: "error",
     });
@@ -117,6 +122,25 @@ export async function directoryResolver(base, { digest, signal } = {}) {
       scenes.set(face.scene, scene);
     }
   }
+  const declared = new Set([
+    "card.json",
+    ...Object.values(manifest.faces).map((f) => f.scene),
+    ...manifest.assets.map((a) => a.path),
+  ]);
+  ensure(
+    entries.size === declared.size &&
+      [...entries.keys()].every((p) => declared.has(p)),
+    "PACKAGE",
+    "Undeclared or missing directory payload",
+  );
+  for (const asset of manifest.assets) {
+    const entry = entries.get(asset.path);
+    ensure(
+      entry?.bytes === asset.bytes && entry.sha256 === asset.sha256,
+      "INTEGRITY",
+      "Manifest and directory asset disagree",
+    );
+  }
   let disposed = false;
   const urls = new Map();
   return {
@@ -139,6 +163,9 @@ export async function directoryResolver(base, { digest, signal } = {}) {
               "Manifest asset mismatch",
             );
             sniff(asset, data);
+            if (asset.mediaType === "model/gltf-binary") inspectGLB(data);
+            if (asset.mediaType === "application/zip")
+              await inspectDotLottie(data, readZip);
             ensure(!disposed, "DISPOSED", "Resolver disposed");
             return URL.createObjectURL(
               new Blob([data], { type: asset.mediaType }),
@@ -149,6 +176,7 @@ export async function directoryResolver(base, { digest, signal } = {}) {
     },
     dispose() {
       disposed = true;
+      controller.abort();
       for (const promise of urls.values())
         promise.then((url) => URL.revokeObjectURL(url)).catch(() => {});
       urls.clear();

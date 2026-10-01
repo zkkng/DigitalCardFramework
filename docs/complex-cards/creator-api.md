@@ -129,3 +129,19 @@ Events: `build.started`, `build.completed`, `build.failed`, `presentation.publis
 | Complete view | issued-copy public model → element | framework renderer option | attach, detach, dispose |
 
 No extension may bypass validation, content integrity, host resource ceilings or ownership invariants through an uploaded configuration. API 0.1 is experimental: pin exact versions and review migrations before upgrading.
+
+
+## Captured posters and concurrent authoring
+
+After editing a finish, capture both faces in Studio with **Capture posters**, or call its public `await studio.capturePosters()`. This renders neutral input through the same player and preserves the current editing face. Capture is explicit so export does not overwrite an intentionally selected hero pose.
+
+For headless or custom editors:
+
+```js
+const front = await yourRenderer.capture(project, 'front');
+const back = await yourRenderer.capture(project, 'back');
+await project.setPosters({front, back}); // PNG/JPEG/WebP Blobs
+const pkg = await project.export();
+```
+
+`setPosters` validates media, updates face references in one undoable edit and rejects a project revision conflict while preparing bytes. `getRevision()` changes after edits/undo/redo. `export()` captures detached scenes/assets before awaiting hashes. Batch requests are likewise snapshotted before asynchronous importer work. A transform cannot rewrite a caller's requested stable card ID.

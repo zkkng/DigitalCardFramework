@@ -23,13 +23,15 @@ export function mountStudio(
   { initialPackage, onPublish, presets = materialPresets } = {},
 ) {
   presets = { ...presets };
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key.startsWith("dcard-finish:"))
-      try {
-        presets[key.slice(13)] = JSON.parse(localStorage.getItem(key));
-      } catch {}
-  }
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith("dcard-finish:"))
+        try {
+          presets[key.slice(13)] = JSON.parse(localStorage.getItem(key));
+        } catch {}
+    }
+  } catch {}
   root.classList.add("dcard-studio");
   let project,
     view,
@@ -41,7 +43,8 @@ export function mountStudio(
     paintCanvas,
     paintDialog,
     painting = false,
-    rebuildRevision = 0;
+    rebuildRevision = 0,
+    actionTail = Promise.resolve();
   const events = new AbortController(),
     toolbar = el("div"),
     layout = el("div"),
@@ -69,10 +72,12 @@ export function mountStudio(
   function button(label, fn, parent = toolbar) {
     const b = el("button", label);
     b.type = "button";
-    b.onclick = () =>
-      Promise.resolve()
-        .then(fn)
+    b.onclick = () => {
+      actionTail = actionTail
+        .then(() => (disposed ? undefined : fn()))
         .catch((e) => report(e.message));
+      return actionTail;
+    };
     parent.append(b);
     return b;
   }
@@ -352,6 +357,32 @@ export function mountStudio(
       await rebuild();
     } else report("No saved draft on this device.");
   });
+  async function capturePosters() {
+    if (!project || disposed) throw new Error("No active project");
+    const original = project,
+      revision = project.getRevision(),
+      captures = {};
+    await view.setQuality("standard");
+    try {
+      for (const face of ["front", "back"]) {
+        await view.setSide(face);
+        view.setInputs({ tilt: { x: 0, y: 0 }, angle: 0.5 });
+        if (stage.diagnostics().activeViews !== 1)
+          throw new Error(
+            "This face needs a supplied poster because interactive rendering is unavailable",
+          );
+        captures[face] = await view.snapshot();
+      }
+      if (project !== original || project.getRevision() !== revision)
+        throw new Error("Project changed during capture; capture again");
+      await project.setPosters(captures);
+    } finally {
+      if (!disposed) await view.setSide(side);
+    }
+    await rebuild();
+    report("Both face posters captured from the renderer.");
+  }
+  button("Capture posters", capturePosters);
   button("Export .dcard", async () => {
     const pkg = await project.export();
     const url = URL.createObjectURL(
@@ -929,6 +960,7 @@ export function mountStudio(
   return {
     ready,
     getProject: () => project,
+    capturePosters,
     open,
     dispose() {
       disposed = true;

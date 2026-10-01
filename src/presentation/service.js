@@ -77,6 +77,7 @@ export async function createPresentationStore({
   authorize,
   limits = {},
   scan = async () => {},
+  scanTimeoutMs = 30000,
   allowCapabilities = null,
   maxPendingPerActor = 3,
   maxStoredUploadBytes = 512 * 1024 * 1024,
@@ -86,6 +87,13 @@ export async function createPresentationStore({
     typeof authorize === "function",
     "AUTH",
     "Host authorization callback required",
+  );
+  ensure(
+    Number.isSafeInteger(scanTimeoutMs) &&
+      scanTimeoutMs >= 1 &&
+      scanTimeoutMs <= 300000,
+    "LIMIT",
+    "Invalid scan timeout",
   );
   root = path.resolve(root);
   const jobsDir = path.join(root, "jobs"),
@@ -106,16 +114,22 @@ export async function createPresentationStore({
   let closed = false,
     tail = Promise.resolve();
   const ceiling = { ...DEFAULT_LIMITS, ...limits };
-  for (const file of await readdir(jobsDir))
-    if (file.endsWith(".json")) {
-      const job = parseJSON(await readFile(path.join(jobsDir, file), "utf8"));
-      if (["received", "validating", "compiling"].includes(job.state)) {
-        job.state = "rejected";
-        job.error = "Worker interrupted; retry with a new import key";
-        await atomic(path.join(jobsDir, file), job);
+  try {
+    for (const file of await readdir(jobsDir))
+      if (file.endsWith(".json")) {
+        const job = parseJSON(await readFile(path.join(jobsDir, file), "utf8"));
+        if (["received", "validating", "compiling"].includes(job.state)) {
+          job.state = "rejected";
+          job.error = "Worker interrupted; retry with a new import key";
+          await atomic(path.join(jobsDir, file), job);
+        }
+        jobs.set(job.id, job);
       }
-      jobs.set(job.id, job);
-    }
+  } catch (error) {
+    await lock.close();
+    await unlink(path.join(root, "writer.lock"));
+    throw error;
+  }
   const serialize = (fn) => {
     const next = tail.then(fn);
     tail = next.catch(() => {});
@@ -157,11 +171,31 @@ export async function createPresentationStore({
       job.state = "compiling";
       await save(job);
       // Native decoders/transcoders are host jobs with OS/container limits, never archive hooks.
-      await scan({
-        path: job.uploadPath,
-        digest: validation.digest,
-        signal: controller.signal,
-      });
+      let timer, abort;
+      try {
+        await Promise.race([
+          Promise.resolve().then(() =>
+            scan({
+              path: job.uploadPath,
+              digest: validation.digest,
+              signal: controller.signal,
+            }),
+          ),
+          new Promise((_, reject) => {
+            abort = () =>
+              reject(new DOMException("Import cancelled", "AbortError"));
+            controller.signal.addEventListener("abort", abort, { once: true });
+            timer = setTimeout(() => {
+              reject(new Error("Media scan time limit exceeded"));
+              controller.abort();
+            }, scanTimeoutMs);
+            if (controller.signal.aborted) abort();
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+        controller.signal.removeEventListener("abort", abort);
+      }
       controller.signal.throwIfAborted();
       job.digest = validation.digest;
       job.report = validation.report;
@@ -251,11 +285,17 @@ export async function createPresentationStore({
       return publicJob(job);
     },
     async cancel(actor, id) {
-      const job = jobs.get(id);
-      ensure(job, "NOT_FOUND", "Unknown import");
-      await permitted(actor, "cancel-import", publicJob(job));
-      controllers.get(id)?.abort();
-      return publicJob(job);
+      return serialize(async () => {
+        const job = jobs.get(id);
+        ensure(job, "NOT_FOUND", "Unknown import");
+        await permitted(actor, "cancel-import", publicJob(job));
+        controllers.get(id)?.abort();
+        if (job.state === "ready") {
+          job.state = "cancelled";
+          await save(job);
+        }
+        return publicJob(job);
+      });
     },
     async publish(actor, id) {
       return serialize(async () => {
@@ -355,6 +395,7 @@ export async function createPresentationStore({
       };
     },
     async close() {
+      if (closed) return;
       closed = true;
       for (const c of controllers.values()) c.abort();
       await tail;

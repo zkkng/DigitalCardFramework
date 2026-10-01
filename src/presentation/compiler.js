@@ -48,6 +48,7 @@ export async function compileDirectory({
         maxEdge,
         mediaType: asset.mediaType,
       });
+      signal?.throwIfAborted();
       ensure(
         result.bytes instanceof Uint8Array &&
           result.width > 0 &&
@@ -82,7 +83,9 @@ export async function compileDirectory({
     }
   }
   for (const scene of scenes.values()) remap(scene.nodes);
+  signal?.throwIfAborted();
   const result = await buildPackage(manifest, scenes, assets);
+  signal?.throwIfAborted();
   await writeCompiled(result, { out, archivePath });
   return { ...result, report: buildReport(result) };
 }

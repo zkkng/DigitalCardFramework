@@ -59,6 +59,21 @@ try {
   await page
     .getByText("Draft saved on this device.", { exact: true })
     .waitFor();
+  const oldPoster = await page.evaluate(
+    () => cardStudio.getProject().manifest.faces.front.poster,
+  );
+  await page
+    .getByRole("button", { name: "Capture posters", exact: true })
+    .click();
+  await page
+    .getByText("Both face posters captured from the renderer.", { exact: true })
+    .waitFor();
+  assert.notEqual(
+    await page.evaluate(
+      () => cardStudio.getProject().manifest.faces.front.poster,
+    ),
+    oldPoster,
+  );
   const pending = page.waitForEvent("download");
   await page
     .getByRole("button", { name: "Export .dcard", exact: true })

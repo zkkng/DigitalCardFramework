@@ -216,6 +216,21 @@ export function validateManifest(m) {
       );
       if (input.min !== undefined) number(input.min);
       if (input.max !== undefined) number(input.max);
+      if (input.type === "number") {
+        number(input.default);
+        ensure(
+          (input.min ?? -1e6) <= (input.max ?? 1e6) &&
+            input.default >= (input.min ?? -1e6) &&
+            input.default <= (input.max ?? 1e6),
+          "INPUT",
+          "Invalid host input bounds/default",
+        );
+      } else
+        ensure(
+          input.min === undefined && input.max === undefined,
+          "INPUT",
+          "Boolean inputs cannot have numeric bounds",
+        );
     }
   ensure(canonical(m).length <= 8 * 1024 * 1024, "LIMIT", "Manifest too large");
   return { assets, capabilities: caps };
@@ -223,6 +238,7 @@ export function validateManifest(m) {
 const nodeFields = [
   "id",
   "name",
+  "sampling",
   "type",
   "asset",
   "rect",
@@ -282,6 +298,13 @@ export function validateScene(scene, manifest) {
     "LIMIT",
     "Scene node limit",
   );
+  if (scene.background !== undefined)
+    ensure(
+      scene.background === "transparent" ||
+        /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(scene.background),
+      "COLOR",
+      "Invalid scene background",
+    );
   const { assets } = validateManifest(manifest),
     ids = new Set();
   let count = 0,
@@ -328,9 +351,21 @@ export function validateScene(scene, manifest) {
       if (n[f] !== undefined) number(n[f]);
     for (const f of ["width", "height"])
       if (!["group", "audio"].includes(n.type)) number(n[f], 0.001, 20000);
+    if (n.type === "group")
+      ensure(
+        !n.mask && !n.material && (!n.blend || n.blend === "normal"),
+        "GROUP_COMPOSITING",
+        "Isolated group masks/materials/blends require a prebaked image or a host adapter",
+      );
     if (n.opacity !== undefined) number(n.opacity, 0, 1);
     if (n.brightness !== undefined) number(n.brightness, 0, 10);
     if (n.saturation !== undefined) number(n.saturation, 0, 10);
+    if (n.sampling !== undefined)
+      ensure(
+        ["linear", "nearest"].includes(n.sampling),
+        "SAMPLING",
+        "Unknown sampling mode",
+      );
     if (n.parallax) {
       ensure(n.parallax.length === 2, "NODE", "Invalid parallax");
       n.parallax.forEach((v) => number(v, -1000, 1000));
@@ -354,6 +389,11 @@ export function validateScene(scene, manifest) {
       );
     if (n.mask) {
       keys(n.mask, ["asset", "polygon", "invert"]);
+      ensure(
+        !(n.mask.asset && n.mask.polygon),
+        "MASK",
+        "Choose one mask source per node",
+      );
       ensure(n.mask.asset || n.mask.polygon, "MASK", "Missing mask");
       if (n.mask.asset)
         ensure(

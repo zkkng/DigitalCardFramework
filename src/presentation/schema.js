@@ -166,6 +166,7 @@ const node = object(
     id,
     name: string,
     type: { enum: ["image", "video", "audio", "group", "text", "adapter"] },
+    sampling: { enum: ["linear", "nearest"] },
     asset: id,
     rect,
     x: number,

@@ -1,4 +1,5 @@
 import { ensure, parseJSON, text } from "./data.js";
+import { rasterDimensions } from "./media.js";
 
 /** Core GLB profile: embedded buffers/images, bounded geometry, no executable extensions. */
 export function inspectGLB(bytes) {
@@ -19,7 +20,130 @@ export function inspectGLB(bytes) {
     "GLTF",
     "Invalid GLB JSON",
   );
+  ensure(length % 4 === 0, "GLTF", "Unaligned JSON chunk");
+  let offset = 20 + length,
+    binary = null;
+  while (offset < bytes.length) {
+    ensure(offset + 8 <= bytes.length, "GLTF", "Truncated GLB chunk");
+    const size = v.getUint32(offset, true),
+      type = v.getUint32(offset + 4, true);
+    ensure(
+      size % 4 === 0 &&
+        offset + 8 + size <= bytes.length &&
+        type === 0x004e4942 &&
+        !binary,
+      "GLTF",
+      "Invalid or duplicate binary chunk",
+    );
+    binary = bytes.subarray(offset + 8, offset + 8 + size);
+    offset += 8 + size;
+  }
   const json = parseJSON(text(bytes.subarray(20, 20 + length)).trim());
+  for (const key of [
+    "buffers",
+    "bufferViews",
+    "images",
+    "nodes",
+    "scenes",
+    "meshes",
+    "accessors",
+    "animations",
+    "extensionsRequired",
+    "extensionsUsed",
+  ])
+    ensure(
+      json[key] === undefined || Array.isArray(json[key]),
+      "GLTF",
+      "Invalid array " + key,
+    );
+  const buffers = json.buffers ?? [],
+    views = json.bufferViews ?? [],
+    nodes = json.nodes ?? [];
+  ensure(
+    buffers.length <= 1,
+    "GLTF",
+    "Only the embedded GLB buffer is supported",
+  );
+  for (const b of buffers)
+    ensure(
+      Number.isSafeInteger(b.byteLength) &&
+        b.byteLength >= 0 &&
+        binary &&
+        b.byteLength <= binary.length &&
+        binary.length - b.byteLength <= 3,
+      "GLTF",
+      "Missing or inconsistent embedded buffer",
+    );
+  for (const view of views)
+    ensure(
+      view.buffer === 0 &&
+        Number.isSafeInteger(view.byteOffset ?? 0) &&
+        (view.byteOffset ?? 0) >= 0 &&
+        Number.isSafeInteger(view.byteLength) &&
+        view.byteLength > 0 &&
+        (view.byteOffset ?? 0) + view.byteLength <= buffers[0]?.byteLength,
+      "GLTF",
+      "Buffer view exceeds embedded buffer",
+    );
+  for (const image of json.images ?? []) {
+    ensure(
+      image.uri === undefined,
+      "GLTF_URI",
+      "GLB must embed resources in buffer views",
+    );
+    const view = views[image.bufferView];
+    ensure(view, "GLTF", "Missing embedded image view");
+    rasterDimensions(
+      binary.subarray(
+        view.byteOffset ?? 0,
+        (view.byteOffset ?? 0) + view.byteLength,
+      ),
+      image.mimeType,
+    );
+  }
+  const visiting = new Set(),
+    visited = new Set(),
+    heights = new Map(),
+    parents = new Set();
+  const visit = (index, depth) => {
+    ensure(
+      Number.isInteger(index) && index >= 0 && index < nodes.length,
+      "GLTF",
+      "Missing node reference",
+    );
+    ensure(
+      depth <= 64 && !visiting.has(index),
+      "GLTF",
+      "Cyclic or excessive node hierarchy",
+    );
+    if (visited.has(index)) return heights.get(index);
+    let height = 1;
+    visiting.add(index);
+    ensure(
+      nodes[index].children === undefined ||
+        Array.isArray(nodes[index].children),
+      "GLTF",
+      "Invalid child list",
+    );
+    for (const child of nodes[index].children ?? []) {
+      ensure(!parents.has(child), "GLTF", "Node has multiple parents");
+      parents.add(child);
+      height = Math.max(height, 1 + visit(child, depth + 1));
+    }
+    visiting.delete(index);
+    ensure(height <= 64, "GLTF", "Excessive node hierarchy");
+    visited.add(index);
+    heights.set(index, height);
+    return height;
+  };
+  for (let i = 0; i < nodes.length; i++) visit(i, 0);
+  for (const scene of json.scenes ?? [])
+    for (const index of scene.nodes ?? [])
+      ensure(
+        Number.isInteger(index) && index >= 0 && index < nodes.length,
+        "GLTF",
+        "Missing scene node",
+      );
   ensure(json.asset?.version === "2.0", "GLTF", "Unsupported glTF");
   const supported = [
     "KHR_materials_unlit",
@@ -105,6 +229,12 @@ export function inspectLottie(json) {
         "LOTTIE_EXPRESSION",
         "Expressions are not in the passive animation profile",
       );
+      if (k === "fPath")
+        ensure(
+          !v,
+          "LOTTIE_URI",
+          "External fonts are not supported; outline text before export",
+        );
       if (k === "u" || k === "p")
         ensure(
           typeof v !== "string" ||
@@ -113,6 +243,17 @@ export function inspectLottie(json) {
           "LOTTIE_URI",
           "External animation assets are not supported",
         );
+      if (
+        typeof v === "string" &&
+        /^data:image\/(png|jpeg|webp);base64,/.test(v)
+      ) {
+        const split = v.indexOf(","),
+          mediaType = v.slice(5, v.indexOf(";"));
+        const decoded = Uint8Array.from(atob(v.slice(split + 1)), (c) =>
+          c.charCodeAt(0),
+        );
+        rasterDimensions(decoded, mediaType);
+      }
       walk(v, depth + 1);
     }
   }
@@ -143,9 +284,12 @@ export async function inspectDotLottie(bytes, readZip) {
     "LOTTIE_STATE",
     "State-machine packages need a reviewed adapter",
   );
-  const paths = new Set(["manifest.json"]);
+  const paths = new Set(["manifest.json"]),
+    ids = new Set();
   for (const a of manifest.animations) {
     ensure(/^[\w-]{1,100}$/.test(a.id), "LOTTIE", "Invalid animation ID");
+    ensure(!ids.has(a.id), "LOTTIE", "Duplicate animation ID");
+    ids.add(a.id);
     const name = files.has(`a/${a.id}.json`)
       ? `a/${a.id}.json`
       : `animations/${a.id}.json`;

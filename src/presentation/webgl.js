@@ -8,6 +8,7 @@ const fragment = `#version 300 es
 precision highp float;
 uniform sampler2D art; uniform sampler2D maskArt; uniform sampler2D flakeArt; uniform sampler2D effectMaskArt;
 uniform float opacity; uniform float brightness; uniform float saturation;
+uniform vec4 fillColor; uniform int hasFill;
 uniform int effect; uniform vec4 params; uniform vec4 details;
 uniform vec2 center; uniform vec2 nodeSize; uniform vec4 clip; uniform vec2 resolution;
 uniform int maskMode; uniform int polygonCount; uniform vec2 polygon[64]; uniform int hasMask; uniform int hasFlake;
@@ -18,9 +19,9 @@ void main(){
  vec2 screen=vec2(gl_FragCoord.x,resolution.y-gl_FragCoord.y);
  vec2 q=abs(screen-(clip.xy+clip.zw*.5))-(clip.zw*.5-vec2(9.));
  float edge=1.-smoothstep(8.,9.,length(max(q,0.)));
- vec4 c=texture(art,tex); c.rgb=mix(vec3(dot(c.rgb,vec3(.2126,.7152,.0722))),c.rgb,saturation)*brightness;
- if(polygonCount>0){bool inside=false;int j=polygonCount-1;for(int i=0;i<64;i++){if(i>=polygonCount)break;vec2 a=polygon[i],b=polygon[j];if(((a.y>tex.y)!=(b.y>tex.y))&&(tex.x<(b.x-a.x)*(tex.y-a.y)/(b.y-a.y)+a.x))inside=!inside;j=i;}c.a*=maskMode==1?(inside?0.:1.):(inside?1.:0.);}
- if(hasMask==1)c.a*=texture(maskArt,point).a;
+ vec4 c=hasFill==1?fillColor:texture(art,tex); c.rgb=mix(vec3(dot(c.rgb,vec3(.2126,.7152,.0722))),c.rgb,saturation)*brightness;
+ if(polygonCount>0){bool inside=false;int j=polygonCount-1;for(int i=0;i<64;i++){if(i>=polygonCount)break;vec2 a=polygon[i],b=polygon[j];if(((a.y>point.y)!=(b.y>point.y))&&(point.x<(b.x-a.x)*(point.y-a.y)/(b.y-a.y)+a.x))inside=!inside;j=i;}c.a*=maskMode==1?(inside?0.:1.):(inside?1.:0.);}
+ if(hasMask==1){float coverage=texture(maskArt,point).a;c.a*=maskMode==1?1.-coverage:coverage;}
  float weight=hasEffectMask==1?texture(effectMaskArt,point).a:1.;
  if(effect==1){float d=length((point-center)*vec2(1.,nodeSize.y/nodeSize.x));float radius=params.x*1.3;c.a*=1.-smoothstep(max(0.,radius-details.x),radius+.001,d);}
  if(effect==2){vec2 direction=vec2(.927,.375);float line=dot(point*nodeSize,direction)/dot(nodeSize,direction);float distance=abs(line-params.x)/max(.01,details.x);float band=max(0.,1.-distance)*weight;float ripple=.65+.35*sin(point.y*420.+sin(point.x*29.)*2.);if(surface==1)c.rgb+=vec3(.7,.85,1.)*band*ripple*params.z;else{c.a*=band;c.rgb*=1.+ripple*params.z;}}
@@ -72,6 +73,8 @@ export function createWebGLRenderer(canvas) {
     gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 24, i * 8);
   }
   const names = [
+    "fillColor",
+    "hasFill",
     "resolution",
     "opacity",
     "brightness",
@@ -198,12 +201,33 @@ export function createWebGLRenderer(canvas) {
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(out), gl.DYNAMIC_DRAW);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, asset.texture);
+      gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_MIN_FILTER,
+        node.sampling === "nearest" ? gl.NEAREST : gl.LINEAR,
+      );
+      gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_MAG_FILTER,
+        node.sampling === "nearest" ? gl.NEAREST : gl.LINEAR,
+      );
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, mask?.texture ?? white);
       gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, flake?.texture ?? white);
       gl.activeTexture(gl.TEXTURE3);
       gl.bindTexture(gl.TEXTURE_2D, effectMask?.texture ?? white);
+      gl.uniform1i(u.hasFill, node._fill ? 1 : 0);
+      gl.uniform4fv(
+        u.fillColor,
+        node._fill
+          ? [1, 3, 5, 7].map((i) =>
+              i === 7 && node._fill.length === 7
+                ? 1
+                : parseInt(node._fill.slice(i, i + 2), 16) / 255,
+            )
+          : [0, 0, 0, 0],
+      );
       gl.uniform1f(u.opacity, node.opacity ?? 1);
       gl.uniform1f(u.brightness, node.brightness ?? 1);
       gl.uniform1f(u.saturation, node.saturation ?? 1);
@@ -260,8 +284,17 @@ export function createWebGLRenderer(canvas) {
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       draws++;
     },
+    background(color, matrix, viewport, width, height) {
+      if (color && color !== "transparent")
+        this.draw(
+          { _fill: color, width, height },
+          { texture: white, width: 1, height: 1 },
+          matrix,
+          viewport,
+        );
+    },
     diagnostics() {
-      return { draws, textures: textures.size - 1 };
+      return { draws, textures: textures.size - (textures.has(white) ? 1 : 0) };
     },
     dispose() {
       for (const t of textures) gl.deleteTexture(t);

@@ -18,5 +18,28 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir src/presentation install --frozen-lockfile
       - run: node --test test/*.test.js
+      - run: node docs/complex-cards/check-examples.mjs
       - run: pnpm audit --prod
       - run: docker build --tag digital-card-framework:ci .
+  browser:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.19.0'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
+      - run: xvfb-run --auto-servernum node test/presentation-audit-browser.mjs ./node_modules/playwright/index.mjs test-results ${{ matrix.engine }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-${{ matrix.engine }}
+          path: test-results/

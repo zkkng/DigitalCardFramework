@@ -45,6 +45,12 @@
             "adapter"
           ]
         },
+        "sampling": {
+          "enum": [
+            "linear",
+            "nearest"
+          ]
+        },
         "asset": {
           "type": "string",
           "pattern": "^[a-zA-Z][\\w.-]{0,99}$"

@@ -40,6 +40,7 @@ export function mountProgram(
     port,
     timer,
     disposed = false,
+    hostVisible = true,
     lastInputs = inputs,
     windowStart = performance.now(),
     count = 0;
@@ -52,7 +53,7 @@ export function mountProgram(
     frame = null;
   };
   function start() {
-    if (disposed || frame) return;
+    if (disposed || frame || !hostVisible || document.hidden) return;
     const nonce = crypto.randomUUID(),
       channel = new MessageChannel();
     frame = document.createElement("iframe");
@@ -132,7 +133,8 @@ export function mountProgram(
       send({ version: 1, type: "inputs", inputs: filterInputs(value) });
     },
     setVisibility(value) {
-      value === "visible" ? start() : clean();
+      hostVisible = value === "visible";
+      hostVisible ? start() : clean();
     },
     dispose() {
       disposed = true;

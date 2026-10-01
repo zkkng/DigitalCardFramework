@@ -6,6 +6,8 @@ const [
     playwrightPath,
     url = "http://127.0.0.1:4173/portable.html",
     out = "../PortableCardQA",
+    activeSeconds = "60",
+    idleSeconds = "1",
   ] = process.argv.slice(2),
   { chromium } = await import(pathToFileURL(path.resolve(playwrightPath)).href),
   browser = await chromium.launch({ channel: "msedge", headless: true }),
@@ -28,16 +30,25 @@ try {
     path: path.join(out, "mobile-emulation.png"),
     fullPage: true,
   });
-  const trace = await page.evaluate(async () => {
+  const trace = await page.evaluate(async (seconds) => {
+    const samples = [];
+    let sampledAt = 0;
     const intervals = [];
     let previous = performance.now();
     const started = performance.now();
-    for (let i = 0; performance.now() - started < 60000; i++) {
+    for (let i = 0; performance.now() - started < seconds * 1000; i++) {
       portableCards.turn(Math.sin(i * 0.04), Math.cos(i * 0.03) * 0.4);
       await new Promise(requestAnimationFrame);
       const now = performance.now();
       intervals.push(now - previous);
       previous = now;
+      if (now - sampledAt >= 10000) {
+        samples.push({
+          elapsedMs: now - started,
+          ...portableCards.stage.diagnostics(),
+        });
+        sampledAt = now;
+      }
     }
     const summarize = (a) => {
       a.sort((a, b) => a - b);
@@ -50,11 +61,37 @@ try {
     return {
       elapsedMs: performance.now() - started,
       frames: intervals.length,
+      samples,
+      stallsOver100ms: intervals.filter((v) => v > 100).length,
+      percentiles: summarize([...intervals]),
       first: summarize(intervals.slice(0, 300)),
       last: summarize(intervals.slice(-300)),
       resources: portableCards.stage.diagnostics(),
     };
-  });
+  }, Number(activeSeconds));
+  console.log(
+    "Active soak complete",
+    JSON.stringify({
+      elapsedMs: trace.elapsedMs,
+      percentiles: trace.percentiles,
+      samples: trace.samples.length,
+    }),
+  );
+  await page.waitForTimeout(200);
+  const idleBefore = await page.evaluate(() =>
+    portableCards.stage.diagnostics(),
+  );
+  await page.waitForTimeout(Number(idleSeconds) * 1000);
+  const idleAfter = await page.evaluate(() =>
+    portableCards.stage.diagnostics(),
+  );
+  assert.equal(idleBefore.frames, idleAfter.frames, "Idle must not render");
+  assert.equal(idleAfter.scheduledFrames, 0);
+  for (const sample of trace.samples) {
+    assert.equal(sample.textures, baseline.textures);
+    assert.equal(sample.assetReferences, baseline.assetReferences);
+    assert.ok(sample.estimatedGpuBytes <= baseline.estimatedGpuBytes);
+  }
   assert.equal(trace.resources.textures, baseline.textures);
   assert.equal(trace.resources.assetReferences, baseline.assetReferences);
   await page.evaluate(() => {
@@ -172,13 +209,18 @@ try {
     profile: "390x844, DPR3, touch emulation; not physical iPhone evidence",
     baseline,
     trace,
+    idle: {
+      seconds: Number(idleSeconds),
+      before: idleBefore,
+      after: idleAfter,
+    },
     contextRecovery: true,
     reducedMotion: true,
     races,
     errors,
   };
   await writeFile(
-    path.join(out, "resilience-report.json"),
+    path.join(out, `resilience-${activeSeconds}s-${idleSeconds}s-report.json`),
     JSON.stringify(report, null, 2),
   );
   console.log(JSON.stringify(report, null, 2));
