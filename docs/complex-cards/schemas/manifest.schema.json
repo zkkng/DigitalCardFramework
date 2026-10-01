@@ -1,0 +1,308 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://digital-card.example/schemas/0.1/manifest.schema.json",
+  "title": "Proposed portable card manifest 0.1 (illustrative subset)",
+  "description": "Structural schema for the supplied example; not archive/media safety validation or a complete implementation of all proposed extensions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "contractVersion",
+    "id",
+    "revision",
+    "title",
+    "summary",
+    "profile",
+    "canvas",
+    "faces",
+    "assets",
+    "capabilities",
+    "quality"
+  ],
+  "properties": {
+    "format": {
+      "const": "digital-card"
+    },
+    "contractVersion": {
+      "const": "0.1.0"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+      "maxLength": 100
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "profile": {
+      "enum": [
+        "portable"
+      ]
+    },
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10000
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10000
+        }
+      }
+    },
+    "faces": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "front",
+        "back"
+      ],
+      "properties": {
+        "front": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scene",
+            "poster",
+            "description"
+          ],
+          "properties": {
+            "scene": {
+              "$ref": "#/$defs/path"
+            },
+            "poster": {
+              "$ref": "#/$defs/id"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          }
+        },
+        "back": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scene",
+            "poster",
+            "description"
+          ],
+          "properties": {
+            "scene": {
+              "$ref": "#/$defs/path"
+            },
+            "poster": {
+              "$ref": "#/$defs/id"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          }
+        }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "path",
+          "mediaType",
+          "sha256",
+          "bytes",
+          "width",
+          "height",
+          "role"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "path": {
+            "$ref": "#/$defs/path"
+          },
+          "mediaType": {
+            "enum": [
+              "image/png",
+              "image/webp",
+              "video/mp4"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16384
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16384
+          },
+          "role": {
+            "enum": [
+              "poster",
+              "color",
+              "atlas",
+              "video"
+            ]
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "optional"
+      ],
+      "properties": {
+        "required": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9.-]+@[0-9]+\\.[0-9]+$"
+          }
+        },
+        "optional": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "fallback"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9.-]+@[0-9]+\\.[0-9]+$"
+              },
+              "fallback": {
+                "enum": [
+                  "poster",
+                  "omit-decorative",
+                  "static-pose"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "poster",
+        "lite"
+      ],
+      "properties": {
+        "poster": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "maxEdge"
+          ],
+          "properties": {
+            "maxEdge": {
+              "type": "integer",
+              "minimum": 64,
+              "maximum": 4096
+            }
+          }
+        },
+        "lite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "maxEdge"
+          ],
+          "properties": {
+            "maxEdge": {
+              "type": "integer",
+              "minimum": 64,
+              "maximum": 4096
+            }
+          }
+        },
+        "standard": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "maxEdge"
+          ],
+          "properties": {
+            "maxEdge": {
+              "type": "integer",
+              "minimum": 64,
+              "maximum": 4096
+            }
+          }
+        },
+        "ultra": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "maxEdge"
+          ],
+          "properties": {
+            "maxEdge": {
+              "type": "integer",
+              "minimum": 64,
+              "maximum": 4096
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "pattern": "^(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*$",
+      "maxLength": 240
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+      "maxLength": 100
+    }
+  }
+}

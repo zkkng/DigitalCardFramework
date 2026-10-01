@@ -67,6 +67,8 @@ Use the dedicated public package subpaths when consuming this repository as a pa
 
 Read [API and configuration](docs/core-api.md), [customization recipes](docs/customization-recipes.md), [storage and transaction decisions](docs/adr-001-core-runtime.md) and [implementation coverage](docs/implementation-status.md). [OpenAPI](docs/openapi.json) describes the HTTP resources and command schemas.
 
+The [portable complex card design](docs/complex-cards/README.md) specifies a proposed media bundle, lifecycle-managed player, creator studio, video backs, selective materials, optional 3D/program adapters and mobile resource budgets. It includes research, draft schemas, examples and implementation gates; these new presentation capabilities are not yet implemented.
+
 ## Deployment boundary
 
 This is the first core runtime, not a live Quiet Grove integration. Core balances are authoritative inside the framework transaction; an external game wallet is not yet a supported money provider. The host must verify identity and map it to a registered user; the HTTP adapter intentionally accepts no client-supplied user IDs or admin roles. Operator contexts are trusted server objects, never browser credentials.

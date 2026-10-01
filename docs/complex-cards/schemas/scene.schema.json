@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://digital-card.example/schemas/0.1/scene.schema.json",
+  "title": "Illustrative scene dialect 0.1 subset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dialect",
+    "nodes",
+    "tracks"
+  ],
+  "properties": {
+    "dialect": {
+      "const": "dc.scene2d@0.1"
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "type",
+          "asset",
+          "transform",
+          "parallax",
+          "opacity"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+            "maxLength": 100
+          },
+          "type": {
+            "enum": [
+              "image",
+              "video",
+              "atlas-sequence"
+            ]
+          },
+          "asset": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+            "maxLength": 100
+          },
+          "transform": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "height": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "rotation": {
+                "type": "number"
+              },
+              "pivotX": {
+                "type": "number"
+              },
+              "pivotY": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ]
+          },
+          "parallax": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "x",
+              "y"
+            ],
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            }
+          },
+          "opacity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "material": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "recipe",
+              "mask",
+              "parameters"
+            ],
+            "properties": {
+              "recipe": {
+                "enum": [
+                  "dc.material.water@0.1",
+                  "dc.material.bloom@0.1",
+                  "dc.material.glitter@0.1"
+                ]
+              },
+              "mask": {
+                "const": "source-alpha"
+              },
+              "parameters": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "video": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "loop",
+              "muted",
+              "poster",
+              "fit"
+            ],
+            "properties": {
+              "mode": {
+                "enum": [
+                  "autoplay-muted",
+                  "on-activate"
+                ]
+              },
+              "loop": {
+                "type": "boolean"
+              },
+              "muted": {
+                "const": true
+              },
+              "poster": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+                "maxLength": 100
+              },
+              "fit": {
+                "enum": [
+                  "cover",
+                  "contain"
+                ]
+              }
+            }
+          },
+          "sequence": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rect",
+                "pivot",
+                "durationMs"
+              ],
+              "properties": {
+                "rect": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "minItems": 4,
+                  "maxItems": 4
+                },
+                "pivot": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "durationMs": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "tracks": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "node",
+          "property",
+          "input",
+          "interpolation",
+          "outside",
+          "keys"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+            "maxLength": 100
+          },
+          "node": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+            "maxLength": 100
+          },
+          "property": {
+            "enum": [
+              "material.parameters.progress",
+              "material.parameters.angle",
+              "transform.rotation",
+              "sequence.progress"
+            ]
+          },
+          "input": {
+            "enum": [
+              "tilt.x",
+              "tilt.y"
+            ]
+          },
+          "interpolation": {
+            "const": "linear"
+          },
+          "outside": {
+            "const": "clamp"
+          },
+          "keys": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        }
+      }
+    }
+  }
+}

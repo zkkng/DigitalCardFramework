@@ -1,0 +1,29 @@
+{
+  "dialect": "dc.scene2d@0.1",
+  "nodes": [
+    {
+      "id": "cinematic-back",
+      "type": "video",
+      "asset": "back-video",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 1000,
+        "height": 1500
+      },
+      "parallax": {
+        "x": 0,
+        "y": 0
+      },
+      "opacity": 1,
+      "video": {
+        "mode": "autoplay-muted",
+        "loop": true,
+        "muted": true,
+        "poster": "poster-back",
+        "fit": "cover"
+      }
+    }
+  ],
+  "tracks": []
+}

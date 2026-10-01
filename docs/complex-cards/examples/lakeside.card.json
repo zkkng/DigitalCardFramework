@@ -1,0 +1,145 @@
+{
+  "format": "digital-card",
+  "contractVersion": "0.1.0",
+  "id": "example.lakeside",
+  "revision": 1,
+  "title": "Lakeside Study",
+  "summary": "A structural example of a layered scene with local reflective effects and a video back. Media and hashes are placeholders.",
+  "profile": "portable",
+  "canvas": {
+    "width": 1000,
+    "height": 1500
+  },
+  "faces": {
+    "front": {
+      "scene": "scenes/front.json",
+      "poster": "poster-front",
+      "description": "A quiet lake below a softly blooming firework, with a petal and a small companion in the foreground."
+    },
+    "back": {
+      "scene": "scenes/back.json",
+      "poster": "poster-back",
+      "description": "A muted cinematic lake reflection with a static fallback."
+    }
+  },
+  "assets": [
+    {
+      "id": "poster-front",
+      "path": "previews/front.webp",
+      "mediaType": "image/webp",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 100,
+      "width": 500,
+      "height": 750,
+      "role": "poster"
+    },
+    {
+      "id": "poster-back",
+      "path": "previews/back.webp",
+      "mediaType": "image/webp",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 100,
+      "width": 500,
+      "height": 750,
+      "role": "poster"
+    },
+    {
+      "id": "sky",
+      "path": "assets/sky.webp",
+      "mediaType": "image/webp",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 100,
+      "width": 1000,
+      "height": 1500,
+      "role": "color"
+    },
+    {
+      "id": "lake",
+      "path": "assets/lake.png",
+      "mediaType": "image/png",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 100,
+      "width": 1000,
+      "height": 650,
+      "role": "color"
+    },
+    {
+      "id": "firework",
+      "path": "assets/firework.png",
+      "mediaType": "image/png",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 100,
+      "width": 256,
+      "height": 256,
+      "role": "color"
+    },
+    {
+      "id": "petal",
+      "path": "assets/petal.png",
+      "mediaType": "image/png",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 100,
+      "width": 64,
+      "height": 64,
+      "role": "color"
+    },
+    {
+      "id": "companion",
+      "path": "assets/companion-atlas.png",
+      "mediaType": "image/png",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 100,
+      "width": 384,
+      "height": 160,
+      "role": "atlas"
+    },
+    {
+      "id": "back-video",
+      "path": "assets/back.mp4",
+      "mediaType": "video/mp4",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 100,
+      "width": 720,
+      "height": 1080,
+      "role": "video"
+    }
+  ],
+  "capabilities": {
+    "required": [
+      "dc.scene2d@0.1"
+    ],
+    "optional": [
+      {
+        "id": "dc.material.water@0.1",
+        "fallback": "omit-decorative"
+      },
+      {
+        "id": "dc.material.bloom@0.1",
+        "fallback": "omit-decorative"
+      },
+      {
+        "id": "dc.material.glitter@0.1",
+        "fallback": "omit-decorative"
+      },
+      {
+        "id": "dc.atlas-sequence@0.1",
+        "fallback": "static-pose"
+      },
+      {
+        "id": "dc.video@0.1",
+        "fallback": "poster"
+      }
+    ]
+  },
+  "quality": {
+    "poster": {
+      "maxEdge": 500
+    },
+    "lite": {
+      "maxEdge": 768
+    },
+    "standard": {
+      "maxEdge": 1536
+    }
+  }
+}
