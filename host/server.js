@@ -25,7 +25,7 @@ try{framework.catalog();}catch(error){if(error.code!=='NO_CATALOG')throw error;i
 const raw=framework.operatorCatalog({role:'admin'});
 for(const variant of raw.variants)for(const binding of Object.values(variant.bindings))if(binding.factory&&!extension.bindings?.[binding.factory])throw new Error('Configure binding factory '+binding.factory+' in HOST_MODULE');
 const audit=framework.audit({role:'admin'});if(!audit.ok||!store.integrity())throw new Error('Database verification failed; restore a verified backup');
-const sessions=new SessionStore(dbPath,{encryptionKey}),rateLimit=extension.rateLimiter??createRateLimiter(extension.rateLimits);
+const sessions=new SessionStore(dbPath,{encryptionKey,maxSessions:extension.sessionOptions?.maxSessions}),rateLimit=extension.rateLimiter??createRateLimiter(extension.rateLimits);
 const provider=extension.identityProvider??await createOIDCProvider({issuer,clientId,clientSecret:await secret('OIDC_CLIENT_SECRET'),origin});
 const auth=createAuthHost({framework,sessions,provider,origin,adminSubjects,rateLimit});
 const api=createApiHandler({framework,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,exposeOperators:true,requireTradeReview:true,requirePrincipal:true,rateLimit,

@@ -8,12 +8,13 @@ const cookie=(req,name)=>(req.headers.cookie??'').split(';').map(x=>x.trim()).fi
 
 /** Durable opaque sessions; secrets are encrypted and only token hashes are indexed. */
 export class SessionStore {
-  #db;#codec;#clock;
-  constructor(path,{encryptionKey,clock=Date.now}={}){
+  #db;#codec;#clock;#maxSessions;
+  constructor(path,{encryptionKey,clock=Date.now,maxSessions=20000}={}){
+    if(!Number.isSafeInteger(maxSessions)||maxSessions<1||maxSessions>1000000)throw new Error('Session capacity must be a positive bounded integer');this.#maxSessions=maxSessions;
     this.#codec=createStateCodec(encryptionKey);this.#clock=clock;this.#db=new DatabaseSync(path,{timeout:5000});
     this.#db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS auth_sessions (digest TEXT PRIMARY KEY, kind TEXT NOT NULL, expires INTEGER NOT NULL, payload TEXT NOT NULL) STRICT;');
   }
-  create(kind,data,ttl){const secret=token();this.#db.prepare('DELETE FROM auth_sessions WHERE expires<=?').run(this.#clock());this.#db.prepare('INSERT INTO auth_sessions VALUES (?,?,?,?)').run(hash(secret),kind,this.#clock()+ttl,this.#codec.encode(data));return secret;}
+  create(kind,data,ttl){if(!['session','flow'].includes(kind)||!Number.isSafeInteger(ttl)||ttl<1)throw new Error('Invalid session kind or lifetime');const secret=token();this.#db.exec('BEGIN IMMEDIATE');try{this.#db.prepare('DELETE FROM auth_sessions WHERE expires<=?').run(this.#clock());if(this.#db.prepare('SELECT COUNT(*) AS total FROM auth_sessions').get().total>=this.#maxSessions)throw new Error('Authentication session capacity reached');this.#db.prepare('INSERT INTO auth_sessions VALUES (?,?,?,?)').run(hash(secret),kind,this.#clock()+ttl,this.#codec.encode(data));this.#db.exec('COMMIT');return secret;}catch(error){this.#db.exec('ROLLBACK');throw error;}}
   get(secret,kind,{consume=false}={}){
     if(typeof secret!=='string'||!/^[\w-]{43}$/.test(secret))return null;
     this.#db.exec('BEGIN IMMEDIATE');try{const row=this.#db.prepare('SELECT * FROM auth_sessions WHERE digest=? AND kind=?').get(hash(secret),kind);
@@ -49,7 +50,7 @@ export function createAuthHost({framework,sessions,provider,origin,adminSubjects
     async handle(req,res){const url=new URL(req.url,origin);if(!url.pathname.startsWith('/auth/'))return false;
       res.setHeader('Cache-Control','no-store');
       try{
-        if(!rateLimit({request:req,mutation:true})) {res.statusCode=429;res.end('Try again shortly');return true;}
+        if(!rateLimit({request:req,mutation:true})) {res.statusCode=429;res.setHeader('Retry-After','60');res.end('Try again shortly');return true;}
         if(url.pathname==='/auth/login'&&req.method==='GET'){
           const started=await provider.begin(),flow=sessions.create('flow',started.data,10*60000);
           res.setHeader('Set-Cookie',setCookie(flowName,flow,600));res.statusCode=303;res.setHeader('Location',started.url);res.end();

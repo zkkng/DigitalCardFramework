@@ -29,6 +29,10 @@ test('opaque sessions survive restart, expire, consume login challenges once and
   sessions=new SessionStore(path,{encryptionKey:key,clock:()=>now});assert.equal(sessions.get(secret,'session').subject,'sensitive-subject');assert(sessions.get(flow,'flow',{consume:true}));assert.equal(sessions.get(flow,'flow',{consume:true}),null);now=101;assert.equal(sessions.get(secret,'session'),null);sessions.close();rmSync(dir,{recursive:true});
 });
 
+test('session capacity is atomic, expires before allocation and preserves existing authentication',()=>{
+  let now=0;const sessions=new SessionStore(':memory:',{encryptionKey:randomBytes(32),maxSessions:1,clock:()=>now});const first=sessions.create('session',{userId:'a'},10);assert.throws(()=>sessions.create('flow',{},10),/capacity/);assert.equal(sessions.get(first,'session').userId,'a');now=11;assert(sessions.create('flow',{},10));assert.equal(sessions.get(first,'session'),null);sessions.close();assert.throws(()=>new SessionStore(':memory:',{maxSessions:0}),/capacity/);
+});
+
 test('host requires a bound login challenge; verified subject derives authority, replay and foreign logout fail',async()=>{
   const x=fixture(),sessions=new SessionStore(':memory:',{encryptionKey:randomBytes(32)});let finishes=0;
   const provider={begin:async()=>({url:'https://issuer.test/authorize',data:{nonce:'nonce',state:'state'}}),finish:async(url,data)=>{finishes++;assert.equal(data.nonce,'nonce');assert.equal(url.searchParams.get('state'),'state');return {issuer:'https://issuer.test',subject:'operator',displayName:'Operator'};}};
