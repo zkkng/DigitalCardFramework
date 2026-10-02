@@ -91,9 +91,9 @@ This host profile retains native phone density and allows bounded pinch detail w
 
 ## Bound simultaneous imports
 
-`createPresentationStore` admits at most two active imports and sixteen pending imports across all actors by default, in addition to the per-actor and quarantine-byte limits. Excess admissions return `QUOTA`; an idempotent retry of an already admitted upload still returns its existing job. Queued jobs retain the `received` state until a slot is available. Canceling a queued job prevents validation; closing the store cancels queued and active work and waits for process cleanup.
+`createPresentationStore` admits at most two active imports and sixteen unfinished imports in total, including active imports, across all actors by default, in addition to the per-actor and quarantine-byte limits. Excess admissions return `QUOTA`; an idempotent retry of an already admitted upload still returns its existing job. Queued jobs retain the `received` state until a slot is available. Canceling a queued job prevents validation; closing the store cancels queued and active work and waits for process cleanup.
 
-Host options are `maxConcurrentImports`, `maxPendingImports`, `validationTimeoutMs` (default 30000) and `validationHeapMb` (default 256). Validation runs in a child process with a V8 heap ceiling and deadline. The child receives file/limit inputs and only a small runtime environment; it does not inherit host secret environment variables. Cancellation and completion reap the child before its import slot is reused.
+Host options are `maxConcurrentImports`, `maxPendingImports`, `validationTimeoutMs` (default 30000) and `validationHeapMb` (default 256). Validation runs in a child process with a V8 old-generation heap ceiling and deadline. The child receives file/limit inputs and only a small runtime environment; it does not inherit host secret environment variables. Cancellation and completion reap the child before its import slot is reused.
 
 The heap ceiling does not bound all native allocations or ArrayBuffers. Set container/OS memory and CPU limits for the deployment. A separate process also is not a filesystem or network sandbox. Native media scanning remains the trusted host's responsibility; its callback must honor cancellation and enforce its own process limits.
 
