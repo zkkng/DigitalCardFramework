@@ -1,2 +1,4 @@
+allowBuilds:
+  esbuild@0.28.2: true
 minimumReleaseAgeExclude:
   - '@rive-app/canvas@2.44.0'
