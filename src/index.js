@@ -9,3 +9,4 @@ export {cardTypeDefaults,cardBehavior} from './card-types.js';
 
 export {tradingDefaults} from './trading-policy.js';
 export {commerceDefaults} from './commerce.js';
+export {createRemoteActionHandler} from "./remote-actions.js";

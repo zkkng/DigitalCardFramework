@@ -10,9 +10,10 @@ export class MemoryStore {
     const draft = structuredClone(this.#state);
     const result = fn(draft);
     if (result?.then) throw new Error('Async transaction callbacks are unsupported');
+    const detachedResult = structuredClone(result);
     draft.revision++;
     this.#state = draft;
-    return structuredClone(result);
+    return detachedResult;
   }
   close() {}
 }

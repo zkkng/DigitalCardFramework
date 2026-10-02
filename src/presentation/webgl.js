@@ -67,6 +67,9 @@ export function createWebGLRenderer(canvas) {
     vao = gl.createVertexArray();
   gl.bindVertexArray(vao);
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  const vertices = new Float32Array(36);
+  gl.bufferData(gl.ARRAY_BUFFER, vertices.byteLength, gl.DYNAMIC_DRAW);
+  const corners = [0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1];
   for (const [i, name] of ["position", "uv", "local"].entries()) {
     const at = gl.getAttribLocation(program, name);
     gl.enableVertexAttribArray(at);
@@ -179,32 +182,24 @@ export function createWebGLRenderer(canvas) {
         sin = Math.sin(r),
         sx = node.scaleX ?? 1,
         sy = node.scaleY ?? 1;
-      const localCorners = [
-          [0, 0],
-          [1, 0],
-          [0, 1],
-          [0, 1],
-          [1, 0],
-          [1, 1],
-        ],
-        out = [];
       const rect = node.rect ?? [0, 0, asset.width, asset.height];
-      for (const [a, b] of localCorners) {
+      for (let i = 0; i < 6; i++) {
+        const a = corners[i * 2],
+          b = corners[i * 2 + 1];
         const dx = (a * w - px) * sx,
           dy = (b * h - py) * sy;
-        const x = (node.x ?? 0) + px + dx * cos - dy * sin,
-          y = (node.y ?? 0) + py + dx * sin + dy * cos;
-        out.push(
-          matrix[0] * x + matrix[2] * y + matrix[4],
-          matrix[1] * x + matrix[3] * y + matrix[5],
-          (rect[0] + a * rect[2]) / asset.width,
-          (rect[1] + b * rect[3]) / asset.height,
-          a,
-          b,
-        );
+        const x = (node.x ?? 0) + px + dx * cos - dy * sin;
+        const y = (node.y ?? 0) + py + dx * sin + dy * cos;
+        const at = i * 6;
+        vertices[at] = matrix[0] * x + matrix[2] * y + matrix[4];
+        vertices[at + 1] = matrix[1] * x + matrix[3] * y + matrix[5];
+        vertices[at + 2] = (rect[0] + a * rect[2]) / asset.width;
+        vertices[at + 3] = (rect[1] + b * rect[3]) / asset.height;
+        vertices[at + 4] = a;
+        vertices[at + 5] = b;
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(out), gl.DYNAMIC_DRAW);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, vertices);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, asset.texture);
       gl.texParameteri(

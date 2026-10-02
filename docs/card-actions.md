@@ -78,3 +78,44 @@ export const eventSubscriptions=[{
 Subscribers enqueue one durable job per matching core event in the event's transaction. The handler receives `params.event` and a source containing event/subscription IDs. Subscriptions are host configuration, capped at 50 with unique IDs. Explicit event names are preferred; `'*'` observes all core events. Do not create feedback loops by emitting the same observed event from its handler. These subscriptions cover core events; they are not a promise that every internal helper or provider emits a public event. Fulfillment state is available through its own history.
 
 Default **Account rewards** shows delivery state and refresh controls. Operators can switch to the delivery queue and retry dead jobs. Replace `views.rewards`, or import `renderFulfillments` from the `marketplace-ui` package subpath. HTTP exposes private `/api/fulfillments`, privileged `/api/operator/actions` and `/api/operator/actions/retry`; there is no public arbitrary-execution or delivery-acknowledgment endpoint.
+
+## Use an external action receiver
+
+The Node host can deliver committed action jobs to a separate service using `createRemoteActionHandler`, exported from the framework's `remote-actions` subpath. The receiver can be written in any language that implements the HTTP/JSON contract. A [Python standard-library receiver](../examples/plugins/python-action-receiver.py) and [host configuration](../examples/plugins/remote-host.mjs) demonstrate durable acknowledgment without modifying the core.
+
+Set `PLUGIN_TOKEN` securely in the receiver's environment, then run `python examples/plugins/python-action-receiver.py deliveries.sqlite 8081`. The example binds loopback and records deliveries in SQLite. It demonstrates receipt deduplication; replace its record operation with an authoritative provider operation before using it to deliver real rewards. Provider effects and deduplication must commit together, or the provider must supply its own idempotent operation/reconciliation protocol.
+
+Configure the host's `ACTION_PLUGIN_URL` as `http://127.0.0.1:8081/actions`, `ACTION_PLUGIN_TOKEN` to match, and `HOST_MODULE` to the example host module or an equivalent installed module. Declare an opening action with handler `example.record`. The existing durable worker invokes the adapter only after the action job is committed. Remote endpoints require HTTPS; loopback HTTP is permitted. HTTP redirects are rejected.
+
+The request is a POST with JSON content, bearer authentication and an `Idempotency-Key` header matching `jobId`:
+
+```json
+{
+  "protocol": "digital-card-action@1",
+  "pluginId": "example.receiver",
+  "handlerId": "example.record",
+  "jobId": "committed-job-id",
+  "beneficiaryId": "verified-framework-account-id",
+  "source": {"type": "card.opened", "copyId": "owned-copy-id"},
+  "params": {"item": "badge"}
+}
+```
+
+The receiver must validate the configured plugin/handler identity, authenticate requests, map the beneficiary through trusted provider configuration, and persist deduplication. Reusing a job ID with different terms must conflict. A retry after restart must return the original outcome. Framework IDs are not automatically account IDs in another system.
+
+A successful response is HTTP 200 with JSON and exactly these fields:
+
+```json
+{
+  "protocol": "digital-card-action@1",
+  "pluginId": "example.receiver",
+  "jobId": "committed-job-id",
+  "status": "completed"
+}
+```
+
+Wrong identities, versions, pending results and extra fields cannot settle the job. Default limits are a 10-second deadline, 64 KiB request and 8 KiB response; host options can lower them. Aborted, unavailable or rejected deliveries remain subject to the existing durable retry and reconciliation model. Response bodies and credentials are not included in adapter errors.
+
+This route supports action delivery and configured event subscriptions. It does not supply remote allocation policies, arbitrary framework commands, plugin registration, UI/editor extensions or an OS sandbox. Each of those needs its own contract. The receiver is a privileged installed service; restrict its credentials, filesystem and network access through deployment policy.
+
+The base installation needs no Python runtime. To qualify the Python example locally, set `DC_TEST_PYTHON_PLUGIN=1` and run `node --test test/remote-actions.test.js`; `PYTHON` may name a specific interpreter. Other languages can implement this wire contract, but their implementations require separate qualification.

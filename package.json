@@ -52,7 +52,11 @@
     "./code-ui": "./src/code-ui.js",
     "./code-vault": "./src/code-vault.js",
     "./code-gateway": "./src/code-gateway.js",
-    "./marketplace-ui": "./src/marketplace-ui.js"
+    "./marketplace-ui": "./src/marketplace-ui.js",
+    "./remote-actions": {
+      "types": "./src/remote-actions.d.ts",
+      "default": "./src/remote-actions.js"
+    }
   },
   "scripts": {
     "test": "node --test test/*.test.js",

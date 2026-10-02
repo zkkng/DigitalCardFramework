@@ -178,17 +178,22 @@ export class ActionService {
   }
   claim(actor) {
     operator(actor, "actions.dispatch");
+    const due = (j, now) =>
+      (j.status === "pending" && Date.parse(j.nextAt) <= now) ||
+      (j.status === "running" && Date.parse(j.leaseUntil) <= now);
+    if (
+      !this.#store.read((s) =>
+        Object.values(s.actionJobs ?? {}).some((j) =>
+          due(j, Date.parse(this.#clock())),
+        ),
+      )
+    )
+      return null;
     return this.#store.transact((s) => {
       const at = this.#clock(),
         now = Date.parse(at);
       for (const j of Object.values(s.actionJobs ?? {})) {
-        if (
-          !(
-            (j.status === "pending" && Date.parse(j.nextAt) <= now) ||
-            (j.status === "running" && Date.parse(j.leaseUntil) <= now)
-          )
-        )
-          continue;
+        if (!due(j, now)) continue;
         if (j.attempts >= this.#options.maxAttempts) {
           j.status = "dead";
           j.error =

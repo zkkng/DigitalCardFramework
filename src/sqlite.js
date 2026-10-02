@@ -28,13 +28,14 @@ export class SQLiteStore {
       const state = this.#load();
       const result = fn(state);
       if (result?.then) throw new Error('Async transaction callbacks are unsupported');
+      const detachedResult = structuredClone(result);
       state.revision++;
       const body=this.#codec.encode(state);if(Buffer.byteLength(body)>this.#maxBytes)throw new FrameworkError('STORAGE_CAPACITY','Installation capacity reached; contact the operator',507);
       this.#db.prepare('UPDATE framework_state SET body=? WHERE id=1').run(body);
       this.#db.exec('COMMIT');
-      return structuredClone(result);
+      return detachedResult;
     } catch (error) {
-      this.#db.exec('ROLLBACK');
+      try { this.#db.exec('ROLLBACK'); } catch { /* Preserve the original transaction failure. */ }
       throw error;
     }
   }

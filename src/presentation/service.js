@@ -9,7 +9,7 @@ import {
   stat,
 } from "node:fs/promises";
 import path from "node:path";
-import { Worker } from "node:worker_threads";
+import { fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   ensure,
@@ -31,25 +31,44 @@ const atomic = async (file, value) => {
 };
 export async function validateInWorker(
   file,
-  { limits = DEFAULT_LIMITS, timeoutMs = 30000, signal, performance } = {},
+  {
+    limits = DEFAULT_LIMITS,
+    timeoutMs = 30000,
+    maxHeapMb = 256,
+    signal,
+    performance,
+  } = {},
 ) {
+  ensure(
+    Number.isSafeInteger(timeoutMs) && timeoutMs >= 1 && timeoutMs <= 300000,
+    "LIMIT",
+    "Invalid validation timeout",
+  );
+  ensure(
+    Number.isSafeInteger(maxHeapMb) && maxHeapMb >= 32 && maxHeapMb <= 4096,
+    "LIMIT",
+    "Invalid validation heap budget",
+  );
+  signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL("./import-worker.js", import.meta.url), {
-      workerData: { path: file, limits, performance },
-      resourceLimits: {
-        maxOldGenerationSizeMb: 256,
-        maxYoungGenerationSizeMb: 32,
-        stackSizeMb: 4,
-      },
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([key]) =>
+        ["PATH", "SYSTEMROOT", "TEMP", "TMP"].includes(key.toUpperCase()),
+      ),
+    );
+    const worker = fork(new URL("./import-worker.js", import.meta.url), [], {
+      execArgv: ["--max-old-space-size=" + maxHeapMb],
+      env,
+      stdio: ["ignore", "ignore", "ignore", "ipc"],
+      windowsHide: true,
     });
-    let done = false;
+    let outcome;
     const finish = (error, value) => {
-      if (done) return;
-      done = true;
+      if (outcome) return;
+      outcome = { error, value };
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
-      worker.terminate();
-      error ? reject(error) : resolve(value);
+      worker.kill("SIGKILL");
     };
     const abort = () =>
       finish(new DOMException("Import cancelled", "AbortError"));
@@ -58,18 +77,29 @@ export async function validateInWorker(
       timeoutMs,
     );
     worker.once("error", (error) => finish(error));
-    worker.once("exit", (code) => {
-      if (!done) finish(new Error("Import worker exited " + code));
+    worker.once("close", (code) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      if (!outcome)
+        outcome = { error: new Error("Import worker exited " + code) };
+      outcome.error ? reject(outcome.error) : resolve(outcome.value);
     });
     worker.once("message", (result) =>
-      result.ok
+      result?.ok === true
         ? finish(null, result)
         : finish(
-            Object.assign(new Error(result.message), { code: result.code }),
+            Object.assign(
+              new Error(result?.message ?? "Import worker failed"),
+              { code: result?.code ?? "IMPORT" },
+            ),
           ),
     );
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
+    else
+      worker.send({ path: file, limits, performance }, (error) => {
+        if (error) finish(error);
+      });
   });
 }
 
@@ -82,6 +112,11 @@ export async function createPresentationStore({
   performance = {},
   allowCapabilities = null,
   maxPendingPerActor = 3,
+  maxConcurrentImports = 2,
+  maxPendingImports = 16,
+  validationTimeoutMs = 30000,
+  validationHeapMb = 256,
+  validate = validateInWorker,
   maxStoredUploadBytes = 512 * 1024 * 1024,
   clock = Date.now,
 }) {
@@ -96,6 +131,31 @@ export async function createPresentationStore({
       scanTimeoutMs <= 300000,
     "LIMIT",
     "Invalid scan timeout",
+  );
+  for (const [name, value, max] of [
+    ["maxPendingPerActor", maxPendingPerActor, 1000],
+    ["maxConcurrentImports", maxConcurrentImports, 32],
+    ["maxPendingImports", maxPendingImports, 10000],
+    ["validationTimeoutMs", validationTimeoutMs, 300000],
+    ["validationHeapMb", validationHeapMb, 4096],
+    ["maxStoredUploadBytes", maxStoredUploadBytes, Number.MAX_SAFE_INTEGER],
+  ])
+    ensure(
+      Number.isSafeInteger(value) &&
+        value >= (name === "validationHeapMb" ? 32 : 1) &&
+        value <= max,
+      "LIMIT",
+      "Invalid " + name,
+    );
+  ensure(
+    maxPendingImports >= maxConcurrentImports,
+    "LIMIT",
+    "Pending limit must cover active imports",
+  );
+  ensure(
+    typeof validate === "function",
+    "VALIDATOR",
+    "Host validation callback required",
   );
   performance = performancePolicy(performance);
   root = path.resolve(root);
@@ -113,8 +173,11 @@ export async function createPresentationStore({
     }),
   );
   const jobs = new Map(),
-    controllers = new Map();
+    controllers = new Map(),
+    pending = [],
+    tasks = new Set();
   let closed = false,
+    closePromise = null,
     tail = Promise.resolve();
   const ceiling = { ...DEFAULT_LIMITS, ...limits };
   try {
@@ -145,6 +208,7 @@ export async function createPresentationStore({
       "FORBIDDEN",
       "Not authorized",
     );
+    ensure(!closed, "CLOSED", "Store closed");
   };
   const save = (job) => atomic(path.join(jobsDir, job.id + ".json"), job);
   const publicJob = (job) =>
@@ -153,17 +217,39 @@ export async function createPresentationStore({
         Object.entries(job).filter(([key]) => key !== "uploadPath"),
       ),
     );
+  function pump() {
+    while (
+      !closed &&
+      pending.length &&
+      controllers.size < maxConcurrentImports
+    ) {
+      const job = pending.shift();
+      const task = run(job)
+        .catch(() => {
+          job.state = "rejected";
+          job.error = "Unable to persist import outcome";
+        })
+        .finally(() => {
+          tasks.delete(task);
+          pump();
+        });
+      tasks.add(task);
+    }
+  }
   async function run(job) {
     const controller = new AbortController();
     controllers.set(job.id, controller);
     try {
       job.state = "validating";
       await save(job);
-      const validation = await validateInWorker(job.uploadPath, {
+      const validation = await validate(job.uploadPath, {
+        timeoutMs: validationTimeoutMs,
+        maxHeapMb: validationHeapMb,
         limits: ceiling,
         performance,
         signal: controller.signal,
       });
+      controller.signal.throwIfAborted();
       job.report = validation.report;
       enforcePerformance(job.report.performance);
       if (allowCapabilities)
@@ -236,6 +322,7 @@ export async function createPresentationStore({
       );
       const hash = await sha256(bytes);
       return serialize(async () => {
+        ensure(!closed, "CLOSED", "Store closed");
         const prior = [...jobs.values()].find(
           (j) => j.actor === actor.id && j.key === idempotencyKey,
         );
@@ -255,6 +342,13 @@ export async function createPresentationStore({
           ).length < maxPendingPerActor,
           "QUOTA",
           "Too many pending imports",
+        );
+        ensure(
+          [...jobs.values()].filter((j) =>
+            ["received", "validating", "compiling"].includes(j.state),
+          ).length < maxPendingImports,
+          "QUOTA",
+          "Import queue is full",
         );
         let stored = 0;
         for (const file of await readdir(uploads))
@@ -278,10 +372,8 @@ export async function createPresentationStore({
         };
         await save(job);
         jobs.set(id, job);
-        void run(job).catch((error) => {
-          job.state = "rejected";
-          job.error = "Unable to persist import outcome";
-        });
+        pending.push(job);
+        pump();
         return publicJob(job);
       });
     },
@@ -297,7 +389,9 @@ export async function createPresentationStore({
         ensure(job, "NOT_FOUND", "Unknown import");
         await permitted(actor, "cancel-import", publicJob(job));
         controllers.get(id)?.abort();
-        if (job.state === "ready") {
+        if (job.state === "ready" || job.state === "received") {
+          const queued = pending.indexOf(job);
+          if (queued >= 0) pending.splice(queued, 1);
           job.state = "cancelled";
           await save(job);
         }
@@ -402,13 +496,29 @@ export async function createPresentationStore({
       };
     },
     async close() {
-      if (closed) return;
+      if (closePromise) return closePromise;
       closed = true;
-      for (const c of controllers.values()) c.abort();
-      await tail;
-      while (controllers.size) await new Promise((r) => setTimeout(r, 10));
-      await lock.close();
-      await unlink(path.join(root, "writer.lock"));
+      closePromise = (async () => {
+        await tail;
+        for (const c of controllers.values()) c.abort();
+        let failure;
+        for (const job of pending.splice(0)) {
+          job.state = "cancelled";
+          try {
+            await save(job);
+          } catch (error) {
+            failure ??= error;
+          }
+        }
+        await Promise.allSettled([...tasks]);
+        try {
+          await lock.close();
+        } finally {
+          await unlink(path.join(root, "writer.lock"));
+        }
+        if (failure) throw failure;
+      })();
+      return closePromise;
     },
   };
 }

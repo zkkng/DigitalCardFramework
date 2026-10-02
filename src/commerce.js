@@ -932,15 +932,16 @@ export class CommerceService {
   }
   expire(actor) {
     permission(actor, "maintenance.run");
+    const due = (l) =>
+      active(l) &&
+      ((l.endsAt && Date.parse(l.endsAt) <= Date.parse(this.#b.now())) ||
+        (l.draw && Date.parse(l.draw.claimUntil) <= Date.parse(this.#b.now())));
+    if (!this.#b.read((s) => Object.values(s.listings ?? {}).some(due)))
+      return { count: 0 };
     return this.#b.transact((s) => {
       let count = 0;
       for (const l of Object.values(s.listings ?? {}))
-        if (
-          active(l) &&
-          ((l.endsAt && Date.parse(l.endsAt) <= Date.parse(this.#b.now())) ||
-            (l.draw &&
-              Date.parse(l.draw.claimUntil) <= Date.parse(this.#b.now())))
-        ) {
+        if (due(l)) {
           this.#release(s, l, "expired");
           count++;
         }
