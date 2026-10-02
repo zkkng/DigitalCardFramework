@@ -52,7 +52,7 @@ jobs:
       - run: node test/commerce-browser.mjs test-results/commerce
         env:
           BROWSER_ENGINE: ${{ matrix.engine }}
-      - run: node test/presentation-resolution-browser.mjs test-results/resolution
+      - run: xvfb-run --auto-servernum node test/presentation-resolution-browser.mjs test-results/resolution
         env:
           BROWSER_ENGINE: ${{ matrix.engine }}
       - uses: actions/upload-artifact@v4

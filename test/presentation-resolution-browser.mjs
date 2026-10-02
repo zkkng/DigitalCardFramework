@@ -218,6 +218,20 @@ try {
     engine +
       ": density, texture detail, zoom, bounds/recovery, resize, contrast and disposal passed",
   );
+} catch (error) {
+  console.error(
+    await browser
+      ?.contexts()[0]
+      ?.pages()[0]
+      ?.evaluate(() => ({
+        dpr: devicePixelRatio,
+        hidden: document.hidden,
+        diagnostics: window.stage?.diagnostics(),
+        events: window.renderDiagnostics,
+      }))
+      ?.catch(() => null),
+  );
+  throw error;
 } finally {
   await browser?.close();
   server.closeAllConnections();

@@ -678,7 +678,12 @@ try {
   }, { crossOrigin: `http://127.0.0.1:${crossServer.address().port}/` });
   checks.push(...result);
   assert.ok(crossRequests.length >= 4);
-  assert.ok(crossRequests.every((request) => request.cookie === null));
+  assert.ok(
+    crossRequests.every((request) => request.cookie === null),
+    JSON.stringify(crossRequests.map(({ path, cookie }) => ({
+      path, cookieLength: cookie?.length ?? null,
+    }))),
+  );
   checks.push({ name: "cross-origin metadata and artwork receive no session cookies", passed: true });
   assert.deepEqual(errors, []);
   console.log(

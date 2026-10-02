@@ -6,6 +6,7 @@ out vec2 tex; out vec2 point;
 void main(){gl_Position=vec4(position.x/resolution.x*2.-1.,1.-position.y/resolution.y*2.,0.,1.);tex=uv;point=local;}`;
 const fragment = `#version 300 es
 precision highp float;
+precision highp int;
 uniform sampler2D art; uniform sampler2D maskArt; uniform sampler2D flakeArt; uniform sampler2D effectMaskArt;
 uniform float opacity; uniform float brightness; uniform float saturation;
 uniform vec4 fillColor; uniform int hasFill;

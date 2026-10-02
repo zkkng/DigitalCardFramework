@@ -30,7 +30,8 @@ export async function directoryResolver(base, { digest, signal } = {}) {
       signal: requestSignal,
       // Private host content needs its existing session. Cross-origin card
       // servers still receive no ambient credentials, and redirects stay blocked.
-      credentials: "same-origin",
+      credentials:
+        root.origin === globalThis.location?.origin ? "same-origin" : "omit",
       redirect: "error",
     });
     ensure(response.ok, "HTTP", "Unable to load " + path);
