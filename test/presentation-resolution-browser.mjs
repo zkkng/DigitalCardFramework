@@ -63,7 +63,7 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 let browser;
 try {
   try {
-    browser = await pw[engine].launch({ headless: true });
+    browser = await pw[engine].launch({ headless: process.env.HEADED !== "1" });
   } catch (e) {
     if (engine !== "chromium" || process.platform !== "win32") throw e;
     browser = await pw.chromium.launch({ headless: true, channel: "msedge" });

@@ -92,7 +92,7 @@ const checks = [],
   errors = [];
 try {
   try {
-    browser = await pw[engine].launch({ headless: true });
+    browser = await pw[engine].launch({ headless: process.env.HEADED !== "1" });
   } catch (error) {
     if (engine !== "chromium") throw error;
     browser = await pw.chromium.launch({ headless: true, channel: "msedge" });
@@ -125,13 +125,13 @@ try {
     results.push(check(true, "public cross-origin card metadata and artwork still load"));
     const stage = createPlayerStage({ root });
     let view = stage.mount(root, { resolver });
-    await view.ready;
+    const initialReady = await view.ready;
     await settle();
     results.push(
       check(
         stage.diagnostics().activeViews === 1,
         "initial synthetic activation",
-        stage.diagnostics(),
+        { initialReady, ...stage.diagnostics() },
       ),
     );
     for (let i = 0; i < 100; i++) {

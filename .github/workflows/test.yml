@@ -46,6 +46,8 @@ jobs:
       - run: pnpm --dir src/presentation install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
       - run: xvfb-run --auto-servernum node test/presentation-audit-browser.mjs ./node_modules/playwright/index.mjs test-results ${{ matrix.engine }}
+        env:
+          HEADED: '1'
       - run: node test/codes-browser.mjs test-results/codes
         env:
           BROWSER_ENGINE: ${{ matrix.engine }}
@@ -54,6 +56,7 @@ jobs:
           BROWSER_ENGINE: ${{ matrix.engine }}
       - run: xvfb-run --auto-servernum node test/presentation-resolution-browser.mjs test-results/resolution
         env:
+          HEADED: '1'
           BROWSER_ENGINE: ${{ matrix.engine }}
       - uses: actions/upload-artifact@v4
         if: always()
