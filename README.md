@@ -6,9 +6,9 @@ Digital Card Framework is a self-hosted backend for creating, distributing, and 
 
 **Active development:** implemented features are still being hardened; APIs may change.
 
-![Two layered cards turning back and forth, with shifting depth, fireworks, petals, and reflected light](https://github.com/user-attachments/assets/151a7ecd-5b2a-4b55-84ae-26ea71c9ae5e)
+![Two layered cards turning back and forth, with shifting depth, fireworks, petals, and reflected light](https://github.com/user-attachments/assets/af94fd67-6148-474a-9720-2d243f186a86)
 
-*An eight-second loop from the player, showing two cards in a connected scene. Artwork is hosted separately.*
+*A 30 fps loop from the player, showing two cards in a connected scene. Artwork is hosted separately.*
 
 ## What it does today
 
