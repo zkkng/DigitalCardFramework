@@ -335,7 +335,196 @@
           "maxItems": 512
         },
         "text": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 10000
+        },
+        "typography": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fontAsset": {
+              "type": "string"
+            },
+            "size": {
+              "type": "number"
+            },
+            "minSize": {
+              "type": "number"
+            },
+            "weight": {
+              "type": "number"
+            },
+            "style": {
+              "enum": [
+                "normal",
+                "italic",
+                "oblique"
+              ]
+            },
+            "lineHeight": {
+              "type": "number"
+            },
+            "letterSpacing": {
+              "type": "number"
+            },
+            "paragraphSpacing": {
+              "type": "number"
+            },
+            "align": {
+              "enum": [
+                "left",
+                "center",
+                "right",
+                "start",
+                "end"
+              ]
+            },
+            "verticalAlign": {
+              "enum": [
+                "top",
+                "middle",
+                "bottom"
+              ]
+            },
+            "overflow": {
+              "enum": [
+                "wrap",
+                "shrink",
+                "ellipsis",
+                "clip",
+                "grow"
+              ]
+            },
+            "direction": {
+              "enum": [
+                "auto",
+                "ltr",
+                "rtl"
+              ]
+            },
+            "language": {
+              "type": "string"
+            },
+            "color": {
+              "type": "string"
+            },
+            "outlineColor": {
+              "type": "string"
+            },
+            "outlineWidth": {
+              "type": "number"
+            },
+            "shadowColor": {
+              "type": "string"
+            },
+            "shadowBlur": {
+              "type": "number"
+            },
+            "shadowX": {
+              "type": "number"
+            },
+            "shadowY": {
+              "type": "number"
+            },
+            "axes": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            }
+          },
+          "required": []
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "color": {
+                "type": "string"
+              },
+              "weight": {
+                "type": "number"
+              },
+              "style": {
+                "enum": [
+                  "normal",
+                  "italic",
+                  "oblique"
+                ]
+              },
+              "icon": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][\\w.-]{0,99}$"
+              }
+            },
+            "required": [
+              "text"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "stat": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][\\w.-]{0,99}$"
+            },
+            "scope": {
+              "enum": [
+                "card",
+                "variant"
+              ]
+            },
+            "label": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "precision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8
+            },
+            "missing": {
+              "type": "string"
+            },
+            "view": {
+              "enum": [
+                "text",
+                "badge",
+                "bar"
+              ]
+            },
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            },
+            "locale": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ]
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "readingOrder": {
+          "type": "integer",
+          "minimum": -10000,
+          "maximum": 10000
         },
         "font": {
           "type": "string"

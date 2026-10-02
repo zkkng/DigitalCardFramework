@@ -2,6 +2,9 @@
 
 ## 0.2.0 — 1 October 2026
 
+- Added editable text, embedded custom fonts, styled spans/icons, stat bindings and CSV metadata controls; reusable personal/shared masks, styles, templates and reviewed migrations.
+- Added versioned administrator card policies, inherited requirements, template sets, impact previews, retirement/restore, source permissions and publication enforcement with pinned copy schemas.
+
 - Rebuilt the default collector website with clear navigation, illustrated pack previews, collection tools, album editor, import studio and account activity.
 - Added two-inventory visual trading, drag/drop and accessible Add/Remove controls, review-bound snapshots, counters, privacy/blocking and notifications.
 - Added JSON/YAML catalogs/patches, schema-validated stats/metadata, reviewed atomic publication, CLI export/import and creator examples.

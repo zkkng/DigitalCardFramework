@@ -109,6 +109,8 @@ export function analyzePerformance({ manifest, scenes }, overrides = {}) {
           ...new Set(
             [
               n.asset,
+              n.typography?.fontAsset,
+              ...(n.runs??[]).map(r=>r.icon),
               n.data?.asset,
               n.mask?.asset,
               n.video?.poster,

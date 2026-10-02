@@ -144,6 +144,7 @@ export async function publishPackage(bytes, { contentRoot, limits, performance }
     folder = path.join(contentRoot, pkg.digest.slice(7)),
     staging = path.join(contentRoot, ".pending-" + randomUUID());
   const report = buildReport(pkg, performance);
+  for(const field of pkg.manifest.authoring?.fields??[])ensure((field.visibility??"public")==="public"&&field.scope!=="copy","PRIVATE_SNAPSHOT","Publish an exported card without private draft metadata");
   enforcePerformance(report.performance);
   await mkdir(contentRoot, { recursive: true });
   try {

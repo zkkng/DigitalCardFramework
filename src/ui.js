@@ -28,7 +28,7 @@ export function installStyles(root,{theme={},css=''}={}) {
   return ()=>{style.remove();root.classList.remove('dc-root');for(const name of Object.keys(theme)) if(themes.includes(name)) root.style.removeProperty(name);};
 }
 export function renderCard(copy,{onSelect,interactive=true,backRenderer,effects=true,presentationMode='poster'}={}) {
-  if(copy.definition.presentation){if(!portableRenderers.has(presentationMode))portableRenderers.set(presentationMode,createCardRenderer({mode:presentationMode}));return portableRenderers.get(presentationMode)(copy,{onSelect});}
+  if(copy.variant?.presentation||copy.definition.presentation){if(!portableRenderers.has(presentationMode))portableRenderers.set(presentationMode,createCardRenderer({mode:presentationMode}));return portableRenderers.get(presentationMode)(copy,{onSelect});}
   const node=element('button','dc-card'); node.type='button';
   node.setAttribute('aria-label',copy.definition.name+', '+copy.rarityId+(copy.serialNumber?' '+copy.serialNumber+' of '+copy.editionTotal:''));
   const inner=element('span','dc-card-inner'),front=element('span','dc-front'),back=element('span','dc-back');

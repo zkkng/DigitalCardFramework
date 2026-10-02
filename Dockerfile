@@ -8,7 +8,7 @@ FROM node:24-bookworm-slim
 ENV NODE_ENV=production PORT=8080 BIND_ADDRESS=0.0.0.0 DATABASE_PATH=/app/data/production.sqlite
 WORKDIR /app
 COPY --from=dependencies --chown=node:node /app/node_modules ./node_modules
-COPY --chown=node:node package.json ./
+COPY --chown=node:node package.json THIRD_PARTY_NOTICES.txt ./
 COPY --chown=node:node src ./src
 COPY --chown=node:node host ./host
 COPY --chown=node:node examples ./examples

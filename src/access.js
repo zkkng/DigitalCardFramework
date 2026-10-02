@@ -1,6 +1,9 @@
 /** Trusted server principals only. Never populate this object from request JSON. */
 export const PERMISSIONS = Object.freeze([
   "catalog.read",
+  "card-policies.read",
+  "card-policies.manage",
+  "card-stats.provide",
   "catalog.preview",
   "catalog.publish",
   "accounts.register",

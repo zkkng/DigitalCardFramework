@@ -9,6 +9,7 @@ import {
 } from "./data.js";
 import { validateManifest, validateScene } from "./validate.js";
 import { rasterDimensions } from "./media.js";
+import { FONT_TYPES, inspectFont } from "./text.js";
 import { inspectGLB, inspectDotLottie } from "./advanced-media.js";
 export const DEFAULT_LIMITS = Object.freeze({
   compressed: 250 * 1024 * 1024,
@@ -352,6 +353,7 @@ export function sniff(asset, bytes) {
       "MEDIA",
       "Invalid animation archive",
     );
+  else if (FONT_TYPES.includes(asset.mediaType)) inspectFont(bytes, asset.mediaType);
   else if (asset.mediaType === "audio/mpeg")
     ensure(
       head.startsWith("ID3") || (bytes[0] === 255 && (bytes[1] & 224) === 224),
@@ -448,6 +450,8 @@ export async function buildPackage(manifest, scenes, assets, options = {}) {
     a.sha256 = await sha256(bytes);
     files.set(a.path, bytes);
   }
+  const flatten=nodes=>nodes.flatMap(n=>[n,...flatten(n.children??[])]);
+  if((m.assets.some(a=>a.mediaType.startsWith("font/"))||[...scenes.values()].some(s=>flatten(s.nodes).some(n=>n.typography||n.stat||n.runs)))&&!m.capabilities.required.includes("dc.text@0.2"))m.capabilities.required.push("dc.text@0.2");
   files.set("card.json", utf8(canonical(m)));
   for (const [path, scene] of scenes) files.set(path, utf8(canonical(scene)));
   files.set("integrity.json", utf8(canonical(await indexFiles(files))));

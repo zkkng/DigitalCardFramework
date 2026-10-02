@@ -3,6 +3,7 @@ import { CAPABILITIES, validateScene } from "./validate.js";
 import { evaluate, normalizedInputs, selectFrame } from "./motion.js";
 import { createWebGLRenderer } from "./webgl.js";
 import { surfaceResolution } from "./resolution.js";
+import { inspectFont, drawText, textValue, fontDiagnostics, layoutText, textMeasure, accessibleText } from "./text.js";
 
 function validateBudget(value) {
   const fields = {
@@ -40,8 +41,8 @@ const compose = (a, b) => [
 ];
 const flatten = (nodes) =>
   nodes.flatMap((n) => [n, ...flatten(n.children ?? [])]);
-const resourceSignature = (scene) =>
-  JSON.stringify(
+const resourceSignature = (scene,manifest) =>
+  JSON.stringify(manifest.authoring?.values??{})+JSON.stringify(
     flatten(scene.nodes).map((n) => ({
       id: n.id,
       type: n.type,
@@ -52,7 +53,7 @@ const resourceSignature = (scene) =>
       frames: n.animation?.frames?.map((f) => f.asset),
       text:
         n.type === "text"
-          ? [n.text, n.font, n.color, n.width, n.height]
+          ? [n.text, n.font, n.color, n.width, n.height, n.typography, n.runs, n.stat]
           : undefined,
       adapter: n.adapter,
       data: n.data,
@@ -261,7 +262,9 @@ export function createPlayerStage({
     view.readyToDraw = false;
     const manifest = view.resolver.manifest,
       face = manifest.faces[view.side];
-    view.poster.alt = face.description;
+    const description=face.description+". "+accessibleText(manifest,sceneOverride??view.resolver.scenes.get(face.scene));
+    view.poster.alt = description;
+    view.element.setAttribute("aria-label",description);
     try {
       const poster = await view.resolver.asset(face.poster);
       if (view.disposed || generation !== view.generation) return;
@@ -311,7 +314,7 @@ export function createPlayerStage({
       }
       validateScene(scene, manifest);
       view.scene = scene;
-      view.resourceSignature = resourceSignature(scene);
+      view.resourceSignature = resourceSignature(scene, view.resolver.manifest);
       view.usesTime = JSON.stringify(scene).includes("time.active");
       const nodes = flatten(scene.nodes),
         assetIds = new Set();
@@ -329,6 +332,7 @@ export function createPlayerStage({
         if (view.disposed || generation !== view.generation) return;
         view.assets.set(id, value);
       }
+      const fonts = new Map();
       for (const node of nodes) {
         if (node.type === "video") {
           const source = await view.resolver.asset(node.asset),
@@ -393,13 +397,32 @@ export function createPlayerStage({
           view.audio.set(node.id, audio);
         }
         if (node.type === "text") {
+          let font;
+          if (node.typography?.fontAsset) {
+            const id = node.typography.fontAsset;
+            if (!fonts.has(id)) {
+              const source = await view.resolver.asset(id);
+              const response = await fetch(source.url, {signal:view.loadAbort.signal});
+              ensure(response.ok, "FONT", "Font could not be loaded");
+              const data = new Uint8Array(await response.arrayBuffer());
+              if (view.disposed || generation !== view.generation) return;
+              fonts.set(id, inspectFont(data, source.mediaType).font);
+            }
+            font = fonts.get(id);
+            for (const diagnostic of fontDiagnostics(font, node, textValue(node, manifest))) emit(view, diagnostic);
+          }
+          const measureContext=document.createElement("canvas").getContext("2d");
+          const measured=layoutText(node,textValue(node,manifest),textMeasure(measureContext,node,font));
+          const icons=new Map();
+          for(const run of node.runs??[])if(run.icon&&!icons.has(run.icon)){
+            const source=await view.resolver.asset(run.icon),response=await fetch(source.url,{signal:view.loadAbort.signal});
+            ensure(response.ok,"TEXT_ICON","Inline icon could not be loaded");
+            icons.set(run.icon,await createImageBitmap(await response.blob(),{resizeWidth:256,resizeHeight:256}));
+          }
           const edge = textureEdge(view);
-          const ratio = Math.min(
-            1,
-            edge / Math.max(node.width, node.height * 1.4),
-          );
+          const ratio = Math.min(1,edge / Math.max(node.width, measured.renderHeight));
           const width = Math.max(1, Math.ceil(node.width * ratio)),
-            height = Math.max(1, Math.ceil(node.height * 1.4 * ratio)),
+            height = Math.max(1, Math.ceil(measured.renderHeight * ratio)),
             cost = width * height * 4;
           ensure(
             bytes + cost + canvas.width * canvas.height * 4 <=
@@ -412,10 +435,9 @@ export function createPlayerStage({
           surface.height = height;
           const ctx = surface.getContext("2d");
           ctx.scale(ratio, ratio);
-          ctx.fillStyle = node.color ?? "#ffffff";
-          ctx.font = `${Math.round(node.height * 0.8)}px ${node.font ?? "Georgia"}`;
-          ctx.textBaseline = "top";
-          ctx.fillText(node.text, 0, 0, node.width);
+          let layout;
+          try{layout=drawText(ctx,node,manifest,font,icons);}finally{for(const bitmap of icons.values())bitmap.close();}
+          if (layout.overflow) emit(view, {type:"textOverflow", nodeId:node.id});
           const texture = gpu.texture(surface);
           bytes += cost;
           view.textBytes = (view.textBytes ?? 0) + cost;
@@ -424,6 +446,7 @@ export function createPlayerStage({
             texture,
             width: surface.width,
             height: surface.height,
+            layoutHeight: measured.renderHeight,
           });
           surface.width = surface.height = 0;
         }
@@ -721,7 +744,7 @@ export function createPlayerStage({
           }
           if (asset)
             gpu.draw(
-              node,
+              node.type==="text"&&asset.layoutHeight?{...node,height:asset.layoutHeight}:node,
               asset,
               parent,
               viewport,
@@ -1084,7 +1107,7 @@ export function createPlayerStage({
           ensure(!view.disposed, "DISPOSED", "View disposed");
           validateScene(scene, view.resolver.manifest);
           const resourcesChanged =
-            view.resourceSignature !== resourceSignature(scene);
+            view.resourceSignature !== resourceSignature(scene, view.resolver.manifest);
           view.scene = scene;
           view.usesTime = JSON.stringify(scene).includes("time.active");
           const missing = flatten(scene.nodes).some((n) =>

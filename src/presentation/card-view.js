@@ -29,11 +29,12 @@ export function createCardRenderer({
       },
     );
   return (copy, { onSelect } = {}) => {
-    if (!copy.definition.presentation)
+    const definition={...copy.definition,presentation:copy.variant?.presentation??copy.definition.presentation};
+    if (!definition.presentation)
       return (
         fallbackRenderer?.(copy, { onSelect }) ?? document.createElement("span")
       );
-    validatePresentationReference(copy.definition.presentation);
+    validatePresentationReference(definition.presentation);
     const node = document.createElement("dc-portable-card");
     node.className = "dc-card";
     node.tabIndex = 0;
@@ -64,7 +65,7 @@ export function createCardRenderer({
       current = state;
       try {
         if (mode === "poster") {
-          const ref = copy.definition.presentation;
+          const ref = definition.presentation;
           state.resolver = await resolve(ref.baseURL, {
             digest: ref.digest,
             signal: state.controller.signal,
@@ -97,7 +98,7 @@ export function createCardRenderer({
           state.view = await mountPresentation({
             stage: state.stage,
             target: art,
-            definition: copy.definition,
+            definition,
             resolve,
             quality,
             signal: state.controller.signal,

@@ -2,6 +2,7 @@ import { buildPackage, importPackage } from "./package.js";
 import { validateManifest, validateScene } from "./validate.js";
 import { ensure, sha256 } from "./data.js";
 import { rasterDimensions } from "./media.js";
+import { inspectFont } from "./text.js";
 export const materialPresets = Object.freeze({
   "Fine silver": {
     kind: "glitter",
@@ -120,6 +121,11 @@ export function createProject(pkg) {
         ),
         assets = structuredClone(project.assets);
       if (!retainSources) {
+        if (manifest.authoring) {
+          const a=manifest.authoring;
+          for(const [scope,values] of Object.entries(a.values??{}))for(const key of Object.keys(values))if(a.fields?.some(f=>f.key===key&&(f.scope??"card")===scope&&(f.visibility??"public")!=="public"))delete values[key];
+          a.fields=a.fields?.filter(f=>(f.visibility??"public")==="public"&&(f.scope??"card")!=="copy");
+        }
         const used = new Set(
           Object.values(manifest.faces).map((f) => f.poster),
         );
@@ -127,6 +133,8 @@ export function createProject(pkg) {
           for (const n of nodes) {
             for (const id of [
               n.asset,
+              n.typography?.fontAsset,
+              ...(n.runs ?? []).map(r => r.icon),
               n.mask?.asset,
               n.material?.maskAsset,
               n.material?.flakeAsset,
@@ -182,6 +190,16 @@ export function createProject(pkg) {
         p.manifest.assets.push(asset);
         p.assets.set(asset.path, bytes);
       });
+      return asset;
+    },
+    async addFont(blob, { id = "font-" + crypto.randomUUID().replaceAll("-", ""), license = "Declared by uploader" } = {}) {
+      ensure(blob.size>=12&&blob.size<=8*1024*1024,"FONT_LIMIT","Choose a font between 12 bytes and 8 MiB");
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const magic = new DataView(bytes.buffer).getUint32(0);
+      const mediaType = ({[0x774f4632]:"font/woff2",[0x774f4646]:"font/woff",[0x00010000]:"font/ttf",[0x4f54544f]:"font/otf"})[magic];
+      const {info} = inspectFont(bytes, mediaType);
+      const asset = {id, path:"assets/"+id+"."+mediaType.split("/")[1], mediaType, bytes:bytes.length, sha256:await sha256(bytes), role:"font", font:{family:info.family,face:info.face,license,axes:info.axes}};
+      project.edit(p=>{p.manifest.assets.push(asset);p.assets.set(asset.path,bytes);if(!p.manifest.capabilities.required.includes("dc.text@0.2"))p.manifest.capabilities.required.push("dc.text@0.2");});
       return asset;
     },
     async addImage(

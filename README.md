@@ -25,10 +25,11 @@ Digital Card Framework is a self-hosted backend for creating, distributing, and 
 ![Card Maker Studio with a layered card preview, layer list, finish controls, and export tools](https://github.com/user-attachments/assets/3707d905-4606-4882-ab36-4e538c48b64c)
 
 - **Start with your art:** turn an image into a card, import supported PSD/ORA/ZIP layers, or open an existing card package.
+- **Text and stats:** edit typography, embed custom fonts, bind typed metadata, and reuse masks, styles and templates. Administrators can enforce versioned [card policies](docs/card-authoring-policies.md).
 - **Build the look:** arrange front/back layers, adjust depth and finishes, paint effect masks, and add animated GIF or video layers.
 - **Preview and hand off:** turn the card live, undo/redo changes, save local drafts and editable projects, capture still previews, and export portable `.dcard` files.
 
-Layered imports report compatibility limits. Advanced motion can require code or JSON. The visual editor and catalog publisher are separate tools; exporting a card does not issue an owned copy.
+Layered imports report compatibility limits. Advanced motion can require code or JSON. The reference site connects visual editing to reviewed catalog publication; exporting a card does not issue an owned copy.
 
 ## Make it yours
 

@@ -1,4 +1,6 @@
 import {hasPermission} from './access.js';
+import {deriveStats,inspectCardPolicy} from './card-policy.js';
+import {CardPolicyService,validateGovernedCatalog,redactGovernedCard} from './card-policy-service.js';
 import {randomInt, randomUUID, createHash} from 'node:crypto';
 import {check, integer, text, jsonObject, validateCatalog} from './catalog.js';
 import {MemoryStore} from './store.js';
@@ -21,9 +23,10 @@ function fingerprint(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
 export class CardFramework {
-  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce;
+  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce; #cardPolicies;
   constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={},actionHandlers={},actionOptions={},eventSubscriptions=[],raffleRandom=randomInt}={}) {
     this.#store=store; this.#clock=clock; this.#random=random;
+    this.#cardPolicies=new CardPolicyService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),clock});
     const allowedLimits=['users','copies','packs','requests','albums','trades','copiesPerUser','packsPerUser','actionJobs','shops','listings','orders'];
     check(limits&&typeof limits==='object'&&!Array.isArray(limits),'INVALID_INPUT','Limits must be an object');
     for(const [name,value]of Object.entries(limits)){check(allowedLimits.includes(name),'INVALID_INPUT','Unknown installation limit '+name);integer(value,'Installation limit '+name,1,10000000);}
@@ -47,6 +50,18 @@ export class CardFramework {
     },{random:raffleRandom});
 
   }
+  cardPolicies(actor){return this.#cardPolicies.get(actor);}
+  effectiveCardPolicy(actor,input){return this.#cardPolicies.effective(actor,input);}
+  saveCardPolicy(actor,input){return this.#cardPolicies.save(actor,input);}
+  previewCardPolicy(actor,input){return this.#cardPolicies.preview(actor,input);}
+  activateCardPolicy(actor,input){return this.#cardPolicies.activate(actor,input);}
+  retireCardPolicy(actor,input){return this.#cardPolicies.retire(actor,input);}
+  restoreCardPolicy(actor,input){return this.#cardPolicies.restore(actor,input);}
+  saveCardResource(actor,input){return this.#cardPolicies.resource(actor,input);}
+  retireCardResource(actor,input){return this.#cardPolicies.retireResource(actor,input);}
+  restoreCardResource(actor,input){return this.#cardPolicies.restoreResource(actor,input);}
+  updateCopyStats(actor,input){return this.#cardPolicies.updateCopyStats(actor,input);}
+  registerCardPresentation(actor,archive){return this.#cardPolicies.registerPresentation(actor,archive);}
   commerceSettings(){return this.#commerce.settings();}
   configureCommerce(actor,input){return this.#commerce.configure(actor,input);}
   createShop(actor,input){return this.#commerce.createShop(actor,input);}
@@ -204,33 +219,37 @@ export class CardFramework {
     this.#admin(actor,'catalog.publish'); const catalog=validateCatalog(manifest);
     return this.#store.transact(s=>{
       this.#validateRevision(catalog,s.catalog);
+      s.cardValidation={...s.cardValidation,...validateGovernedCatalog(s,catalog,{actor})};
       s.catalog=catalog; this.#event(s,'catalog.published',{version:catalog.version});
-      return this.#publicCatalog(catalog);
+      return this.#publicCatalog(catalog,s);
     });
   }
   operatorCatalog(actor){this.#admin(actor,'catalog.read');return this.#store.read(s=>this.#catalog(s));}
-  previewImport(actor,input){this.#admin(actor,'catalog.preview');return this.#store.read(s=>{const preview=prepareImport({...input,base:s.catalog});this.#validateRevision(preview.manifest,s.catalog);return preview;});}
-  commitImport(actor,{key,manifest,digest,expectedVersion}) {
+  previewImport(actor,input){this.#admin(actor,'catalog.preview');return this.#store.read(s=>{const preview=prepareImport({...input,base:s.catalog});this.#validateRevision(preview.manifest,s.catalog);validateGovernedCatalog(s,preview.manifest,{actor});return {...preview,policyRevision:s.cardAuthoring?.revision??0};});}
+  commitImport(actor,{key,manifest,digest,expectedVersion,policyRevision}) {
     this.#admin(actor,'catalog.publish');text(key,'import key',128);
     return this.#store.transact(s=>{
-      s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,inputHash=contentDigest({manifest,digest,expectedVersion});
+      s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,inputHash=contentDigest({manifest,digest,expectedVersion,policyRevision:policyRevision??0});
       if(s.operatorRequests[token]){check(s.operatorRequests[token].hash===inputHash,'IDEMPOTENCY_CONFLICT','Import key already used',409);return s.operatorRequests[token].result;}
       if(this.#limits.requests!==undefined)check(Object.keys(s.requests).length+Object.keys(s.operatorRequests).length+Object.keys(s.externalSettlements??{}).length<this.#limits.requests,'INSTALLATION_CAPACITY','Installation requests capacity reached',507);
       check((s.catalog?.version??0)===expectedVersion,'STALE_IMPORT','Catalog changed; preview again',409);
+      check((s.cardAuthoring?.revision??0)===(policyRevision??0),'POLICY_CHANGED','Card policy changed; preview again',409);
       const catalog=validateCatalog(manifest);check(contentDigest(catalog)===digest,'IMPORT_CHANGED','Preview differs from the submitted catalog',409);
-      this.#validateRevision(catalog,s.catalog);s.catalog=catalog;
+      this.#validateRevision(catalog,s.catalog);s.cardValidation={...s.cardValidation,...validateGovernedCatalog(s,catalog,{actor})};s.catalog=catalog;
       this.#event(s,'catalog.imported',{version:catalog.version,userId:actor.userId??null,digest});
       const result={version:catalog.version,digest,importedAt:this.#clock()};s.operatorRequests[token]={hash:inputHash,result};return result;
     });
   }
-  #publicCatalog(c) {
+  #publicCatalog(c,s) {
     const result=clone(c);
+    for(const card of result.cards)redactGovernedCard(s,card);
+    for(const variant of result.variants)if(variant.stats){const card=result.cards.find(c=>c.id===variant.cardId);variant.stats=redactGovernedCard(s,{...card,stats:variant.stats},'variant','public',s.cardValidation?.[variant.id]?.fields).stats;}
     for (const v of result.variants) for (const [name,b] of Object.entries(v.bindings)) {
       if (b.visibility==='owner') {delete b.data; delete b.factory;}
     }
     return result;
   }
-  catalog() {return this.#store.read(s=>this.#publicCatalog(this.#catalog(s)));}
+  catalog() {return this.#store.read(s=>this.#publicCatalog(this.#catalog(s),s));}
   registerUser(actor,{provider,subject,displayName}) {
     this.#admin(actor,'accounts.register'); text(provider,'identity provider',2048); text(subject,'identity subject',300); text(displayName,'display name',100);
     return this.#store.transact(s=>{
@@ -312,6 +331,15 @@ export class CardFramework {
       check(!data?.then,'INVALID_PROVIDER','Binding factories must be synchronous',500);
       copy.bindings[name]={visibility:spec.visibility,transfer:spec.transfer,holderId:ownerId,state:'active',data:jsonObject(data)};
     }
+    copy.cardPolicy=clone(s.cardValidation?.[variant.id]??null);
+    if(copy.cardPolicy?.fields.some(f=>f.scope==="copy")){
+      const fields=copy.cardPolicy.fields,policy={fields,defaults:{},requirements:{},references:copy.cardPolicy.policies,provenance:{}};
+      const defaults=Object.fromEntries(fields.filter(f=>f.scope==="copy"&&(Object.hasOwn(f,"default")||Object.hasOwn(f,"fixed"))).map(f=>[f.key,clone(Object.hasOwn(f,"fixed")?f.fixed:f.default)]));
+      copy.stats=deriveStats(fields,defaults,"copy");
+      const issues=inspectCardPolicy(policy,{copy});
+      check(!issues.length,"COPY_STATS","Required copy stats need valid issuance defaults",409);
+      copy.issuedStats=clone(copy.stats);
+    }
     copy.provenance={version:1,catalogVersion:c.version,issuedAt:copy.createdAt,definitionDigest:contentDigest(card),variantDigest:contentDigest(variant),...clone(source)};
     s.copies[copy.id]=copy;allocateCodes(s,copy,variant.codes,this.#clock());
     this.#event(s,'card.issued',{copyId:copy.id,ownerId,variantId,provenance:clone(copy.provenance)});return copy;
@@ -378,7 +406,14 @@ export class CardFramework {
   #packView(pack) {const {copyIds,receipt,...view}=clone(pack); return {...view,cardCount:copyIds.length};}
   packs(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return Object.values(s.packs).filter(p=>p.ownerId===u.id).map(p=>this.#packView(p));});}
   #copyView(s,copy,viewerId) {
-    const result=clone(copy); result.openedByName=copy.openedBy ? s.users[copy.openedBy]?.displayName??null:null;
+    const result=clone(copy);
+    const visibility=viewerId===copy.ownerId?'owner':'public',fields=copy.cardPolicy?.fields;
+    redactGovernedCard(s,result.definition,'card',visibility,fields);
+    if(result.variant.stats)result.variant.stats=redactGovernedCard(s,{...result.definition,stats:result.variant.stats},'variant',visibility,fields).stats;
+    if(result.issuedStats)result.issuedStats=redactGovernedCard(s,{...result.definition,stats:result.issuedStats},"copy",visibility,fields??[]).stats;
+    if(result.stats)result.stats=redactGovernedCard(s,{...result.definition,stats:result.stats},"copy",visibility,fields??[]).stats;
+    if(result.cardPolicy)delete result.cardPolicy.fields;
+    result.openedByName=copy.openedBy ? s.users[copy.openedBy]?.displayName??null:null;
     for(const binding of Object.values(result.variant.bindings??{}))if(binding.visibility==='owner'){delete binding.data;delete binding.factory;}
     result.bindings=Object.fromEntries(Object.entries(result.bindings).filter(([,b])=>b.visibility==='public' || b.holderId===viewerId));
     result.codes=(copy.codeIds??[]).map(codeId=>codeSummary(s,s.codes[codeId],viewerId,this.#clock()));delete result.codeIds;

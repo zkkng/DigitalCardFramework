@@ -1,5 +1,7 @@
 import { ensure, safePath, canonical } from "./data.js";
 import { validateExpression } from "./motion.js";
+import { validateTypography } from "./text.js";
+import { validateField, reference } from "../card-policy.js";
 export const CONTRACT = "0.1.0";
 export const CAPABILITIES = [
   "dc.scene2d@0.1",
@@ -8,6 +10,7 @@ export const CAPABILITIES = [
   "dc.frames@0.1",
   "dc.video@0.1",
   "dc.text@0.1",
+  "dc.text@0.2",
   "dc.audio@0.1",
 ];
 const id = (value) =>
@@ -54,6 +57,7 @@ export function validateManifest(m) {
     "credits",
     "inputs",
     "extensions",
+    "authoring",
   ]);
   ensure(
     m.format === "digital-card" && m.contractVersion === CONTRACT,
@@ -95,6 +99,7 @@ export function validateManifest(m) {
       "height",
       "duration",
       "role",
+      "font",
     ]);
     id(a.id);
     safePath(a.path);
@@ -123,6 +128,10 @@ export function validateManifest(m) {
         "model/gltf-binary",
         "application/x-rive",
         "application/zip",
+        "font/woff2",
+        "font/woff",
+        "font/ttf",
+        "font/otf",
       ].includes(a.mediaType),
       "MEDIA",
       "Unsupported media type",
@@ -136,10 +145,37 @@ export function validateManifest(m) {
         "MEDIA",
         "Integer media dimensions required",
       );
+    if (a.font) {
+      ensure(
+        a.mediaType.startsWith("font/"),
+        "FONT",
+        "Font metadata requires a font asset",
+      );
+      keys(a.font, ["family", "face", "license", "axes"]);
+      string(a.font.family, 200);
+      string(a.font.face, 200);
+      string(a.font.license, 2000);
+      for (const [axis, range] of Object.entries(a.font.axes ?? {})) {
+        ensure(/^[A-Za-z]{4}$/.test(axis), "FONT", "Invalid font axis");
+        keys(range, ["name", "min", "max", "default"]);
+        string(range.name, 200);
+        number(range.min, -10000, 10000);
+        number(range.max, -10000, 10000);
+        number(range.default, range.min, range.max);
+      }
+    }
     string(a.role, 60);
     assets.set(a.id, a);
     paths.add(a.path.toLowerCase());
   }
+  ensure(
+    m.assets
+      .filter((a) => a.mediaType.startsWith("font/"))
+      .reduce((sum, a) => sum + a.bytes, 0) <=
+      32 * 1024 * 1024,
+    "FONT_LIMIT",
+    "Embedded fonts exceed 32 MiB",
+  );
   keys(m.faces, ["front", "back"]);
   for (const side of ["front", "back"]) {
     const f = m.faces[side];
@@ -232,6 +268,67 @@ export function validateManifest(m) {
           "Boolean inputs cannot have numeric bounds",
         );
     }
+  if (m.authoring) {
+    const a = m.authoring;
+    keys(a, [
+      "context",
+      "fields",
+      "values",
+      "template",
+      "masks",
+      "policyRevision",
+    ]);
+    if (a.context) {
+      keys(a.context, ["cardId", "lineId", "type", "variantId"]);
+      for (const value of Object.values(a.context)) id(value);
+    }
+    if (a.fields) {
+      ensure(
+        Array.isArray(a.fields) && a.fields.length <= 128,
+        "STAT",
+        "Too many fields",
+      );
+      a.fields.forEach((f) => validateField(f));
+      ensure(
+        new Set(a.fields.map((f) => (f.scope ?? "card") + ":" + f.key)).size ===
+          a.fields.length,
+        "STAT",
+        "Duplicate fields",
+      );
+    }
+    if (a.values) {
+      keys(a.values, ["card", "variant"]);
+      for (const value of Object.values(a.values)) {
+        ensure(
+          value &&
+            typeof value === "object" &&
+            !Array.isArray(value) &&
+            Object.keys(value).length <= 128,
+          "STAT",
+          "Invalid snapshot values",
+        );
+      }
+    }
+    if (a.template)
+      ensure(reference(a.template), "TEMPLATE", "Invalid template revision");
+    if (a.masks) {
+      ensure(
+        Object.keys(a.masks).length <= 1024,
+        "MASK",
+        "Too many mask references",
+      );
+      for (const value of Object.values(a.masks))
+        ensure(reference(value), "MASK", "Invalid mask revision");
+    }
+    if (a.policyRevision !== undefined) {
+      number(a.policyRevision, 0, 1e9);
+      ensure(
+        Number.isInteger(a.policyRevision),
+        "POLICY",
+        "Invalid policy revision",
+      );
+    }
+  }
   ensure(canonical(m).length <= 8 * 1024 * 1024, "LIMIT", "Manifest too large");
   return { assets, capabilities: caps };
 }
@@ -262,6 +359,11 @@ const nodeFields = [
   "animation",
   "children",
   "text",
+  "typography",
+  "runs",
+  "stat",
+  "locked",
+  "readingOrder",
   "font",
   "color",
   "video",
@@ -308,6 +410,7 @@ export function validateScene(scene, manifest) {
   const { assets } = validateManifest(manifest),
     ids = new Set();
   let count = 0,
+    textCharacters = 0,
     ops = 0;
   const expression = (e) => {
     ops += validateExpression(e, {
@@ -568,8 +671,27 @@ export function validateScene(scene, manifest) {
       ensure(typeof n.audio.loop === "boolean", "AUDIO", "Invalid audio loop");
       number(n.audio.volume, 0, 1);
     }
+    if (n.locked !== undefined)
+      ensure(typeof n.locked === "boolean", "NODE", "Invalid layer lock");
     if (n.type === "text") {
-      string(n.text, 2000);
+      textCharacters +=
+        n.runs?.reduce(
+          (sum, r) => sum + (r.text?.length ?? 0) + (r.icon ? 1 : 0),
+          0,
+        ) ??
+        n.text?.length ??
+        0;
+      ensure(
+        textCharacters <= 50000,
+        "TEXT_LIMIT",
+        "A face may contain at most 50000 text characters",
+      );
+      ensure(
+        typeof n.text === "string" && n.text.length <= 10000,
+        "TEXT",
+        "Invalid text",
+      );
+      validateTypography(n, assets);
       ensure(
         !n.font || /^[\w ,.-]{1,100}$/.test(n.font),
         "FONT",

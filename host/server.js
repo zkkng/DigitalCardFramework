@@ -44,7 +44,7 @@ const auth=createAuthHost({framework,sessions,provider,origin,adminSubjects,reso
 const currencyGateway=extension.currencyProviders?createCurrencyGateway({framework,providers:extension.currencyProviders}):undefined;
 const api=createApiHandler({framework,currencyGateway,codeGateway,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,exposeOperators:true,requireTradeReview:true,requirePrincipal:true,rateLimit,
   onRequest:event=>process.stdout.write(JSON.stringify({kind:'request',...event})+'\n')});
-const presentations=process.env.PRESENTATION_ROOT?await createPresentationStore({root:resolve(process.env.PRESENTATION_ROOT),...extension.presentationOptions,authorize:authorizePresentation}):null;
+const presentations=process.env.PRESENTATION_ROOT?await createPresentationStore({root:resolve(process.env.PRESENTATION_ROOT),...extension.presentationOptions,authorize:authorizePresentation,validatePublication:async(actor,input)=>{await framework.registerCardPresentation(actor,input.archive);await extension.presentationOptions?.validatePublication?.(actor,input);}}):null;
 const presentationHTTP=presentations?createPresentationHandler({store:presentations,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,rateLimit}):null;
 const assetOrigins=(process.env.ASSET_ORIGINS??'').split(',').filter(Boolean);for(const value of assetOrigins)if(new URL(value).origin!==value||!value.startsWith('https://'))throw new Error('ASSET_ORIGINS requires exact HTTPS origins');
 const server=createServer({requestTimeout:15000,headersTimeout:10000,maxHeaderSize:16384},async(req,res)=>{

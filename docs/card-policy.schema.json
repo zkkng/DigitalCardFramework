@@ -1,0 +1,922 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://digital-card.invalid/schema/card-policy-1.json",
+  "$ref": "#/$defs/CardPolicy",
+  "$defs": {
+    "CardStatField": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "integer",
+            "number",
+            "string",
+            "boolean",
+            "array",
+            "object"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "card",
+            "variant",
+            "copy"
+          ]
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "owner",
+            "operator"
+          ]
+        },
+        "source": {
+          "enum": [
+            "author",
+            "admin",
+            "provider",
+            "calculated"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "default": {},
+        "fixed": {},
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "minLength": {
+          "type": "integer"
+        },
+        "maxLength": {
+          "type": "integer"
+        },
+        "minItems": {
+          "type": "integer"
+        },
+        "maxItems": {
+          "type": "integer"
+        },
+        "enum": {
+          "type": "array",
+          "items": {},
+          "maxItems": 128
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "unit": {
+          "type": "string"
+        },
+        "group": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer"
+        },
+        "requiredWhen": {
+          "description": "Bounded expression: field, exists, not, eq, comparisons, and/or, arithmetic."
+        },
+        "calculate": {
+          "description": "Bounded numeric expression; source must be calculated."
+        },
+        "items": {
+          "type": "object",
+          "description": "Nested field constraints; key and label are optional."
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "type"
+      ]
+    },
+    "CardPolicyRequirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "templates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+          },
+          "maxItems": 128
+        },
+        "templateSets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+          },
+          "maxItems": 128
+        },
+        "fonts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128
+        },
+        "requiredBindings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128
+        },
+        "minimumFontSize": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "rejectOverflow": {
+          "type": "boolean"
+        },
+        "allowUnknownStats": {
+          "type": "boolean"
+        },
+        "embeddedFonts": {
+          "type": "boolean"
+        }
+      },
+      "required": []
+    },
+    "CardTypography": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fontAsset": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        },
+        "minSize": {
+          "type": "number"
+        },
+        "weight": {
+          "type": "number"
+        },
+        "style": {
+          "enum": [
+            "normal",
+            "italic",
+            "oblique"
+          ]
+        },
+        "lineHeight": {
+          "type": "number"
+        },
+        "letterSpacing": {
+          "type": "number"
+        },
+        "paragraphSpacing": {
+          "type": "number"
+        },
+        "align": {
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "start",
+            "end"
+          ]
+        },
+        "verticalAlign": {
+          "enum": [
+            "top",
+            "middle",
+            "bottom"
+          ]
+        },
+        "overflow": {
+          "enum": [
+            "wrap",
+            "shrink",
+            "ellipsis",
+            "clip",
+            "grow"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "auto",
+            "ltr",
+            "rtl"
+          ]
+        },
+        "language": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "outlineColor": {
+          "type": "string"
+        },
+        "outlineWidth": {
+          "type": "number"
+        },
+        "shadowColor": {
+          "type": "string"
+        },
+        "shadowBlur": {
+          "type": "number"
+        },
+        "shadowX": {
+          "type": "number"
+        },
+        "shadowY": {
+          "type": "number"
+        },
+        "axes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      },
+      "required": []
+    },
+    "CardPolicyDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "template": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+        },
+        "stats": {
+          "type": "object"
+        },
+        "typography": {
+          "$ref": "#/$defs/CardTypography"
+        }
+      },
+      "required": []
+    },
+    "CardPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999999
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "inherits": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+          },
+          "maxItems": 16
+        },
+        "defaults": {
+          "$ref": "#/$defs/CardPolicyDefaults"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardStatField"
+          },
+          "maxItems": 128
+        },
+        "requirements": {
+          "$ref": "#/$defs/CardPolicyRequirements"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "id",
+        "revision",
+        "name"
+      ]
+    },
+    "CardPolicyAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+        },
+        "scope": {
+          "enum": [
+            "installation",
+            "cardType",
+            "line",
+            "variant"
+          ]
+        },
+        "target": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": -1000,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "policy",
+        "scope"
+      ]
+    },
+    "CardPolicyIssue": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128
+        },
+        "severity": {
+          "const": "error"
+        },
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "CardPolicyEffective": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+          },
+          "maxItems": 128
+        },
+        "defaults": {
+          "$ref": "#/$defs/CardPolicyDefaults"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardStatField"
+          },
+          "maxItems": 128
+        },
+        "requirements": {
+          "$ref": "#/$defs/CardPolicyRequirements"
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 128
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "references",
+        "defaults",
+        "fields",
+        "requirements",
+        "provenance"
+      ]
+    },
+    "CardLibraryResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "template",
+            "template-set",
+            "mask",
+            "style"
+          ]
+        },
+        "document": {
+          "type": "object",
+          "required": [
+            "id",
+            "revision",
+            "name"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 999999999
+            },
+            "name": {
+              "type": "string"
+            },
+            "packageDigest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "canvas": {
+              "type": "object"
+            },
+            "slots": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "maxItems": 512
+            },
+            "structure": {
+              "type": "object"
+            },
+            "assetDigests": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 128
+            },
+            "templates": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+              },
+              "maxItems": 128
+            },
+            "default": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+            },
+            "mask": {
+              "type": "object"
+            },
+            "use": {
+              "enum": [
+                "clip",
+                "effect"
+              ]
+            },
+            "typography": {
+              "$ref": "#/$defs/CardTypography"
+            }
+          }
+        },
+        "retired": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "document"
+      ]
+    },
+    "CardPolicyRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "document": {
+                "$ref": "#/$defs/CardPolicy"
+              },
+              "state": {
+                "enum": [
+                  "draft",
+                  "active",
+                  "superseded",
+                  "retired"
+                ]
+              }
+            },
+            "required": [
+              "document",
+              "state"
+            ]
+          },
+          "maxItems": 1024
+        },
+        "assignments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardPolicyAssignment"
+          },
+          "maxItems": 128
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardLibraryResource"
+          },
+          "maxItems": 4096
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "maxItems": 100000
+        }
+      },
+      "required": [
+        "revision",
+        "documents",
+        "assignments",
+        "resources",
+        "history"
+      ]
+    },
+    "CardPolicySave": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "document": {
+          "$ref": "#/$defs/CardPolicy"
+        }
+      },
+      "required": [
+        "key",
+        "expectedRevision",
+        "document"
+      ]
+    },
+    "CardPolicyPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "policy": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+        },
+        "assignments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardPolicyAssignment"
+          },
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "expectedRevision",
+        "policy",
+        "assignments"
+      ]
+    },
+    "CardPolicyImpact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "policy": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+        },
+        "assignments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardPolicyAssignment"
+          },
+          "maxItems": 128
+        },
+        "affected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "cardId": {
+                "type": "string"
+              },
+              "variantId": {
+                "type": "string"
+              },
+              "issues": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/CardPolicyIssue"
+                },
+                "maxItems": 2048
+              }
+            },
+            "required": []
+          },
+          "maxItems": 20000
+        },
+        "grandfathered": {
+          "const": true
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "expectedRevision",
+        "policy",
+        "assignments",
+        "affected",
+        "grandfathered",
+        "digest"
+      ]
+    },
+    "CardPolicyActivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "policy": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+        },
+        "assignments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardPolicyAssignment"
+          },
+          "maxItems": 128
+        },
+        "affected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "cardId": {
+                "type": "string"
+              },
+              "variantId": {
+                "type": "string"
+              },
+              "issues": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/CardPolicyIssue"
+                },
+                "maxItems": 2048
+              }
+            },
+            "required": []
+          },
+          "maxItems": 20000
+        },
+        "grandfathered": {
+          "const": true
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "key",
+        "expectedRevision",
+        "policy",
+        "assignments",
+        "digest"
+      ]
+    },
+    "CardPolicyLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "policy": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "key",
+        "expectedRevision",
+        "policy"
+      ]
+    },
+    "CardLibrarySave": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resource": {
+          "$ref": "#/$defs/CardLibraryResource"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "key",
+        "expectedRevision",
+        "resource"
+      ]
+    },
+    "CardLibraryLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reference": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,99}@[1-9][0-9]{0,8}$"
+        },
+        "kind": {
+          "enum": [
+            "template",
+            "template-set",
+            "mask",
+            "style"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "key",
+        "expectedRevision",
+        "reference",
+        "kind"
+      ]
+    },
+    "CardCopyStats": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "copyId": {
+          "type": "string"
+        },
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999999
+        },
+        "values": {
+          "type": "object",
+          "maxProperties": 128
+        }
+      },
+      "required": [
+        "key",
+        "copyId",
+        "expectedVersion",
+        "values"
+      ]
+    }
+  }
+}

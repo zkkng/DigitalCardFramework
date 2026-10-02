@@ -1,3 +1,18 @@
+
+export interface Typography {
+  fontAsset?:string; size?:number; minSize?:number; weight?:number;
+  style?:'normal'|'italic'|'oblique'; lineHeight?:number; letterSpacing?:number; paragraphSpacing?:number;
+  align?:'left'|'center'|'right'|'start'|'end'; verticalAlign?:'top'|'middle'|'bottom';
+  overflow?:'wrap'|'shrink'|'ellipsis'|'clip'|'grow'; direction?:'auto'|'ltr'|'rtl'; language?:string;
+  color?:string; outlineColor?:string; outlineWidth?:number; shadowColor?:string; shadowBlur?:number;
+  shadowX?:number; shadowY?:number; axes?:Record<string,number>;
+}
+export interface TextSpan {text:string;color?:string;weight?:number;style?:'normal'|'italic'|'oblique';icon?:string}
+export interface StatBinding {key:string;scope?:'card'|'variant';label?:string;unit?:string;precision?:number;missing?:string;view?:'text'|'badge'|'bar';minimum?:number;maximum?:number;locale?:string}
+export interface TextLayer {id:string;type:'text';text:string;width:number;height:number;x?:number;y?:number;typography?:Typography;runs?:TextSpan[];stat?:StatBinding;locked?:boolean;readingOrder?:number}
+export interface LibraryEntry {key:string;kind:'template'|'mask'|'style'|'template-set';document:Record<string,Json>;archive?:Uint8Array;shared?:boolean}
+export interface AuthoringLibrary {list():Promise<LibraryEntry[]>;get(key:string,shared?:boolean):Promise<LibraryEntry|undefined>;put(entry:LibraryEntry):Promise<unknown>;share?(entry:LibraryEntry):Promise<unknown>}
+
 /** Key implemented API contracts, runtime 0.1.0. Module JSDoc documents advanced adapters. */
 export type Digest = `sha256:${string}`;
 export type Quality = 'poster' | 'lite' | 'standard' | 'ultra';

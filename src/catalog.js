@@ -116,6 +116,8 @@ export function validateCatalog(input) {
     }
     if(['code','voucher','reward'].includes(cards[x.cardId].type))check(x.codes.length>0||x.onOpen.length>0,'INVALID_CATALOG','Code and voucher variants require a code attachment or opening action');
     validateMetadata('variant',x.metadata,x.id);
+    if(x.stats!==undefined)jsonObject(x.stats,'variant stats');
+    if(x.presentation!==undefined){try{validatePresentationReference(x.presentation);}catch(error){check(false,'INVALID_CATALOG',error.message);}}
     if(x.back!==undefined)assetReference(x.back,'variant back');if(x.effectMask!==undefined)assetReference(x.effectMask,'effect mask');
     if(x.finish!==undefined)check(['standard','gloss','holo','foil'].includes(x.finish),'INVALID_CATALOG','Invalid card finish');
     for (const [name,b] of Object.entries(x.bindings??={})) {

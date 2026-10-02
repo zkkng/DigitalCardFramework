@@ -9,6 +9,7 @@ import { importPackage, browserResolver } from "./package.js";
 import { imagePackage } from "./authoring.js";
 import { importLayeredFile } from "./layered-import.js";
 import { createPlayerStage } from "./player.js";
+import { mountAuthoringTools } from "./studio-tools.js";
 
 const el = (tag, text) => {
   const node = document.createElement(tag);
@@ -26,6 +27,7 @@ export function mountStudio(
     onPublish,
     performance = {},
     presets = materialPresets,
+    library, policyProvider, context = {}, panels = [],
   } = {},
 ) {
   presets = { ...presets };
@@ -457,8 +459,8 @@ export function mountStudio(
     button("Publish", async () => {
       const pkg = await project.export();
       enforcePerformance(showPerformance(pkg));
-      await onPublish(pkg);
-      report("Published.");
+      const result=await onPublish(pkg);
+      report(result===false?"Kept as draft.":"Published.");
     });
   scrub.type = "range";
   scrub.min = "-100";
@@ -545,6 +547,7 @@ export function mountStudio(
   function setProp(key, value) {
     const n = current();
     if (!n) return;
+    if (n.locked) throw new Error("Unlock this layer to edit it");
     edit(() => {
       const previous = n[key] ?? 0;
       n[key] = value;
@@ -555,6 +558,7 @@ export function mountStudio(
     });
   }
   function renderProperties() {
+    authoring.render();
     properties.replaceChildren(el("h2", "Selected layer"));
     field(
       "Card title",
@@ -1018,6 +1022,8 @@ export function mountStudio(
     },
     { signal: events.signal },
   );
+  const authoring = mountAuthoringTools({toolbar,getProject:()=>project,getSide:()=>side,getSelected:()=>selected,select:id=>{selected=id;},rebuild,open,report,library,policyProvider,context,panels});
+  root.append(authoring.root);
   const ready = initialPackage
     ? open(initialPackage)
     : Promise.resolve(report("Open a .dcard file to begin."));
@@ -1026,9 +1032,11 @@ export function mountStudio(
     getProject: () => project,
     capturePosters,
     open,
+    refreshPolicy: authoring.refreshPolicy,
     dispose() {
       disposed = true;
       events.abort();
+      authoring.dispose();
       view?.dispose();
       stage?.dispose();
       resolver?.dispose();

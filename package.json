@@ -56,7 +56,13 @@
     "./remote-actions": {
       "types": "./src/remote-actions.d.ts",
       "default": "./src/remote-actions.js"
-    }
+    },
+    "./card-policy": "./src/card-policy.js",
+    "./card-policy-schema": "./src/card-policy-schema.js",
+    "./card-policy-ui": "./src/card-policy-ui.js",
+    "./presentation/authoring-tools": "./src/presentation/authoring-tools.js",
+    "./presentation/text": "./src/presentation/text.js",
+    "./presentation/stats-csv": "./src/presentation/stats-csv.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
@@ -65,10 +71,13 @@
     "contract": "node tools/generate-openapi.js",
     "test:browser": "node test/presentation-audit-browser.mjs",
     "test:spec": "node docs/complex-cards/check-examples.mjs",
-    "test:coverage": "node --experimental-test-coverage --test test/*.test.js"
+    "test:coverage": "node --experimental-test-coverage --test test/*.test.js",
+    "build:authoring": "node tools/build-fonts.mjs",
+    "test:authoring": "node test/card-authoring-browser.mjs"
   },
   "dependencies": {
     "ajv": "8.20.0",
+    "fontkit": "2.0.4",
     "openid-client": "6.8.8",
     "yaml": "2.9.1"
   },

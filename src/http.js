@@ -34,7 +34,7 @@ export function createApiHandler({framework,currencyGateway,codeGateway,resolveI
       if(rateLimit&&!rateLimit({actor,request,mutation:method==='POST'}))throw new FrameworkError('RATE_LIMITED','Too many requests; try again shortly',429);
       const publicGet=method==='GET' && (path==='/api/catalog' || path==='/api/availability' || path==='/api/public-albums' || /^\/api\/albums\/[^/]+$/.test(path));
       if(!publicGet && !actor?.userId) throw new FrameworkError('UNAUTHENTICATED','Sign in to continue',401);
-      if(path.startsWith('/api/operator/')){if(!exposeOperators||!hasPermission(actor,({'POST /api/operator/trading':'trading.manage','POST /api/operator/card-lock':'trading.manage','GET /api/operator/actions':'actions.manage','POST /api/operator/actions/retry':'actions.manage','POST /api/operator/commerce':'commerce.manage','POST /api/operator/shop-status':'commerce.manage','POST /api/operator/raffles/draw':'raffles.draw','GET /api/operator/catalog':'catalog.read','GET /api/operator/audit':'audit.read','POST /api/operator/import/preview':'catalog.preview','POST /api/operator/import/commit':'catalog.publish','GET /api/operator/codes':'codes.manage','GET /api/operator/code-pools':'codes.manage','POST /api/operator/code-pools':'codes.manage','POST /api/operator/codes/import':'codes.import','POST /api/operator/codes/confirm':'codes.confirm'})[method+' '+path]))throw new FrameworkError('FORBIDDEN','Operator authority required',403);}
+      if(path.startsWith('/api/operator/')){if(!exposeOperators||!hasPermission(actor,({'GET /api/operator/card-policies':'card-policies.read','POST /api/operator/card-policies/effective':'catalog.preview','POST /api/operator/card-policies/save':'card-policies.manage','POST /api/operator/card-policies/preview':'card-policies.manage','POST /api/operator/card-policies/activate':'card-policies.manage','POST /api/operator/card-policies/retire':'card-policies.manage','POST /api/operator/card-policies/restore':'card-policies.manage','POST /api/operator/card-resources/save':'card-policies.manage','POST /api/operator/card-resources/retire':'card-policies.manage','POST /api/operator/card-resources/restore':'card-policies.manage','POST /api/operator/copy-stats':'card-stats.provide','POST /api/operator/trading':'trading.manage','POST /api/operator/card-lock':'trading.manage','GET /api/operator/actions':'actions.manage','POST /api/operator/actions/retry':'actions.manage','POST /api/operator/commerce':'commerce.manage','POST /api/operator/shop-status':'commerce.manage','POST /api/operator/raffles/draw':'raffles.draw','GET /api/operator/catalog':'catalog.read','GET /api/operator/audit':'audit.read','POST /api/operator/import/preview':'catalog.preview','POST /api/operator/import/commit':'catalog.publish','GET /api/operator/codes':'codes.manage','GET /api/operator/code-pools':'codes.manage','POST /api/operator/code-pools':'codes.manage','POST /api/operator/codes/import':'codes.import','POST /api/operator/codes/confirm':'codes.confirm'})[method+' '+path]))throw new FrameworkError('FORBIDDEN','Operator authority required',403);}
       const input=method==='POST'?await body(request,path.startsWith('/api/operator/')?8*1024*1024:1048576):undefined;
       const options={};for(const key of ['limit','after','search','sort'])if(url.searchParams.has(key))options[key]=key==='limit'?Number(url.searchParams.get(key)):url.searchParams.get(key);
       let result;
@@ -46,6 +46,7 @@ export function createApiHandler({framework,currencyGateway,codeGateway,resolveI
           '/api/wallet':()=>framework.wallet(actor), '/api/history':()=>framework.history(actor),
           '/api/inventory':()=>url.searchParams.has('limit')?framework.inventoryPage(actor,options):framework.inventory(actor), '/api/packs':()=>framework.packs(actor),
           '/api/users':()=>framework.directory(actor,options),'/api/notifications':()=>framework.notifications(actor,options),
+          '/api/operator/card-policies':()=>framework.cardPolicies(actor),
           '/api/operator/catalog':()=>framework.operatorCatalog(actor),
           '/api/operator/audit':()=>framework.audit(actor),
           '/api/operator/codes':()=>framework.codeInventory(actor,options),'/api/operator/code-pools':()=>framework.codePools(actor),'/api/codes':()=>framework.codeHistory(actor,options),
@@ -65,14 +66,14 @@ export function createApiHandler({framework,currencyGateway,codeGateway,resolveI
           '/api/trades/accept':'acceptTrade','/api/trades/cancel':'cancelTrade','/api/bindings/use':'consumeBinding'
           ,'/api/trades/counter':'counterTrade','/api/preferences':'setPreferences','/api/notifications/read':'readNotifications',
           '/api/codes/reveal':'revealCode','/api/codes/report':'reportCodeUsage','/api/operator/code-pools':'configureCodePool','/api/operator/codes/import':'importCodes','/api/operator/codes/confirm':'confirmCodeStatus',
-          '/api/operator/import/preview':'previewImport','/api/operator/import/commit':'commitImport'
+          '/api/operator/import/preview':'previewImport','/api/operator/import/commit':'commitImport','/api/operator/card-policies/effective':'effectiveCardPolicy','/api/operator/card-policies/save':'saveCardPolicy','/api/operator/card-policies/preview':'previewCardPolicy','/api/operator/card-policies/activate':'activateCardPolicy','/api/operator/card-policies/retire':'retireCardPolicy','/api/operator/card-policies/restore':'restoreCardPolicy','/api/operator/card-resources/save':'saveCardResource','/api/operator/card-resources/retire':'retireCardResource','/api/operator/card-resources/restore':'restoreCardResource','/api/operator/copy-stats':'updateCopyStats'
         };
         if(path==='/api/currency/reconcile' && currencyGateway) result=await currencyGateway.reconcile(actor,input);
         else if(path==='/api/codes/reconcile' && codeGateway) result=await codeGateway.reconcile(actor,input);
         else {
         const command=routes[path]; if(!command) throw new FrameworkError('NOT_FOUND','Unknown API route',404);
         if(requireTradeReview&&['acceptTrade','counterTrade'].includes(command)&&typeof input.expectedDigest!=='string')throw new FrameworkError('REVIEW_REQUIRED','Review the immutable trade contents first',409);
-        result=framework[command](actor,input);
+        result=await framework[command](actor,input);
         }
       }
       response.end(JSON.stringify(result));

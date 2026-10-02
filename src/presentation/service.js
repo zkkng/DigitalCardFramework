@@ -108,6 +108,8 @@ export async function createPresentationStore({
   authorize,
   limits = {},
   scan = async () => {},
+  onPublished = async () => {},
+  validatePublication = async () => {},
   scanTimeoutMs = 30000,
   performance = {},
   allowCapabilities = null,
@@ -409,8 +411,10 @@ export async function createPresentationStore({
           "Import is not ready",
         );
         if (job.state === "published") return publicJob(job);
+        const archive=new Uint8Array(await readFile(job.uploadPath));
+        await validatePublication(actor,{archive,digest:job.digest});
         const result = await publishPackage(
-          new Uint8Array(await readFile(job.uploadPath)),
+          archive,
           { contentRoot, limits: ceiling, performance },
         );
         ensure(
@@ -418,6 +422,7 @@ export async function createPresentationStore({
           "INTEGRITY",
           "Staged bytes changed",
         );
+        await onPublished(actor, {archive:new Uint8Array(await readFile(job.uploadPath)), digest:result.digest});
         job.state = "published";
         job.publishedAt = clock();
         await save(job);

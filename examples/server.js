@@ -6,6 +6,9 @@ import {randomUUID} from 'node:crypto';
 import {CardFramework} from '../src/index.js';
 import {SQLiteStore} from '../src/sqlite.js';
 import {createApiHandler} from '../src/http.js';
+import {createPresentationStore} from '../src/presentation/service.js';
+import {createPresentationHandler} from '../src/presentation/node-http.js';
+import {authorizePresentation} from '../src/access.js';
 import {sampleCatalog} from './catalog.js';
 import {demoArt} from './art.js';
 import {serveReference,securityHeaders} from '../src/static.js';
@@ -28,6 +31,8 @@ function identity(request) {
   const userId=token&&sessions.get(token);return userId?{userId,role:userId===users[0].id?'admin':'player'}:null;
 }
 const api=createApiHandler({framework,resolveIdentity:identity,allowedOrigin:origin,exposeOperators:true,requireTradeReview:true});
+const presentations=await createPresentationStore({root:resolve(root,"data/presentations"),authorize:authorizePresentation,validatePublication:(actor,{archive})=>framework.registerCardPresentation(actor,archive)});
+const presentationHTTP=createPresentationHandler({store:presentations,resolveIdentity:identity,allowedOrigin:origin});
 const allowedFiles=new Map([
   ['/','examples/index.html'],['/alternate','examples/alternate.html'],['/app.js','examples/app.js'],['/alternate.js','examples/alternate.js'],
   ...['ui','client','styles'].map(name=>['/src/'+name+'.js','src/'+name+'.js'])
@@ -56,7 +61,7 @@ const server=createServer(async(request,response)=>{
       response.setHeader('Set-Cookie','dc_demo='+token+'; HttpOnly; SameSite=Strict; Path=/');
       response.setHeader('Content-Type','application/json');response.end('{"ok":true}');return;
     }
-    if(await api(request,response))return;
+    if(await presentationHTTP(request,response)||await api(request,response))return;
     if(await serveReference(request,response))return;
     const file=allowedFiles.get(url.pathname);
     if(!file){response.statusCode=404;response.end('Not found');return;}
@@ -65,5 +70,5 @@ const server=createServer(async(request,response)=>{
   }catch{response.statusCode=500;response.end('Demo request failed');}
 });
 server.listen(port,'127.0.0.1',()=>console.log('Digital Card Framework demo: '+origin+' (fictional accounts, local only)'));
-function shutdown(){server.close(()=>{framework.close();process.exit(0);});}
+function shutdown(){server.close(async()=>{await presentations.close();framework.close();process.exit(0);});}
 process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);

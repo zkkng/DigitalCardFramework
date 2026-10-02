@@ -1,3 +1,4 @@
+import {policyDefinitions} from "./card-policy-schema.js";
 // Source for the generated HTTP contract.
 export const openapi = {
   "openapi": "3.1.0",
@@ -1638,4 +1639,20 @@ Object.assign(openapi.paths,{
   '/fulfillments':route('get','fulfillments',{allOf:[ref('Page'),{properties:{items:{type:'array',items:ref('ActionJob')}}}]},{parameters:pageParameters}),
   '/operator/actions':route('get','actionJobs',ref('Page'),{parameters:pageParameters,description:'Requires actions.manage. Sanitized delivery diagnostics.'}),
   '/operator/actions/retry':route('post','retryAction',ref('ActionJob'),{requestSchema:{type:'object',required:['key','jobId'],properties:{key:requestKey,jobId:codeId}},description:'Requires actions.manage. Retry dead delivery using the same downstream idempotency ID. No client delivery acknowledgment or arbitrary execution route exists.'}),
+});
+
+Object.assign(schemas,policyDefinitions);
+schemas.ImportPreview.properties.policyRevision={type:"integer",minimum:0};
+schemas.ImportPreview.required.push("policyRevision");
+schemas.ImportCommit.properties.policyRevision={type:"integer",minimum:0,description:"Required once policy administration has changed; commit must match the review."};
+Object.assign(openapi.paths,{
+ "/operator/card-policies":route("get","cardPolicies",ref("CardPolicyRegistry"),{description:"Requires card-policies.read."}),
+ "/operator/card-policies/effective":route("post","effectiveCardPolicy",{type:"object",required:["revision","digest","policy","resources","context"],properties:{revision:{type:"integer"},digest:str,policy:ref("CardPolicyEffective"),context:{type:"object"},resources:{type:"array",items:ref("CardLibraryResource")}}},{requestSchema:{type:"object",properties:{cardId:str,lineId:str,type:str,variantId:str}},description:"Requires catalog.preview. Destination is resolved from trusted catalog identities."}),
+ "/operator/card-policies/save":route("post","saveCardPolicy",{type:"object"},{requestSchema:ref("CardPolicySave"),description:"Requires card-policies.manage. Save a draft; active revisions are immutable."}),
+ "/operator/card-policies/preview":route("post","previewCardPolicy",ref("CardPolicyImpact"),{requestSchema:ref("CardPolicyPreview"),description:"Read-only impact preview. Requires card-policies.manage."}),
+ "/operator/card-policies/activate":route("post","activateCardPolicy",{type:"object"},{requestSchema:ref("CardPolicyActivation"),description:"Requires card-policies.manage and a current impact digest. Existing content is grandfathered."}),
+ ...Object.fromEntries(["retire","restore"].map(action=>["/operator/card-policies/"+action,route("post",action+"CardPolicy",{type:"object"},{requestSchema:ref("CardPolicyLifecycle"),description:"Requires card-policies.manage. Retained revisions and historical copies are preserved."})])),
+ "/operator/card-resources/save":route("post","saveCardResource",{type:"object"},{requestSchema:ref("CardLibrarySave"),description:"Requires card-policies.manage. Immutable library revision; packages must already be registered."}),
+ ...Object.fromEntries(["retire","restore"].map(action=>["/operator/card-resources/"+action,route("post",action+"CardResource",{type:"object"},{requestSchema:ref("CardLibraryLifecycle"),description:"Requires card-policies.manage. Referenced active dependencies cannot be retired."})])),
+ "/operator/copy-stats":route("post","updateCopyStats",{type:"object",properties:{copyId:str,version:{type:"integer"}}},{requestSchema:ref("CardCopyStats"),description:"Requires card-stats.provide; admin-source fields additionally require card-policies.manage. Uses the copy's pinned schema and preserves issuedStats."})
 });

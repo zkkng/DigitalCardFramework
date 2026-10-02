@@ -1,3 +1,4 @@
+import { policyDefinitions } from "../card-policy-schema.js";
 /** JSON Schema supplies editor hints. validateManifest/validateScene enforce semantic constraints. */
 const number = { type: "number" },
   string = { type: "string" },
@@ -33,6 +34,10 @@ const asset = object(
         "model/gltf-binary",
         "application/x-rive",
         "application/zip",
+        "font/woff2",
+        "font/woff",
+        "font/ttf",
+        "font/otf",
       ],
     },
     sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
@@ -41,6 +46,21 @@ const asset = object(
     height: { type: "integer", minimum: 1, maximum: 16384 },
     duration: { type: "number", minimum: 0, maximum: 3600 },
     role: string,
+    font: object(
+      {
+        family: string,
+        face: string,
+        license: string,
+        axes: {
+          type: "object",
+          additionalProperties: object(
+            { name: string, min: number, max: number, default: number },
+            ["name", "min", "max", "default"],
+          ),
+        },
+      },
+      ["family", "face", "license"],
+    ),
   },
   ["id", "path", "mediaType", "sha256", "bytes", "role"],
 );
@@ -105,6 +125,17 @@ export const manifestSchema = {
         ),
       },
       extensions: {},
+      authoring: object({
+        context: object({ cardId: id, lineId: id, type: id, variantId: id }),
+        fields: array(policyDefinitions.CardStatField, 0, 128),
+        values: object({
+          card: { type: "object" },
+          variant: { type: "object" },
+        }),
+        template: string,
+        masks: { type: "object", additionalProperties: string },
+        policyRevision: { type: "integer", minimum: 0 },
+      }),
     },
     [
       "format",
@@ -192,7 +223,39 @@ const node = object(
       ["progress", "frames"],
     ),
     children: array({ $ref: "#/$defs/node" }),
-    text: string,
+    text: { type: "string", maxLength: 10000 },
+    typography: policyDefinitions.CardTypography,
+    runs: array(
+      object(
+        {
+          text: { type: "string" },
+          color: string,
+          weight: number,
+          style: { enum: ["normal", "italic", "oblique"] },
+          icon: id,
+        },
+        ["text"],
+      ),
+      0,
+      128,
+    ),
+    stat: object(
+      {
+        key: id,
+        scope: { enum: ["card", "variant"] },
+        label: string,
+        unit: string,
+        precision: { type: "integer", minimum: 0, maximum: 8 },
+        missing: string,
+        view: { enum: ["text", "badge", "bar"] },
+        minimum: number,
+        maximum: number,
+        locale: string,
+      },
+      ["key"],
+    ),
+    locked: boolean,
+    readingOrder: { type: "integer", minimum: -10000, maximum: 10000 },
     font: string,
     color: string,
     video: object(
