@@ -1,6 +1,7 @@
 {
   "name": "@digital-card/framework",
   "version": "0.2.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "Headless digital card collection core and replaceable web presentation",
