@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added synchronous host code generators for atomic pack allocation, with encrypted storage, provider-wide collision checks and retry preservation.
+- Added a trusted server registration-material method for connecting issued codes to external reward services before player reveal.
+
 ## 0.2.0 — 1 October 2026
 
 - Added editable text, embedded custom fonts, styled spans/icons, stat bindings and CSV metadata controls; reusable personal/shared masks, styles, templates and reviewed migrations.

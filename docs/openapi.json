@@ -2468,7 +2468,7 @@
       },
       "post": {
         "operationId": "configureCodePool",
-        "description": "Requires codes.manage. Provider and normalization are immutable.",
+        "description": "Requires codes.manage. Provider, normalization and generator are immutable.",
         "security": [
           {
             "hostSession": []
@@ -7069,6 +7069,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 100
+          },
+          "generator": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Installed synchronous server code factory. Immutable after pool creation."
           },
           "name": {
             "type": "string",

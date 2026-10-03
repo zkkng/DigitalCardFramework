@@ -12,7 +12,7 @@ import {CommerceService} from './commerce.js';
 import {AdminService,adminRevision,adminSite,adminRestrictions,adminTransferReason,effectiveProduct,assertAdminPurchase,invalidateAdminReview} from './admin.js';
 import {ActionService,openingActions,enqueueAction} from './actions.js';
 import {cardBehavior} from './card-types.js';
-import {CodeService,allocateCodes,codeStockAvailable,codeSummary,codeTransferReason,transferCodes} from './codes.js';
+import {CodeService,codeStockAvailable,codeSummary,codeTransferReason,transferCodes} from './codes.js';
 
 const clone = value => structuredClone(value);
 const id = () => randomUUID();
@@ -25,7 +25,7 @@ function fingerprint(value) {
 }
 export class CardFramework {
   #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce; #cardPolicies; #administration;
-  constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={},actionHandlers={},actionOptions={},eventSubscriptions=[],raffleRandom=randomInt}={}) {
+  constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={},codeGenerators={},actionHandlers={},actionOptions={},eventSubscriptions=[],raffleRandom=randomInt}={}) {
     this.#store=store; this.#clock=clock; this.#random=random;
     this.#cardPolicies=new CardPolicyService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),clock});
     this.#administration=new AdminService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),now:clock,mint:(...args)=>this.#mint(...args),open:(...args)=>this.#openCopy(...args),removePlacements:(...args)=>this.#removePlacements(...args)});
@@ -37,7 +37,7 @@ export class CardFramework {
     this.#subscriptions=eventSubscriptions.map(x=>{text(x.id,'subscription ID',100);text(x.handler,'subscription handler',100);check(Array.isArray(x.events)&&x.events.every(e=>typeof e==='string'),'INVALID_INPUT','Subscription events required');return clone(x);});
     check(new Set(this.#subscriptions.map(x=>x.id)).size===this.#subscriptions.length,'INVALID_INPUT','Duplicate event subscription ID');
     this.#actions=new ActionService({store,clock,handlers:actionHandlers,options:actionOptions});
-    this.#codes=new CodeService({store,vault:codeVault,clock,...codeLimits});
+    this.#codes=new CodeService({store,vault:codeVault,clock,generators:codeGenerators,...codeLimits});
     this.#commerce=new CommerceService({
       read:fn=>store.read(fn),transact:fn=>store.transact(fn),now:clock,
       user:(s,a)=>this.#user(s,a),currency:(s,id)=>this.#currency(s,id),blocked:(s,a,b)=>this.#blocked(s,a,b),
@@ -136,6 +136,7 @@ export class CardFramework {
   importCodes(actor,input){return this.#codes.importBatch(actor,input);}
   codePools(actor){return this.#codes.pools(actor);}
   codeInventory(actor,options){return this.#codes.inventory(actor,options);}
+  codeRegistrationMaterial(actor,codeId){return this.#codes.registrationMaterial(actor,codeId);}
   codeHistory(actor,options){return this.#codes.history(actor,options);}
   revealCode(actor,input){return this.#codes.reveal(actor,input);}
   reportCodeUsage(actor,input){return this.#codes.reportUsage(actor,input);}
@@ -349,7 +350,7 @@ export class CardFramework {
       copy.issuedStats=clone(copy.stats);
     }
     copy.provenance={version:1,catalogVersion:c.version,issuedAt:copy.createdAt,definitionDigest:contentDigest(card),variantDigest:contentDigest(variant),...clone(source)};
-    s.copies[copy.id]=copy;allocateCodes(s,copy,variant.codes,this.#clock());
+    s.copies[copy.id]=copy;this.#codes.allocate(s,copy,variant.codes,this.#clock());
     this.#event(s,'card.issued',{copyId:copy.id,ownerId,variantId,provenance:clone(copy.provenance)});return copy;
   }
   quote(actor,{productId,quantity=1}) {
