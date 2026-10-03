@@ -5281,6 +5281,448 @@
           }
         }
       }
+    },
+    "/operator/admin": {
+      "get": {
+        "operationId": "adminOverview",
+        "description": "Requires admin.read. Effective administration overview with existing host and catalog constraints.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOverview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/admin/users": {
+      "get": {
+        "operationId": "adminUsers",
+        "description": "Requires admin.read. Bounded search without identity-provider subjects or credentials.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/admin/user": {
+      "get": {
+        "operationId": "adminUser",
+        "description": "Requires admin.read. Sanitized inventory for the selected account.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/admin/history": {
+      "get": {
+        "operationId": "adminHistory",
+        "description": "Requires admin.read. Recorded administrator reasons and before/after values.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "name"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/admin/settings": {
+      "post": {
+        "operationId": "configureAdmin",
+        "description": "Requires admin.manage. Partial settings update, with a current admin revision, durable retry identity and recorded reason.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSettingsCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
+    },
+    "/operator/admin/cards": {
+      "post": {
+        "operationId": "administerCards",
+        "description": "Requires admin.cards. Grant finite-supply copies or remove available owned copies; reserved and sealed copies cannot be removed. History is retained.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCardsCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input"
+          },
+          "401": {
+            "description": "Verified account required"
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected"
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict"
+          },
+          "413": {
+            "description": "Byte limit exceeded"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5344,6 +5786,12 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740991
+          },
+          "adminRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Administration revision from the reviewed quote. Stale prices or odds require a new quote."
           }
         }
       },
@@ -5723,6 +6171,10 @@
                 "maximum": 9007199254740991
               }
             }
+          },
+          "adminRevision": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -8526,6 +8978,496 @@
           "expectedVersion",
           "values"
         ]
+      },
+      "AdminSiteChanges": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "packPurchasesPaused": {
+            "type": "boolean"
+          },
+          "tradingPaused": {
+            "type": "boolean"
+          },
+          "playerShopsPaused": {
+            "type": "boolean"
+          },
+          "playerShopsEnabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "AdminUserChanges": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "tradingBlocked": {
+            "type": "boolean"
+          },
+          "sellingBlocked": {
+            "type": "boolean"
+          },
+          "buyingBlocked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AdminProductChanges": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "priceAmount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 1000000000
+          },
+          "discountPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 99
+          },
+          "rarityWeights": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "maxProperties": 100,
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000
+            }
+          }
+        }
+      },
+      "AdminSettingsCommand": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "expectedRevision",
+              "reason",
+              "scope",
+              "changes"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "expectedRevision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "scope": {
+                "const": "site"
+              },
+              "changes": {
+                "$ref": "#/components/schemas/AdminSiteChanges"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "expectedRevision",
+              "reason",
+              "scope",
+              "changes",
+              "targetId"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "expectedRevision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "scope": {
+                "const": "line"
+              },
+              "targetId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "changes": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {
+                  "salesPaused": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "expectedRevision",
+              "reason",
+              "scope",
+              "changes",
+              "targetId"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "expectedRevision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "scope": {
+                "const": "product"
+              },
+              "targetId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "changes": {
+                "$ref": "#/components/schemas/AdminProductChanges"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "expectedRevision",
+              "reason",
+              "scope",
+              "changes",
+              "targetId"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "expectedRevision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "scope": {
+                "const": "user"
+              },
+              "targetId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "changes": {
+                "$ref": "#/components/schemas/AdminUserChanges"
+              }
+            }
+          }
+        ]
+      },
+      "AdminCardsCommand": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "expectedRevision",
+              "reason",
+              "userId",
+              "action",
+              "variantId",
+              "quantity"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "expectedRevision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "userId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "action": {
+                "const": "give"
+              },
+              "variantId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "expectedRevision",
+              "reason",
+              "userId",
+              "action",
+              "copyIds"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "expectedRevision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "userId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "action": {
+                "const": "remove"
+              },
+              "copyIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AdminChange": {
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "scope",
+          "reason",
+          "before",
+          "after"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "at": {
+            "type": "string"
+          },
+          "actorId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "before": {},
+          "after": {}
+        }
+      },
+      "AdminMutation": {
+        "type": "object",
+        "required": [
+          "revision",
+          "change"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "change": {
+            "$ref": "#/components/schemas/AdminChange"
+          },
+          "cards": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "AdminUser": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "name": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "restrictions": {
+            "$ref": "#/components/schemas/AdminUserChanges"
+          }
+        }
+      },
+      "AdminOverview": {
+        "type": "object",
+        "required": [
+          "revision",
+          "site",
+          "lines",
+          "variants",
+          "currencies",
+          "counts"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "site": {
+            "$ref": "#/components/schemas/AdminSiteChanges"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "counts": {
+            "type": "object"
+          },
+          "permissions": {
+            "type": "object"
+          }
+        }
+      },
+      "AdminUserDetail": {
+        "type": "object",
+        "required": [
+          "revision",
+          "user",
+          "inventory"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "user": {
+            "$ref": "#/components/schemas/AdminUser"
+          },
+          "inventory": {
+            "$ref": "#/components/schemas/Page"
+          }
+        }
       }
     }
   }

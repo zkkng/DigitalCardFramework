@@ -100,6 +100,7 @@ The bundled `examples/app.js` is an executable public-API composition with colle
 | Shared/card combinations | `comparisonRenderer(copies,options)`; `inspectTogether(copies)` | Horizon pair in `examples/catalog.js`, default shared stage |
 | Metadata/stats/layers | Catalog fields/schemas/displayFields; `metadataRenderer`, `cardRenderer`, `backRenderer` | JSON/YAML Moonbridge patches and alternate renderer |
 | Creator experience | `renderStudio` or own preview/publish view calling client previewImport/commitImport | Reference studio, real preview/stale-generation tests |
+| Administration | `renderAdminPanel`, standalone `mountAdminPanel`, headless `createAdminController`, or complete `views.admin` replacement | [Administration guide](admin-panel.md); `examples/admin-headless.mjs`; reviewed settings and inventory workflows |
 | Account/social | `renderActivity` or own preferences/notification view | Reference app and authorization tests |
 | Odds/pity/windows/recipes | Validated product/recipe data, independent feature switches | Nightfall/sample products; pity/exhaustion/rollback tests |
 | Host deployment | Trusted `HOST_MODULE` exports; `createApiHandler({resolveIdentity,...})`, auth/provider/session/store contracts | Production entrypoint and real-entrypoint integration test |

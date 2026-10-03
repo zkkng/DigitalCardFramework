@@ -22,6 +22,7 @@ jobs:
       - run: pnpm audit --prod
       - run: pnpm --dir src/presentation audit --prod
       - run: node examples/card-policies.mjs
+      - run: node examples/admin-headless.mjs
       - run: node examples/external-currency-provider.mjs
       - run: node examples/code-cards.mjs
       - run: node examples/trading-controls.mjs
@@ -57,6 +58,9 @@ jobs:
         env:
           BROWSER_ENGINE: ${{ matrix.engine }}
       - run: node test/commerce-browser.mjs test-results/commerce
+        env:
+          BROWSER_ENGINE: ${{ matrix.engine }}
+      - run: node test/admin-browser.mjs test-results/admin
         env:
           BROWSER_ENGINE: ${{ matrix.engine }}
       - run: xvfb-run --auto-servernum node test/presentation-resolution-browser.mjs test-results/resolution

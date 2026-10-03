@@ -12,6 +12,12 @@ export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={})
     return data;
   }
   return {
+    adminOverview:()=>call('/operator/admin'),
+    adminUsers:options=>call('/operator/admin/users'+query(options)),
+    adminUser:options=>call('/operator/admin/user'+query(options)),
+    adminHistory:options=>call('/operator/admin/history'+query(options)),
+    configureAdmin:input=>call('/operator/admin/settings',input),
+    administerCards:input=>call('/operator/admin/cards',input),
     cardPolicies:()=>call('/operator/card-policies'),effectiveCardPolicy:input=>call('/operator/card-policies/effective',input),saveCardPolicy:input=>call('/operator/card-policies/save',input),previewCardPolicy:input=>call('/operator/card-policies/preview',input),activateCardPolicy:input=>call('/operator/card-policies/activate',input),retireCardPolicy:input=>call('/operator/card-policies/retire',input),restoreCardPolicy:input=>call('/operator/card-policies/restore',input),saveCardResource:input=>call('/operator/card-resources/save',input),retireCardResource:input=>call('/operator/card-resources/retire',input),restoreCardResource:input=>call('/operator/card-resources/restore',input),updateCopyStats:input=>call('/operator/copy-stats',input),
     tradingPolicy:()=>call('/trading-policy'),configureTrading:input=>call('/operator/trading',input),setCardTransferLock:input=>call('/operator/card-lock',input),
     commerceSettings:()=>call('/commerce-settings'),configureCommerce:input=>call('/operator/commerce',input),shops:options=>call('/shops'+query(options)),createShop:input=>call('/shops',input),setShopEnabled:input=>call('/operator/shop-status',input),

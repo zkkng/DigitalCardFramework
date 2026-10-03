@@ -4,6 +4,7 @@ import { hasPermission } from "./access.js";
 import { safeData, page } from "./data.js";
 import { contentDigest } from "./importer.js";
 import { enqueueAction } from "./actions.js";
+import {adminSite,assertAdminShop,effectiveProduct} from './admin.js';
 
 export const commerceDefaults = Object.freeze({
   enabled: true,
@@ -52,7 +53,8 @@ function object(value, keys) {
   return clean;
 }
 function config(s) {
-  return s.commerceSettings?.settings ?? commerceDefaults;
+  const base=s.commerceSettings?.settings??commerceDefaults;
+  return {...base,playerShops:adminSite(s).playerShopsEnabled??base.playerShops};
 }
 function stock(l) {
   return l.units.filter((u) => u.status === "available");
@@ -115,13 +117,7 @@ export class CommerceService {
     this.#random = random;
   }
   settings() {
-    return this.#b.read(
-      (s) =>
-        s.commerceSettings ?? {
-          revision: 0,
-          settings: clone(commerceDefaults),
-        },
-    );
+    return this.#b.read(s=>({...s.commerceSettings??{revision:0,settings:clone(commerceDefaults)},effectiveSettings:{...config(s),playerShops:config(s).playerShops&&!adminSite(s).playerShopsPaused}}));
   }
   configure(actor, { key, expectedRevision, settings }) {
     object(settings, Object.keys(commerceDefaults));
@@ -199,6 +195,7 @@ export class CommerceService {
           403,
         );
         check(record(s.users, owner), "NOT_FOUND", "Shop owner not found", 404);
+        if(kind==='player')assertAdminShop(s,{kind,ownerId:owner});
         check(
           kind !== "admin" || manage,
           "FORBIDDEN",
@@ -388,6 +385,7 @@ export class CommerceService {
         initialize(s);
         const shop = this.#own(s, actor, shopId);
         check(shop.enabled, "SHOP_DISABLED", "Shop is disabled", 409);
+        assertAdminShop(s,shop);
         this.#currency(s, shop, price);
         check(
           Object.values(s.listings).filter(
@@ -466,7 +464,7 @@ export class CommerceService {
             );
         }
         if (items.kind === "mint-pack") {
-          const product = find(s.catalog.products, items.productId);
+          const product = effectiveProduct(s,find(s.catalog.products, items.productId));
           check(
             product && product.enabled !== false,
             "NOT_FOUND",
@@ -597,6 +595,7 @@ export class CommerceService {
             "Host listing policy rejected stock",
             403,
           );
+        assertAdminShop(s,shop,null,listing);
         s.listings[listing.id] = listing;
         return publicListing(s, listing, this.#b.now(), u.id);
       },
@@ -624,6 +623,7 @@ export class CommerceService {
   #eligible(s, l, u) {
     const shop = s.shops[l.shopId],
       at = this.#b.now();
+    if(shop)assertAdminShop(s,shop,u.id,l);
     check(
       config(s).enabled &&
         shop?.enabled &&

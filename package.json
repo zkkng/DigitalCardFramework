@@ -12,6 +12,8 @@
     "./sqlite": "./src/sqlite.js",
     "./ui": "./src/ui.js",
     "./client": "./src/client.js",
+    "./admin-client": "./src/admin-client.js",
+    "./admin-ui": "./src/admin-ui.js",
     "./http": "./src/http.js",
     "./importer": "./src/importer.js",
     "./trade-client": "./src/trade-client.js",
@@ -73,7 +75,9 @@
     "test:spec": "node docs/complex-cards/check-examples.mjs",
     "test:coverage": "node --experimental-test-coverage --test test/*.test.js",
     "build:authoring": "node tools/build-fonts.mjs",
-    "test:authoring": "node test/card-authoring-browser.mjs"
+    "test:authoring": "node test/card-authoring-browser.mjs",
+    "test:admin": "node --test test/admin.test.js test/admin-http.test.js test/admin-ui.test.js",
+    "test:admin:browser": "node test/admin-browser.mjs"
   },
   "dependencies": {
     "ajv": "8.20.0",

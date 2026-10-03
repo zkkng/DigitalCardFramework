@@ -9,6 +9,7 @@ import {page} from './data.js';
 import {auditState} from './audit.js';
 import {validateTradingPolicy,tradingDefaults,transferPolicyReason,assertTradePolicy} from './trading-policy.js';
 import {CommerceService} from './commerce.js';
+import {AdminService,adminRevision,adminSite,adminRestrictions,adminTransferReason,effectiveProduct,assertAdminPurchase,invalidateAdminReview} from './admin.js';
 import {ActionService,openingActions,enqueueAction} from './actions.js';
 import {cardBehavior} from './card-types.js';
 import {CodeService,allocateCodes,codeStockAvailable,codeSummary,codeTransferReason,transferCodes} from './codes.js';
@@ -23,10 +24,11 @@ function fingerprint(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
 export class CardFramework {
-  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce; #cardPolicies;
+  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce; #cardPolicies; #administration;
   constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={},actionHandlers={},actionOptions={},eventSubscriptions=[],raffleRandom=randomInt}={}) {
     this.#store=store; this.#clock=clock; this.#random=random;
     this.#cardPolicies=new CardPolicyService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),clock});
+    this.#administration=new AdminService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),now:clock,mint:(...args)=>this.#mint(...args),open:(...args)=>this.#openCopy(...args),removePlacements:(...args)=>this.#removePlacements(...args)});
     const allowedLimits=['users','copies','packs','requests','albums','trades','copiesPerUser','packsPerUser','actionJobs','shops','listings','orders'];
     check(limits&&typeof limits==='object'&&!Array.isArray(limits),'INVALID_INPUT','Limits must be an object');
     for(const [name,value]of Object.entries(limits)){check(allowedLimits.includes(name),'INVALID_INPUT','Unknown installation limit '+name);integer(value,'Installation limit '+name,1,10000000);}
@@ -50,6 +52,12 @@ export class CardFramework {
     },{random:raffleRandom});
 
   }
+  adminOverview(actor){return this.#administration.overview(actor);}
+  configureAdmin(actor,input){return this.#administration.configure(actor,input);}
+  adminUsers(actor,options){return this.#administration.users(actor,options);}
+  adminUser(actor,input){return this.#administration.user(actor,input);}
+  adminHistory(actor,options){return this.#administration.history(actor,options);}
+  administerCards(actor,input){return this.#administration.cards(actor,input);}
   cardPolicies(actor){return this.#cardPolicies.get(actor);}
   effectiveCardPolicy(actor,input){return this.#cardPolicies.effective(actor,input);}
   saveCardPolicy(actor,input){return this.#cardPolicies.save(actor,input);}
@@ -165,7 +173,7 @@ export class CardFramework {
   #event(s,type,data) {const event={id:id(),sequence:s.events.length+1,type,data,at:this.#clock()};s.events.push(event);for(const subscription of this.#subscriptions)if(subscription.events.includes(type)||subscription.events.includes('*'))enqueueAction(s,{handler:subscription.handler,userId:data.userId??data.ownerId??null,params:{event:clone(event)},source:{type:'event',eventId:event.id,subscriptionId:subscription.id}},event.at);check(Object.keys(s.actionJobs??{}).length<=this.#limits.actionJobs,'INSTALLATION_CAPACITY','Action queue capacity reached',507);}
   #notify(s,userId,type,data){s.notifications??=[];s.notifications.push({id:id(),userId,type,data,at:this.#clock(),read:false});const own=s.notifications.filter(n=>n.userId===userId);if(own.length>2000){const remove=new Set(own.slice(0,own.length-2000).map(n=>n.id));s.notifications=s.notifications.filter(n=>!remove.has(n.id));}}
   #preferences(user){return {inventoryVisibility:'traders',favoriteCopyIds:[],wishlistCardIds:[],blockedUserIds:[],...user.preferences};}
-  me(actor){return this.#store.read(s=>{const u=this.#user(s,actor);return {userId:u.id,displayName:u.displayName,preferences:this.#preferences(u)};});}
+  me(actor){return this.#store.read(s=>{const u=this.#user(s,actor);return {userId:u.id,displayName:u.displayName,preferences:this.#preferences(u),adminStatus:{site:adminSite(s),restrictions:adminRestrictions(s,u.id)}};});}
   setPreferences(actor,{key,inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds}){
     return this.#command(actor,key,'preferences.updated',{inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds},(s,u)=>{
       const next=this.#preferences(u);
@@ -176,8 +184,8 @@ export class CardFramework {
   }
   #blocked(s,a,b){return this.#preferences(s.users[a]).blockedUserIds.includes(b)||this.#preferences(s.users[b]).blockedUserIds.includes(a);}
   directory(actor,options={}){return this.#store.read(s=>{const viewer=this.#user(s,actor);return page(Object.values(s.users).filter(u=>u.id!==viewer.id&&!this.#blocked(s,viewer.id,u.id)).map(u=>({id:u.id,name:u.displayName,createdAt:u.createdAt,inventoryVisible:this.#catalog(s).features.inventoryBrowsing&&this.#preferences(u).inventoryVisibility!=='private'})),{...options,sort:'name'});});}
-  #tradeReason(copy,userId,s,{channel='trade',toUserId=null,ignoreLock=false}={}){if(copy.lockedBy&&!ignoreLock)return 'Reserved by another transaction';if(!cardBehavior(copy.definition).tradable)return 'This card type is not tradable';const rule=transferPolicyReason(s,copy,channel,this.#clock());if(rule)return rule;const codeReason=codeTransferReason(s,copy);if(codeReason)return codeReason;if(Object.values(copy.bindings).some(b=>b.transfer==='block'))return 'Attached data blocks transfer';if(this.#policies.canTransfer){const decision=this.#policies.canTransfer(clone(copy),userId,{channel,toUserId});if(decision!==true)return typeof decision==='string'?decision:'Host policy blocks transfer';}return null;}
-  #checkTrade(s,context){context={channel:'trade',...context};assertTradePolicy(s,context,this.#clock());if(this.#policies.canTrade){const result=this.#policies.canTrade(clone(context));check(result===true,'TRANSFER_BLOCKED',typeof result==='string'?result:'Host trade policy rejected offer',403);}}
+  #tradeReason(copy,userId,s,{channel='trade',toUserId=null,ignoreLock=false}={}){const adminReason=adminTransferReason(s,userId,toUserId,channel);if(adminReason)return adminReason;if(copy.lockedBy&&!ignoreLock)return 'Reserved by another transaction';if(!cardBehavior(copy.definition).tradable)return 'This card type is not tradable';const rule=transferPolicyReason(s,copy,channel,this.#clock());if(rule)return rule;const codeReason=codeTransferReason(s,copy);if(codeReason)return codeReason;if(Object.values(copy.bindings).some(b=>b.transfer==='block'))return 'Attached data blocks transfer';if(this.#policies.canTransfer){const decision=this.#policies.canTransfer(clone(copy),userId,{channel,toUserId});if(decision!==true)return typeof decision==='string'?decision:'Host policy blocks transfer';}return null;}
+  #checkTrade(s,context){context={channel:'trade',...context};const adminReason=adminTransferReason(s,context.fromUserId,context.toUserId,context.channel);check(!adminReason,'TRANSFER_BLOCKED',adminReason,403);assertTradePolicy(s,context,this.#clock());if(this.#policies.canTrade){const result=this.#policies.canTrade(clone(context));check(result===true,'TRANSFER_BLOCKED',typeof result==='string'?result:'Host trade policy rejected offer',403);}}
   tradeInventory(actor,userId,options={}){return this.#store.read(s=>{
     const viewer=this.#user(s,actor),owner=s.users[userId];check(owner,'NOT_FOUND','Inventory not available',404);
     if(owner.id!==viewer.id){this.#feature(s,'inventoryBrowsing');check(!this.#blocked(s,viewer.id,owner.id)&&this.#preferences(owner).inventoryVisibility!=='private','NOT_FOUND','Inventory not available',404);if(this.#preferences(owner).inventoryVisibility==='traders')this.#feature(s,'cardTrading');}
@@ -220,12 +228,12 @@ export class CardFramework {
     return this.#store.transact(s=>{
       this.#validateRevision(catalog,s.catalog);
       s.cardValidation={...s.cardValidation,...validateGovernedCatalog(s,catalog,{actor})};
-      s.catalog=catalog; this.#event(s,'catalog.published',{version:catalog.version});
+      if(s.catalog)invalidateAdminReview(s);s.catalog=catalog;for(const product of catalog.products)effectiveProduct(s,product); this.#event(s,'catalog.published',{version:catalog.version});
       return this.#publicCatalog(catalog,s);
     });
   }
   operatorCatalog(actor){this.#admin(actor,'catalog.read');return this.#store.read(s=>this.#catalog(s));}
-  previewImport(actor,input){this.#admin(actor,'catalog.preview');return this.#store.read(s=>{const preview=prepareImport({...input,base:s.catalog});this.#validateRevision(preview.manifest,s.catalog);validateGovernedCatalog(s,preview.manifest,{actor});return {...preview,policyRevision:s.cardAuthoring?.revision??0};});}
+  previewImport(actor,input){this.#admin(actor,'catalog.preview');return this.#store.read(s=>{const preview=prepareImport({...input,base:s.catalog});this.#validateRevision(preview.manifest,s.catalog);validateGovernedCatalog(s,preview.manifest,{actor});for(const product of preview.manifest.products)effectiveProduct({...s,catalog:preview.manifest},product);return {...preview,policyRevision:s.cardAuthoring?.revision??0};});}
   commitImport(actor,{key,manifest,digest,expectedVersion,policyRevision}) {
     this.#admin(actor,'catalog.publish');text(key,'import key',128);
     return this.#store.transact(s=>{
@@ -235,13 +243,13 @@ export class CardFramework {
       check((s.catalog?.version??0)===expectedVersion,'STALE_IMPORT','Catalog changed; preview again',409);
       check((s.cardAuthoring?.revision??0)===(policyRevision??0),'POLICY_CHANGED','Card policy changed; preview again',409);
       const catalog=validateCatalog(manifest);check(contentDigest(catalog)===digest,'IMPORT_CHANGED','Preview differs from the submitted catalog',409);
-      this.#validateRevision(catalog,s.catalog);s.cardValidation={...s.cardValidation,...validateGovernedCatalog(s,catalog,{actor})};s.catalog=catalog;
+      this.#validateRevision(catalog,s.catalog);s.cardValidation={...s.cardValidation,...validateGovernedCatalog(s,catalog,{actor})};if(s.catalog)invalidateAdminReview(s);s.catalog=catalog;for(const product of catalog.products)effectiveProduct(s,product);
       this.#event(s,'catalog.imported',{version:catalog.version,userId:actor.userId??null,digest});
       const result={version:catalog.version,digest,importedAt:this.#clock()};s.operatorRequests[token]={hash:inputHash,result};return result;
     });
   }
   #publicCatalog(c,s) {
-    const result=clone(c);
+    const result=clone(c);result.products=c.products.map(product=>effectiveProduct(s,product));result.adminStatus={revision:adminRevision(s),site:adminSite(s)};
     for(const card of result.cards)redactGovernedCard(s,card);
     for(const variant of result.variants)if(variant.stats){const card=result.cards.find(c=>c.id===variant.cardId);variant.stats=redactGovernedCard(s,{...card,stats:variant.stats},'variant','public',s.cardValidation?.[variant.id]?.fields).stats;}
     for (const v of result.variants) for (const [name,b] of Object.entries(v.bindings)) {
@@ -347,24 +355,26 @@ export class CardFramework {
   quote(actor,{productId,quantity=1}) {
     integer(quantity,'quantity',1,100);
     return this.#store.read(s=>{
-      this.#user(s,actor); const c=this.#catalog(s), product=lookup(c.products,productId);
-      check(product && product.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
+      const user=this.#user(s,actor),c=this.#catalog(s),base=lookup(c.products,productId);
+      check(base && base.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
+      assertAdminPurchase(s,user.id,base);const product=effectiveProduct(s,base);
       this.#productTime(product);
       check(quantity<=product.maxQuantity,'INVALID_INPUT','Quantity exceeds product limit');
       const total=product.price.amount*quantity; integer(total,'total price');
-      return {productId,quantity,productRevision:product.revision,catalogVersion:c.version,price:{currencyId:product.price.currencyId,amount:total}};
+      return {productId,quantity,productRevision:product.revision,catalogVersion:c.version,adminRevision:adminRevision(s),price:{currencyId:product.price.currencyId,amount:total}};
     });
   }
   #productTime(product){const time=Date.parse(this.#clock());check(!product.availableFrom||time>=Date.parse(product.availableFrom),'NOT_RELEASED','This pack is not available yet',409);check(!product.availableUntil||time<Date.parse(product.availableUntil),'PRODUCT_ENDED','This pack is no longer available',409);}
-  availability(){return this.#store.read(s=>{const c=this.#catalog(s);return {version:c.version,variants:c.variants.map(v=>({id:v.id,issued:s.supply[v.id]??0,remaining:v.supplyLimit===undefined?null:Math.max(0,v.supplyLimit-(s.supply[v.id]??0))})),products:c.products.map(p=>({id:p.id,available:p.enabled!==false&&(!p.availableFrom||Date.parse(this.#clock())>=Date.parse(p.availableFrom))&&(!p.availableUntil||Date.parse(this.#clock())<Date.parse(p.availableUntil)),pity:p.pity??null}))};});}
+  availability(){return this.#store.read(s=>{const c=this.#catalog(s);return {version:c.version,variants:c.variants.map(v=>({id:v.id,issued:s.supply[v.id]??0,remaining:v.supplyLimit===undefined?null:Math.max(0,v.supplyLimit-(s.supply[v.id]??0))})),products:c.products.map(base=>{const p=effectiveProduct(s,base);return {id:p.id,available:p.enabled!==false&&(!p.availableFrom||Date.parse(this.#clock())>=Date.parse(p.availableFrom))&&(!p.availableUntil||Date.parse(this.#clock())<Date.parse(p.availableUntil)),pity:p.pity??null};})};});}
   pityProgress(actor){return this.#store.read(s=>{const u=this.#user(s,actor);return s.pity?.[u.id]??{};});}
-  purchase(actor,{key,productId,quantity=1,productRevision,catalogVersion}) {
+  purchase(actor,{key,productId,quantity=1,productRevision,catalogVersion,adminRevision:quotedAdminRevision}) {
     integer(quantity,'quantity',1,100);
-    return this.#command(actor,key,'packs.purchased',{productId,quantity,productRevision,catalogVersion},(s,user)=>{
-      const c=this.#catalog(s), product=lookup(c.products,productId);
-      check(product && product.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
+    return this.#command(actor,key,'packs.purchased',{productId,quantity,productRevision,catalogVersion,...(quotedAdminRevision===undefined?{}:{adminRevision:quotedAdminRevision})},(s,user)=>{
+      const c=this.#catalog(s),base=lookup(c.products,productId);
+      check(base && base.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
+      assertAdminPurchase(s,user.id,base);const product=effectiveProduct(s,base);
       this.#productTime(product);
-      check(product.revision===productRevision && c.version===catalogVersion,'STALE_QUOTE','Get a fresh quote before buying',409);
+      check(product.revision===productRevision && c.version===catalogVersion && adminRevision(s)===(quotedAdminRevision??0),'STALE_QUOTE','Get a fresh quote before buying',409);
       check(quantity<=product.maxQuantity,'INVALID_INPUT','Quantity exceeds product limit');
       const total=product.price.amount*quantity; integer(total,'total price');
       const purchaseId=id(); this.#adjust(s,user.id,product.price.currencyId,-total,'purchase',purchaseId);

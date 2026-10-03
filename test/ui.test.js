@@ -10,6 +10,22 @@ import {renderStudio} from '../src/studio-ui.js';
 import {createCommandRunner} from '../src/client.js';
 
 const settle=async()=>{for(let i=0;i<4;i++)await new Promise(r=>setImmediate(r));};
+
+test('a price changed after rendering requires another purchase decision',async()=>{
+  const x=setup();
+  try {
+    let purchased=0;
+    x.client.quote=async input=>({...x.core.quote(x.alice,input),price:{currencyId:'credits',amount:999}});
+    x.client.purchase=async()=>{purchased++;return {packs:[]};};
+    const root=document.createElement('main');document.body.append(root);
+    const mounted=mountFramework(root,{client:x.client,sections:['shop']});await mounted.ready;
+    const buy=[...root.querySelectorAll('button')].find(button=>button.textContent.startsWith('Buy ·'));
+    assert(buy);buy.click();await settle();
+    assert.equal(purchased,0);
+    assert.match(root.textContent,/price changed.*Review the updated price/);
+    mounted.dispose();
+  } finally {x.close();}
+});
 const click=(node,text)=>{const found=[...node.querySelectorAll('button')].find(b=>b.textContent===text);assert(found,'Missing button '+text);assert(!found.disabled,'Disabled button '+text);found.click();return found;};
 const field=(node,text)=>{const label=[...node.querySelectorAll('label')].find(l=>l.querySelector('span')?.textContent===text);assert(label,'Missing field '+text);return label.querySelector('input,textarea,select');};
 function setup(){const window=new Window({url:'http://localhost/'});globalThis.document=window.document;globalThis.sessionStorage=window.sessionStorage;const x=fixture();x.open('common');x.open('rare');x.open('common',x.bob);

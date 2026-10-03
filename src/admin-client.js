@@ -1,0 +1,63 @@
+const copy = value => structuredClone(value);
+const errors = error => ({code:error.code ?? 'NETWORK_ERROR',message:error.message ?? 'Unable to reach the server.',status:error.status});
+const commands = new Set(['configureAdmin','administerCards']);
+
+/** A replaceable operator workflow. Namespace identifies the authenticated operator. */
+export function createAdminController({client,storage,namespace} = {}) {
+  if (!client || !namespace) throw new Error('An admin client and an operator namespace are required.');
+  const storageKey = 'digital-card.admin-command.v1:' + namespace;
+  let pending = null, disposed = false, generation = 0, usersGeneration = 0, personGeneration = 0, historyGeneration = 0, active = null;
+  try { const saved = JSON.parse(storage?.getItem(storageKey) ?? 'null'); if (saved && commands.has(saved.command) && saved.input?.key && saved.review) pending = saved; } catch {}
+  let state = {phase:'idle',overview:null,users:{items:[],next:null,total:0},person:null,history:{items:[],next:null,total:0},review:pending?.review ?? null,pending:!!pending,error:null,message:pending ? 'A previous save needs confirmation. Retry the same change to recover its result safely.' : '',loadingUsers:false,loadingPerson:false,loadingHistory:false};
+  const listeners = new Set();
+  const publish = patch => { if (disposed) return; state = {...state,...patch}; for (const listener of listeners) listener(copy(state)); };
+  const persist = clearKey => { try { if (pending) storage?.setItem(storageKey,JSON.stringify(pending)); else if(JSON.parse(storage?.getItem(storageKey)??'null')?.input?.key===clearKey)storage?.removeItem(storageKey); } catch {} };
+  async function load({keepReview = true} = {}) {
+    if (disposed || active) return;
+    const current = ++generation; publish({phase:'loading',error:null,...(!keepReview && !pending ? {review:null} : {})});
+    try { const overview = await client.adminOverview(); if (disposed || current !== generation) return; publish({phase:'ready',overview}); }
+    catch (error) { if (current === generation) publish({phase:'error',error:errors(error)}); }
+  }
+  async function users({search = '',after,limit = 30} = {}) {
+    const current = ++usersGeneration; publish({loadingUsers:true,error:null});
+    try { const result = await client.adminUsers({search,after,limit}); if (disposed || current !== usersGeneration) return; publish({loadingUsers:false,users:after ? {...result,items:[...state.users.items,...result.items]} : result}); }
+    catch (error) { if (current === usersGeneration) publish({loadingUsers:false,error:errors(error)}); }
+  }
+  async function person(userId,{after,limit = 50} = {}) {
+    const current = ++personGeneration; publish({loadingPerson:true,error:null,...(!after ? {person:null} : {})});
+    try { const result = await client.adminUser({userId,after,limit}); if (disposed || current !== personGeneration) return; if (after && state.person?.user.id === result.user.id) result.inventory.items = [...state.person.inventory.items,...result.inventory.items]; publish({loadingPerson:false,person:result}); }
+    catch (error) { if (current === personGeneration) publish({loadingPerson:false,error:errors(error)}); }
+  }
+  async function history({search = '',after,limit = 30} = {}) {
+    const current = ++historyGeneration; publish({loadingHistory:true,error:null});
+    try { const result = await client.adminHistory({search,after,limit}); if (disposed || current !== historyGeneration) return; publish({loadingHistory:false,history:after ? {...result,items:[...state.history.items,...result.items]} : result}); }
+    catch (error) { if (current === historyGeneration) publish({loadingHistory:false,error:errors(error)}); }
+  }
+  function stage({command = 'configureAdmin',input,title,changes,description = ''}) {
+    if (disposed || active || pending) return false;
+    if (!commands.has(command)) throw new Error('Unsupported admin command.');
+    if (!state.overview) throw new Error('Load current settings before reviewing a change.');
+    if (!Array.isArray(changes) || !changes.length) throw new Error('Make a change before reviewing it.');
+    publish({review:{command,input:copy({...input,expectedRevision:state.overview.revision}),title,changes:copy(changes),description},error:null,message:''}); return true;
+  }
+  function cancel() { if (active || pending || disposed) return false; publish({review:null,error:null,message:'Draft discarded. Saved settings are unchanged.'}); return true; }
+  function confirm() {
+    if (active) return active;
+    if (disposed || !state.review) return Promise.resolve(null);
+    if (!pending) {
+      let saved;try{saved=JSON.parse(storage?.getItem(storageKey)??'null');}catch{}
+      if(saved&&commands.has(saved.command)&&saved.input?.key&&saved.review){pending=saved;publish({pending:true,review:copy(saved.review),message:'Another save needs confirmation. Retry that original change before making a new one.'});return Promise.resolve(null);}
+      pending = {command:state.review.command,input:{...copy(state.review.input),key:client.requestKey()},review:copy(state.review)}; persist();
+    }
+    const operation = pending; publish({phase:'saving',pending:true,error:null,message:''});
+    active = Promise.resolve().then(async () => {
+      let receipt;
+      try { receipt = await client[operation.command](copy(operation.input)); pending = null; persist(operation.input.key); publish({phase:'ready',pending:false,review:null,error:null,message:'Changes saved. They apply to new actions immediately.'}); }
+      catch (error) { const definite = Number.isInteger(error.status) && error.status >= 400 && error.status < 500; if (definite) { pending = null; persist(operation.input.key); } publish({phase:'error',pending:!!pending,error:errors(error),message:definite ? '' : 'The result is not confirmed. Retry this same change; it will not run twice.'}); return null; }
+      finally { active = null; }
+      if (!disposed) { const selected = state.person?.user.id; await load({keepReview:false}); if (state.error) publish({message:'Your changes were saved, but current settings could not be refreshed. Reload before making another change.'}); if (!disposed && selected) await person(selected); }
+      return receipt;
+    }); return active;
+  }
+  return {getState:() => copy(state),subscribe(listener) { if (disposed) return () => {}; listeners.add(listener); listener(copy(state)); return () => listeners.delete(listener); },load,users,person,history,stage,cancel,confirm,dispose() {disposed = true;generation++;usersGeneration++;personGeneration++;historyGeneration++;listeners.clear();}};
+}

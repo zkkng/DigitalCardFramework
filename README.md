@@ -31,6 +31,12 @@ Digital Card Framework is a self-hosted backend for creating, distributing, and 
 
 Layered imports report compatibility limits. Advanced motion can require code or JSON. The reference site connects visual editing to reviewed catalog publication; exporting a card does not issue an owned copy.
 
+## Default administration panel
+
+The reference website includes an **Administration** area for authorized operators. Manage line sales, pack prices and discounts, rarity weights, account restrictions, and card grants/removals through named controls. Website controls pause pack purchases, direct trading, and user shops independently. Changes include a review, a reason, and recorded history.
+
+Basic mode keeps everyday tasks visible; Advanced adds configuration detail. Existing host and catalog restrictions remain authoritative. The panel is an optional, replaceable interface built on public administration APIs. See the [administration guide](docs/admin-panel.md) to embed it or build your own.
+
 ## Make it yours
 
 Define your artwork, card data, rarities, currencies, pack rules, and trading policies. Developers can replace views, themes, renderers, and host adapters through public APIs, or use the backend without the bundled website. Optional rendering adapters support additional media.

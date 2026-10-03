@@ -7,6 +7,7 @@ import {renderCollection,renderAlbums} from './collection-ui.js';
 import {renderTrading} from './trading-ui.js';
 import {renderMarketplace,renderFulfillments,renderTradingControls} from './marketplace-ui.js';
 import {renderCodeHistory} from './code-ui.js';
+import {renderAdminPanel} from './admin-ui.js';
 export {defaultCSS} from './styles.js';
 export function element(tag,className,text) {
   const node=document.createElement(tag);
@@ -144,7 +145,7 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
   status.setAttribute('role','status');nav.setAttribute('aria-label','Framework features');inspector.setAttribute('aria-label','Card details');
   root.append(dashboard,nav,status,content,inspector);
   let disposed=false,model=null,openerDispose=null,viewDisposers=[],refreshGeneration=0,mutate=null,commandPrincipal=null,busy=false;
-  let active=sections.includes('shop')?'shop':sections[0];
+  let active=sections.includes('shop')?'shop':sections[0],viewLeave=null;
   const renderer=(copy,options={})=>cardRenderer(copy,{backRenderer,...options});
   const currencyName=id=>model.catalog.currencies.find(c=>c.id===id)?.name??id;
   const lineName=id=>model.catalog.lines.find(l=>l.id===id)?.name??id;
@@ -181,7 +182,12 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
   }
   function section(title,description) {const node=element('section','dc-section');node.append(element('h2','',title));if(description)node.append(element('p','dc-section-intro',description));return node;}
   function empty(node,title,description,cta,go) {const box=element('div','dc-empty');box.append(element('span','dc-empty-symbol','◇'),element('h3','',title),element('p','dc-muted',description));if(cta)box.append(button(cta,()=>navigate(go)));node.append(box);}
-  function navigate(name) {active=name;status.textContent='';renderView();}
+  function navigate(name,approved=false) {
+    if(active==='admin'&&name!==active&&viewLeave&&!approved){viewLeave(()=>navigate(name,true));return;}
+    const refreshAfterAdmin=active==='admin' && name!=='admin';
+    active=name;status.textContent='';renderView();
+    if(refreshAfterAdmin)refresh().catch(error=>{if(!disposed){status.className='dc-status dc-error';status.textContent=error.message;}});
+  }
   function wallet() {
     const node=section('Your wallet','Each account has its own balances. Pack purchases and conversions update these balances immediately.');
     const cards=element('div','dc-wallet-grid');
@@ -220,7 +226,7 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
       }
       details.append(element('p','dc-muted','Base rates. Remaining editions and duplicate protection affect eligible cards.'));info.append(details);
       const purchase=element('div','dc-purchase-row'),quantity=field(purchase,'Packs','number','1');quantity.min='1';quantity.max=String(product.maxQuantity);quantity.step='1';
-      const buy=button('',()=>action(async()=>{const quote=await client.quote({productId:product.id,quantity:Number(quantity.value)});const receipt=await mutate('purchase',quote);active='packs';return receipt;},{message:r=>'Purchased '+r.packs.length+' pack'+(r.packs.length===1?'':'s')+'. Choose Open pack to reveal your cards.'}));
+      const buy=button('',()=>action(async()=>{const quote=await client.quote({productId:product.id,quantity:Number(quantity.value)});if(quote.price.currencyId!==product.price.currencyId||quote.price.amount!==product.price.amount*Number(quantity.value)){await refresh();throw new Error('The pack price changed. Review the updated price before buying.');}const receipt=await mutate('purchase',quote);active='packs';return receipt;},{message:r=>'Purchased '+r.packs.length+' pack'+(r.packs.length===1?'':'s')+'. Choose Open pack to reveal your cards.'}));
       function update(){const total=product.price.amount*Number(quantity.value),available=model.availability?.products.find(p=>p.id===product.id)?.available!==false;buy.textContent=available?'Buy · '+num(total)+' '+currencyName(product.price.currencyId):'Currently unavailable';buy.disabled=!available||!Number.isInteger(Number(quantity.value))||Number(quantity.value)<1||Number(quantity.value)>product.maxQuantity||total>(model.wallet[product.price.currencyId]??0);}
       quantity.addEventListener('input',update);update();purchase.append(buy);info.append(purchase);box.append(info);grid.append(box);
     }node.append(grid);return node;
@@ -240,9 +246,10 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
   const viewState={};
   const context=()=>({client,inspect,inspectTogether,refresh,mutate,action,navigate,cardRenderer:renderer,albumRenderer,codeRevealRenderer,listingRenderer,layouts,state:viewState});
   const views={wallet,shop,packs,marketplace:()=>renderMarketplace(model,context()),rewards:()=>renderFulfillments(model,context()),tradingControls:()=>renderTradingControls(model,context()),codes:()=>renderCodeHistory(model,context()),collection:()=>renderCollection(model,context()),albums:()=>renderAlbums(model,context()),trades:()=>renderTrading(model,context()),...Object.fromEntries(Object.entries(customViews).map(([id,view])=>[id,()=>view(model,context())]))};
-  const labels={wallet:'Wallet',shop:'Discover',packs:'My packs',collection:'Collection',tradingControls:'Trading controls',marketplace:'Marketplace',rewards:'Account rewards',codes:'Code history',albums:'Albums',trades:'Trade lounge',...viewLabels};
+  if(!customViews.admin)views.admin=()=>renderAdminPanel(model,context());
+  const labels={wallet:'Wallet',shop:'Discover',packs:'My packs',collection:'Collection',tradingControls:'Trading controls',admin:'Administration',marketplace:'Marketplace',rewards:'Account rewards',codes:'Code history',albums:'Albums',trades:'Trade lounge',...viewLabels};
   function renderView() {
-    if(!model||disposed)return;openerDispose?.();openerDispose=null;viewDisposers.forEach(fn=>fn());viewDisposers=[];content.replaceChildren();nav.replaceChildren();dashboard.replaceChildren();
+    if(!model||disposed)return;viewLeave=null;openerDispose?.();openerDispose=null;viewDisposers.forEach(fn=>fn());viewDisposers=[];content.replaceChildren();nav.replaceChildren();dashboard.replaceChildren();
     root.classList.toggle('dc-with-nav',navigation==='tabs');
     if(navigation==='tabs'){
       const heading=element('div','dc-dashboard-heading');heading.append(element('span','dc-eyebrow','YOUR ACCOUNT'),element('strong','',model.me.displayName??userName(model.me.userId)));dashboard.append(heading);
@@ -250,7 +257,7 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
       const stats=element('div','dc-account-stats');stats.append(element('span','',model.inventory.length+' cards'),element('span','',model.packs.filter(p=>!p.openedAt).length+' sealed packs'));dashboard.append(stats);
       for(const name of sections){if(typeof name!=='string'||!views[name])continue;const item=button(labels[name]??name,()=>navigate(name));item.className='dc-nav-item';item.dataset.view=name;item.setAttribute('aria-current',active===name?'page':'false');if(name==='packs'){const count=model.packs.filter(p=>!p.openedAt).length;if(count)item.append(element('span','dc-nav-count',count));}nav.append(item);}
     }
-    for(const name of (navigation==='tabs'?[active]:sections)){const view=typeof name==='function'?()=>name(model,{client,inspect,inspectTogether,refresh,mutate,action,navigate,cardRenderer:renderer}):views[name];if(view){const result=view();content.append(result.node??result);if(result.dispose)viewDisposers.push(result.dispose);}}
+    for(const name of (navigation==='tabs'?[active]:sections)){const view=typeof name==='function'?()=>name(model,{client,inspect,inspectTogether,refresh,mutate,action,navigate,cardRenderer:renderer}):views[name];if(view){const result=view();content.append(result.node??result);if(result.dispose)viewDisposers.push(result.dispose);if(result.requestLeave)viewLeave=result.requestLeave;}}
   }
   async function refresh() {
     const generation=++refreshGeneration;

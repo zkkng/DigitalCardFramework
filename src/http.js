@@ -3,6 +3,14 @@ import {createServer} from 'node:http';
 import {FrameworkError} from './catalog.js';
 import {safeData} from './data.js';
 import {randomUUID} from 'node:crypto';
+const adminRoutes = {
+  'GET /api/operator/admin': 'admin.read',
+  'GET /api/operator/admin/users': 'admin.read',
+  'GET /api/operator/admin/user': 'admin.read',
+  'GET /api/operator/admin/history': 'admin.read',
+  'POST /api/operator/admin/settings': 'admin.manage',
+  'POST /api/operator/admin/cards': 'admin.cards'
+};
 async function body(request,maxBytes) {
   const chunks=[]; let size=0;
   for await(const chunk of request) {
@@ -34,12 +42,18 @@ export function createApiHandler({framework,currencyGateway,codeGateway,resolveI
       if(rateLimit&&!rateLimit({actor,request,mutation:method==='POST'}))throw new FrameworkError('RATE_LIMITED','Too many requests; try again shortly',429);
       const publicGet=method==='GET' && (path==='/api/catalog' || path==='/api/availability' || path==='/api/public-albums' || /^\/api\/albums\/[^/]+$/.test(path));
       if(!publicGet && !actor?.userId) throw new FrameworkError('UNAUTHENTICATED','Sign in to continue',401);
-      if(path.startsWith('/api/operator/')){if(!exposeOperators||!hasPermission(actor,({'GET /api/operator/card-policies':'card-policies.read','POST /api/operator/card-policies/effective':'catalog.preview','POST /api/operator/card-policies/save':'card-policies.manage','POST /api/operator/card-policies/preview':'card-policies.manage','POST /api/operator/card-policies/activate':'card-policies.manage','POST /api/operator/card-policies/retire':'card-policies.manage','POST /api/operator/card-policies/restore':'card-policies.manage','POST /api/operator/card-resources/save':'card-policies.manage','POST /api/operator/card-resources/retire':'card-policies.manage','POST /api/operator/card-resources/restore':'card-policies.manage','POST /api/operator/copy-stats':'card-stats.provide','POST /api/operator/trading':'trading.manage','POST /api/operator/card-lock':'trading.manage','GET /api/operator/actions':'actions.manage','POST /api/operator/actions/retry':'actions.manage','POST /api/operator/commerce':'commerce.manage','POST /api/operator/shop-status':'commerce.manage','POST /api/operator/raffles/draw':'raffles.draw','GET /api/operator/catalog':'catalog.read','GET /api/operator/audit':'audit.read','POST /api/operator/import/preview':'catalog.preview','POST /api/operator/import/commit':'catalog.publish','GET /api/operator/codes':'codes.manage','GET /api/operator/code-pools':'codes.manage','POST /api/operator/code-pools':'codes.manage','POST /api/operator/codes/import':'codes.import','POST /api/operator/codes/confirm':'codes.confirm'})[method+' '+path]))throw new FrameworkError('FORBIDDEN','Operator authority required',403);}
+      if(path.startsWith('/api/operator/') && !adminRoutes[method+' '+path]){if(!exposeOperators||!hasPermission(actor,({'GET /api/operator/card-policies':'card-policies.read','POST /api/operator/card-policies/effective':'catalog.preview','POST /api/operator/card-policies/save':'card-policies.manage','POST /api/operator/card-policies/preview':'card-policies.manage','POST /api/operator/card-policies/activate':'card-policies.manage','POST /api/operator/card-policies/retire':'card-policies.manage','POST /api/operator/card-policies/restore':'card-policies.manage','POST /api/operator/card-resources/save':'card-policies.manage','POST /api/operator/card-resources/retire':'card-policies.manage','POST /api/operator/card-resources/restore':'card-policies.manage','POST /api/operator/copy-stats':'card-stats.provide','POST /api/operator/trading':'trading.manage','POST /api/operator/card-lock':'trading.manage','GET /api/operator/actions':'actions.manage','POST /api/operator/actions/retry':'actions.manage','POST /api/operator/commerce':'commerce.manage','POST /api/operator/shop-status':'commerce.manage','POST /api/operator/raffles/draw':'raffles.draw','GET /api/operator/catalog':'catalog.read','GET /api/operator/audit':'audit.read','POST /api/operator/import/preview':'catalog.preview','POST /api/operator/import/commit':'catalog.publish','GET /api/operator/codes':'codes.manage','GET /api/operator/code-pools':'codes.manage','POST /api/operator/code-pools':'codes.manage','POST /api/operator/codes/import':'codes.import','POST /api/operator/codes/confirm':'codes.confirm'})[method+' '+path]))throw new FrameworkError('FORBIDDEN','Operator authority required',403);}
+      const adminPermission=adminRoutes[method+' '+path];
+      if(adminPermission && (!exposeOperators || !hasPermission(actor,adminPermission)))throw new FrameworkError('FORBIDDEN','Administrator authority required',403);
       const input=method==='POST'?await body(request,path.startsWith('/api/operator/')?8*1024*1024:1048576):undefined;
       const options={};for(const key of ['limit','after','search','sort'])if(url.searchParams.has(key))options[key]=key==='limit'?Number(url.searchParams.get(key)):url.searchParams.get(key);
       let result;
       if(method==='GET') {
         const routes={
+          '/api/operator/admin':()=>framework.adminOverview(actor),
+          '/api/operator/admin/users':()=>framework.adminUsers(actor,options),
+          '/api/operator/admin/user':()=>framework.adminUser(actor,{...options,userId:url.searchParams.get('userId')}),
+          '/api/operator/admin/history':()=>framework.adminHistory(actor,options),
           '/api/trading-policy':()=>framework.tradingPolicy(),'/api/commerce-settings':()=>framework.commerceSettings(),'/api/shops':()=>framework.shops(actor,options),'/api/listings':()=>framework.listings(actor,{...options,...(url.searchParams.has('shopId')?{shopId:url.searchParams.get('shopId')}:{})}),'/api/orders':()=>framework.orders(actor,options),'/api/fulfillments':()=>framework.fulfillments(actor,options),'/api/operator/actions':()=>framework.actionJobs(actor,options),
           '/api/catalog':()=>framework.catalog(), '/api/me':()=>({...framework.me(actor),role:actor.role==='admin'?'admin':'player',permissions:publicPermissions(actor)}),
           '/api/availability':()=>framework.availability(),'/api/pity':()=>framework.pityProgress(actor),
@@ -60,6 +74,8 @@ export function createApiHandler({framework,currencyGateway,codeGateway,resolveI
         else throw new FrameworkError('NOT_FOUND','Unknown API route',404);
       } else {
         const routes={
+          '/api/operator/admin/settings':'configureAdmin',
+          '/api/operator/admin/cards':'administerCards',
           '/api/operator/trading':'configureTrading','/api/operator/card-lock':'setCardTransferLock','/api/operator/actions/retry':'retryAction','/api/operator/commerce':'configureCommerce','/api/operator/shop-status':'setShopEnabled','/api/operator/raffles/draw':'drawRaffle','/api/shops':'createShop','/api/listings':'createListing','/api/listings/quote':'quoteListing','/api/listings/buy':'buyListing','/api/listings/cancel':'cancelListing','/api/raffles/enter':'enterRaffle','/api/raffles/status':'raffleStatus','/api/cards/open':'openCard',
           '/api/quote':'quote','/api/purchase':'purchase','/api/open':'openPack','/api/convert':'convert',
           '/api/trade-up':'tradeUp','/api/albums':'saveAlbum','/api/trades':'proposeTrade',

@@ -1,4 +1,5 @@
 import {policyDefinitions} from "./card-policy-schema.js";
+import {adminDefinitions} from './admin-schema.js';
 // Source for the generated HTTP contract.
 export const openapi = {
   "openapi": "3.1.0",
@@ -1655,4 +1656,15 @@ Object.assign(openapi.paths,{
  "/operator/card-resources/save":route("post","saveCardResource",{type:"object"},{requestSchema:ref("CardLibrarySave"),description:"Requires card-policies.manage. Immutable library revision; packages must already be registered."}),
  ...Object.fromEntries(["retire","restore"].map(action=>["/operator/card-resources/"+action,route("post",action+"CardResource",{type:"object"},{requestSchema:ref("CardLibraryLifecycle"),description:"Requires card-policies.manage. Referenced active dependencies cannot be retired."})])),
  "/operator/copy-stats":route("post","updateCopyStats",{type:"object",properties:{copyId:str,version:{type:"integer"}}},{requestSchema:ref("CardCopyStats"),description:"Requires card-stats.provide; admin-source fields additionally require card-policies.manage. Uses the copy's pinned schema and preserves issuedStats."})
+});
+Object.assign(schemas,adminDefinitions);
+schemas.Purchase.properties.adminRevision={type:'integer',minimum:0,default:0,description:'Administration revision from the reviewed quote. Stale prices or odds require a new quote.'};
+schemas.Quote.properties.adminRevision={type:'integer',minimum:0};
+Object.assign(openapi.paths,{
+  '/operator/admin':route('get','adminOverview',ref('AdminOverview'),{description:'Requires admin.read. Effective administration overview with existing host and catalog constraints.'}),
+  '/operator/admin/users':route('get','adminUsers',ref('Page'),{parameters:pageParameters,description:'Requires admin.read. Bounded search without identity-provider subjects or credentials.'}),
+  '/operator/admin/user':route('get','adminUser',ref('AdminUserDetail'),{parameters:[...pageParameters,{name:'userId',in:'query',required:true,schema:codeId}],description:'Requires admin.read. Sanitized inventory for the selected account.'}),
+  '/operator/admin/history':route('get','adminHistory',ref('Page'),{parameters:pageParameters,description:'Requires admin.read. Recorded administrator reasons and before/after values.'}),
+  '/operator/admin/settings':route('post','configureAdmin',ref('AdminMutation'),{requestSchema:ref('AdminSettingsCommand'),description:'Requires admin.manage. Partial settings update, with a current admin revision, durable retry identity and recorded reason.'}),
+  '/operator/admin/cards':route('post','administerCards',ref('AdminMutation'),{requestSchema:ref('AdminCardsCommand'),description:'Requires admin.cards. Grant finite-supply copies or remove available owned copies; reserved and sealed copies cannot be removed. History is retained.'})
 });

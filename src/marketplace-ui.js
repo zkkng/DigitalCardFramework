@@ -212,7 +212,7 @@ export function renderMarketplace(
           model.me.role === "admin" ||
           model.me.permissions?.includes("commerce.manage"),
         own = shops.items.filter((s) => s.mine);
-      if (settings.settings.playerShops || admin) {
+      if (((settings.effectiveSettings?.playerShops ?? settings.settings.playerShops) && !model.me.adminStatus?.restrictions?.sellingBlocked) || admin) {
         const box = el("details", "dc-form-panel");
         box.append(el("summary", "", "Create a shop"));
         const name = field(box, "Shop name"),

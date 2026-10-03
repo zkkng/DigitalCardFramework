@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Window} from 'happy-dom';
+import {createAdminController} from '../src/admin-client.js';
+import {mountAdminPanel} from '../src/admin-ui.js';
+import {fixture} from './helpers.js';
+const settle=async()=>{for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve));};
+const memory=()=>{const values=new Map();return {getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};};
+function setup(){const x=fixture(),actor={...x.alice,role:'admin'};let key=0;const client={requestKey:()=>`admin-${++key}`,me:async()=>({...x.core.me(actor),role:'admin'})};for(const name of ['adminOverview','adminUsers','adminUser','adminHistory','configureAdmin','administerCards'])client[name]=async input=>x.core[name](actor,input);return {...x,actor,client};}
+function click(root,label){const button=[...root.querySelectorAll('button')].find(node=>node.textContent===label||node.getAttribute('aria-label')===label);assert(button,'Missing button '+label);assert(!button.disabled,'Disabled button '+label);button.click();return button;}
+function input(root,label,value,window){const node=root.querySelector(`[aria-label="${label}"]`);assert(node,'Missing field '+label);if(node.type==='checkbox')node.checked=value;else node.value=value;node.dispatchEvent(new window.Event('input',{bubbles:true}));node.dispatchEvent(new window.Event('change',{bubbles:true}));return node;}
+async function mounted(run){const window=new Window(),x=setup();globalThis.document=window.document;const root=document.createElement('div');document.body.append(root);const panel=mountAdminPanel(root,{client:x.client,namespace:x.alice.userId,storage:memory()});try{await panel.ready;await run({...x,root,panel,window});}finally{panel.dispose();x.core.close();await window.happyDOM.abort();delete globalThis.document;}}
+
+test('ambiguous inventory response preserves exact intent across remount and prevents duplicate issuance',async()=>{
+  const x=setup(),storage=memory(),real=x.client.administerCards,attempts=[];
+  x.client.administerCards=async payload=>{attempts.push(payload);const receipt=await real(payload);if(attempts.length===1)throw new Error('Response lost');return receipt;};
+  let controller=createAdminController({client:x.client,storage,namespace:x.alice.userId});await controller.load();controller.stage({command:'administerCards',input:{userId:x.bob.userId,action:'give',variantId:'dawn.standard',quantity:1,reason:'Replacement'},title:'Give Dawn',changes:[{label:'Dawn',before:'0',after:'1'}]});await controller.confirm();assert(controller.getState().pending);assert.equal(controller.cancel(),false);controller.dispose();
+  controller=createAdminController({client:x.client,storage,namespace:x.alice.userId});await controller.load();await controller.confirm();assert.deepEqual(attempts[0],attempts[1]);assert.equal(x.core.inventory(x.bob).length,1);assert.equal(controller.getState().pending,false);controller.dispose();
+});
+test('late overview responses and disposed callbacks cannot replace current state',async()=>{
+  const x=setup(),resolvers=[];x.client.adminOverview=()=>new Promise(resolve=>resolvers.push(resolve));const controller=createAdminController({client:x.client,namespace:'operator'});let events=0;controller.subscribe(()=>events++);const first=controller.load(),second=controller.load();resolvers[1]({revision:9});await second;resolvers[0]({revision:2});await first;assert.equal(controller.getState().overview.revision,9);const last=controller.load();controller.dispose();const before=events;resolvers[2]({revision:10});await last;assert.equal(events,before);
+});
+test('a disposed controller cannot erase a newer pending command from shared storage',async()=>{
+  const x=setup(),storage=memory(),resolvers=[];x.client.configureAdmin=()=>new Promise(resolve=>resolvers.push(resolve));
+  const stage=(c,value)=>c.stage({input:{scope:'site',changes:{packPurchasesPaused:value},reason:'Maintenance'},title:'Purchases',changes:[{label:'Purchases',before:'Allowed',after:'Paused'}]});
+  const a=createAdminController({client:x.client,storage,namespace:'operator'});await a.load();stage(a,true);const first=a.confirm();await settle();a.dispose();const b=createAdminController({client:x.client,storage,namespace:'operator'});await b.load();const recovery=b.confirm();await settle();resolvers[1]({ok:true});await recovery;stage(b,false);const next=b.confirm();await settle();const key='digital-card.admin-command.v1:operator',newPayload=storage.getItem(key);resolvers[0]({ok:true});await first;assert.equal(storage.getItem(key),newPayload);resolvers[2]({ok:true});await next;assert.equal(storage.getItem(key),null);b.dispose();
+});
+test('Basic website edits review before saving and cancel restores saved state',()=>mounted(async x=>{
+  assert.equal(x.root.querySelector('[data-admin-mode="false"]').getAttribute('aria-pressed'),'true');x.root.querySelector('[data-admin-tab="website"]').click();input(x.root,'Pack purchases',false,x.window);click(x.root,'Review changes');assert.equal(x.core.adminOverview(x.actor).site.packPurchasesPaused,false);assert.match(x.root.querySelector('.da-review').textContent,/Allowed.*Paused/s);click(x.root,'Cancel');assert.equal(x.root.querySelector('[aria-label="Pack purchases"]').checked,true);
+  input(x.root,'Pack purchases',false,x.window);click(x.root,'Review changes');click(x.root,'Save changes');await settle();assert.equal(x.core.adminOverview(x.actor).site.packPurchasesPaused,true);assert.equal(x.root.querySelector('[aria-label="Pack purchases"]').checked,false);
+}));
+test('unsaved forms stay intact until explicit discard, including leaving the host route',()=>mounted(async x=>{
+  x.root.querySelector('[data-admin-tab="lines"]').click();click(x.root,'Manage Sky Atlas');click(x.root,'Edit common');input(x.root,'Regular price','125',x.window);let left=false;x.panel.requestLeave(()=>{left=true;});assert(x.root.querySelector('.da-leave'));assert.equal(left,false);click(x.root,'Keep editing');assert.equal(x.root.querySelector('[aria-label="Regular price"]').value,'125');x.root.querySelector('[data-admin-tab="people"]').click();click(x.root,'Discard draft and continue');await settle();assert.match(x.root.textContent,/Alice/);assert.equal(x.core.adminOverview(x.actor).revision,0);
+}));
+test('inventory changes require a reason and exact-copy review; safe names reach Activity',()=>mounted(async x=>{
+  x.core.administerCards(x.actor,{key:'setup',expectedRevision:0,reason:'Test award',userId:x.bob.userId,action:'give',variantId:'dawn.standard',quantity:1});await x.panel.refresh();x.root.querySelector('[data-admin-tab="people"]').click();await settle();click(x.root,'Manage Bob');await settle();click(x.root,'Remove cards');const check=x.root.querySelector('.da-checkbox-row input');check.checked=true;check.dispatchEvent(new x.window.Event('change',{bubbles:true}));input(x.root,'Reason for this inventory change','Duplicate correction',x.window);click(x.root,'Review changes');assert.match(x.root.querySelector('.da-review').textContent,/Dawn.*Copy.*Retired/s);assert.equal(x.core.inventory(x.bob).length,1);click(x.root,'Save changes');await settle();assert.equal(x.core.inventory(x.bob).length,0);x.root.querySelector('[data-admin-tab="activity"]').click();await settle();assert.match(x.root.textContent,/Bob/);assert.match(x.root.textContent,/Changed by Alice/);
+}));
+test('read-only operators see saved controls without editable actions',async()=>{
+  const window=new Window(),x=setup();globalThis.document=window.document;x.client.adminOverview=async()=>x.core.adminOverview({...x.alice,permissions:['admin.read']});const root=document.createElement('div'),panel=mountAdminPanel(root,{client:x.client,namespace:'read-only'});try{await panel.ready;root.querySelector('[data-admin-tab="website"]').click();assert(root.querySelector('[aria-label="Pack purchases"]').disabled);assert.match(root.textContent,/Additional administrator permission/);}finally{panel.dispose();await window.happyDOM.abort();delete globalThis.document;}
+});
