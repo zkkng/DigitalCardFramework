@@ -81,6 +81,35 @@ Imports are atomic and idempotent, limited to 1,000 entries / 2 MiB per batch. C
 
 Stock uses AES-256-GCM envelopes with authenticated row/pool/provider context. Duplicate lookup and retry input fingerprints use a separate HMAC key. Plaintext is absent from saved retry results, state events, catalogs, receipts and history. Do not put secrets in metadata, artwork, legacy arbitrary bindings, URLs, logs or portable card bundles: those fields are not secret storage.
 
+## Generate codes during purchase
+
+A host can issue codes instead of importing stock. Install a synchronous factory when constructing the framework, then reference its ID in the pool:
+
+```js
+import {randomBytes,randomUUID} from 'node:crypto';
+
+const framework=new CardFramework({
+  store,codeVault,
+  codeGenerators:{
+    'game.reward':({copy,pool})=>({
+      code:randomBytes(18).toString('base64url'),
+      externalId:randomUUID(),
+      metadata:{edition:1}
+    })
+  }
+});
+framework.configureCodePool(operator,{key:'generated-pool',pool:{
+  id:'game.generated',providerId:'example.game',
+  name:'Game reward',generator:'game.reward',normalization:'exact'
+}});
+```
+
+The factory runs inside the pack transaction and receives isolated copy and pool snapshots. It returns `{code,externalId?,metadata?}`. Use cryptographically secure randomness. Return synchronously, perform no network or filesystem work, and keep metadata free of secrets. A later rollback cannot undo side effects outside the transaction.
+
+Generation happens at purchase. Repeating a successful purchase or reopening a pack does not call the factory again. A collision, unavailable factory or invalid value rolls back the debit, all packs, codes and retry record together. Generated codes use the same encrypted vault, capacity limits and ownership rules as imported stock. The pool's generator, provider and normalization are immutable.
+
+A trusted host requiring upstream registration can call `codeRegistrationMaterial(operator,codeId)` with `codes.manage`. This server-only method returns `{codeId,providerId,externalId,holderId,copyId,metadata,code}`, including for a sealed pack. It has no HTTP endpoint. Send this material over an authenticated private connection, register idempotently by `codeId`, and withhold player reveal until registration succeeds. Do not log, cache or expose the registration material to the browser. Creating a code does not itself make an external service accept it.
+
 ## Reveal, report and verify usage
 
 ```js
