@@ -79,7 +79,7 @@ An exception or timeout is never permission to refund. The framework transaction
 
 `confirmExternalCompensation(provider,{preparationId,fingerprint,refundReceipt})` accepts only the expected original-source refund. Repeating an exact terminal command returns its recorded result; changing its terms or evidence conflicts.
 
-Run a recovery job using `pendingExternalPurchases(provider,{providerId,after,limit})`. The default page size is 50; the maximum is 100. Continue with `nextCursor` until it is null. Check the external provider before advancing each order. Keep errors visible to operators and retry unknown outcomes with the same identities.
+Run a recovery job using `pendingExternalPurchases(provider,{providerId,after,limit})`. The default page size is 50; the maximum is 100. Continue with `nextCursor` until it is null. This cursor is an exclusive preparation-ID boundary within the selected provider's pending records; completing or cancelling its referenced purchase does not invalidate it. Restart from the first page on the next recovery pass so newly admitted records before the previous boundary are included. Check the external provider before advancing each order. Keep errors visible to operators and retry unknown outcomes with the same identities.
 
 Use `externalPurchaseStatus(actor,{preparationId})` or `lookupExternalPurchase(actor,{providerId,transactionId})` for individual orders. A collector can read only their own projection. A scoped provider can also read the debit reference needed for recovery. These results omit card outcomes, code secrets, proof hashes and stored catalog snapshots.
 

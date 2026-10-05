@@ -76,8 +76,13 @@ export function memoryQueries(state) {
   const page = (collection, input) => {
     const options = queryOptions(collection, input);
     const rows = Object.entries(state[collection] ?? {}).map(([key, value],ordinal) => ({value,ordinal,...projection(collection, key, value)})).filter(row => matches(row, options)).sort((a, b) => compareRows(a, b, options.sort));
-    const start = options.after ? rows.findIndex(row => row.key === options.after) + 1 : 0;
-    check(!options.after || start > 0, 'INVALID_CURSOR', 'Cursor no longer exists; restart this view', 409);
+    const idBoundary = collection === 'externalPurchases' && options.sort === 'id';
+    let start = 0;
+    if (options.after && idBoundary) {
+      const boundaryIndex = rows.findIndex(row => row.key > options.after);
+      start = boundaryIndex < 0 ? rows.length : boundaryIndex;
+    } else if (options.after) start = rows.findIndex(row => row.key === options.after) + 1;
+    check(!options.after || idBoundary || start > 0, 'INVALID_CURSOR', 'Cursor no longer exists; restart this view', 409);
     const selected = rows.slice(start, start + options.limit);
     return {items: structuredClone(selected.map(row => row.value)), total: rows.length, next: start + selected.length < rows.length ? selected.at(-1).key : null};
   };

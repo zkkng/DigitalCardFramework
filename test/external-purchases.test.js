@@ -43,6 +43,27 @@ test('canonical fingerprints and provider transactions are order-independent and
   assert.notEqual(externalPurchaseFingerprint(intent),externalPurchaseFingerprint({...intent,externalCurrency:'bonus'}));
 });
 
+for(const backend of ['memory','encrypted-sqlite'])test(`${backend}: pending purchase cursors survive completion and restart`,()=>{
+  const directory=mkdtempSync(join(tmpdir(),'pending-purchase-cursor-')),path=join(directory,'state.sqlite'),encryptionKey=Buffer.alloc(32,6);
+  const x=setup({store:backend==='memory'?new MemoryStore():new SQLiteStore(path,{encryptionKey})});let core=x.core;
+  try{
+    const rows=['one','two','three'].map(id=>x.prepare('cursor-'+id)).sort((a,b)=>a.preparationId.localeCompare(b.preparationId));
+    const first=core.pendingExternalPurchases(provider,{providerId,limit:1});
+    assert.equal(first.items[0].preparationId,rows[0].preparationId);assert.equal(first.nextCursor,rows[0].preparationId);
+    x.commit(rows[0]);
+    if(backend==='encrypted-sqlite'){core.close();core=new CardFramework({store:new SQLiteStore(path,{encryptionKey}),externalPurchaseProviders:x.pay.providers});}
+    const second=core.pendingExternalPurchases(provider,{providerId,after:first.nextCursor,limit:1});
+    assert.equal(second.items[0].preparationId,rows[1].preparationId);assert.equal(second.nextCursor,rows[1].preparationId);
+    core.cancelExternalPurchase(provider,{preparationId:rows[1].preparationId,fingerprint:rows[1].fingerprint,noDebitReceipt:x.pay.receipt(rows[1],'no_debit')});
+    const third=core.pendingExternalPurchases(provider,{providerId,after:second.nextCursor,limit:1});
+    assert.deepEqual(third.items.map(row=>row.preparationId),[rows[2].preparationId]);assert.equal(third.nextCursor,null);
+    assert.deepEqual(core.pendingExternalPurchases(provider,{providerId,after:'ep_'+'f'.repeat(64),limit:1}),{items:[],nextCursor:null});
+    assert.throws(()=>core.pendingExternalPurchases({...provider,settlementProviderId:'other.wallet'},{providerId,after:first.nextCursor}),code('FORBIDDEN'));
+    assert.throws(()=>core.packsPage(x.alice,{after:'missing',limit:1}),code('INVALID_CURSOR'));
+    assert(core.audit(admin).ok);
+  }finally{core.close();rmSync(directory,{recursive:true,force:true});}
+});
+
 test('preparation is private and allocation creates no spendable intermediate credit',()=>{
   const x=setup(),wallet=x.core.wallet(x.alice),before=x.store.read(s=>({supply:s.supply,packs:s.packs,copies:s.copies,pity:s.pity}));
   const row=x.prepare('order');assert.equal(row.state,'prepared');
