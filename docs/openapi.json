@@ -2468,7 +2468,7 @@
       },
       "post": {
         "operationId": "configureCodePool",
-        "description": "Requires codes.manage. Provider and normalization are immutable.",
+        "description": "Requires codes.manage. Provider, normalization and generator are immutable.",
         "security": [
           {
             "hostSession": []
@@ -7070,6 +7070,12 @@
             "minLength": 1,
             "maxLength": 100
           },
+          "generator": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Installed synchronous server code factory. Immutable after pool creation."
+          },
           "name": {
             "type": "string",
             "maxLength": 200
@@ -9468,6 +9474,1040 @@
             "$ref": "#/components/schemas/Page"
           }
         }
+      },
+      "ExternalPurchasePrice": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "currencyId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "currencyId",
+          "amount"
+        ]
+      },
+      "ExternalPurchaseQuote": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "productRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "catalogVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "adminRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "price": {
+            "$ref": "#/components/schemas/ExternalPurchasePrice"
+          }
+        },
+        "required": [
+          "productId",
+          "quantity",
+          "productRevision",
+          "catalogVersion",
+          "adminRevision",
+          "price"
+        ]
+      },
+      "ExternalPurchaseIntent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "transactionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalCurrency": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalUnits": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,39}$"
+          },
+          "quote": {
+            "$ref": "#/components/schemas/ExternalPurchaseQuote"
+          }
+        },
+        "required": [
+          "version",
+          "providerId",
+          "transactionId",
+          "userId",
+          "externalCurrency",
+          "externalUnits",
+          "quote"
+        ]
+      },
+      "PrepareExternalPurchase": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "transactionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalCurrency": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalUnits": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,39}$"
+          },
+          "quote": {
+            "$ref": "#/components/schemas/ExternalPurchaseQuote"
+          }
+        },
+        "required": [
+          "key",
+          "providerId",
+          "transactionId",
+          "userId",
+          "externalCurrency",
+          "externalUnits",
+          "quote"
+        ]
+      },
+      "ExternalDebitProof": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "debit"
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "transactionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalCurrency": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalUnits": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,39}$"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "kind",
+          "reference",
+          "providerId",
+          "transactionId",
+          "userId",
+          "externalCurrency",
+          "externalUnits",
+          "fingerprint"
+        ]
+      },
+      "ExternalNoDebitProof": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "no_debit"
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "transactionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalCurrency": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalUnits": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,39}$"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "kind",
+          "reference",
+          "providerId",
+          "transactionId",
+          "userId",
+          "externalCurrency",
+          "externalUnits",
+          "fingerprint"
+        ]
+      },
+      "ExternalRefundProof": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "refund"
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "transactionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalCurrency": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalUnits": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,39}$"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "compensationId": {
+            "type": "string",
+            "pattern": "^ec_[a-f0-9]{64}$"
+          },
+          "debitReference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "required": [
+          "kind",
+          "reference",
+          "providerId",
+          "transactionId",
+          "userId",
+          "externalCurrency",
+          "externalUnits",
+          "fingerprint",
+          "compensationId",
+          "debitReference"
+        ]
+      },
+      "CommitExternalPurchase": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "preparationId": {
+            "type": "string",
+            "pattern": "^ep_[a-f0-9]{64}$"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "debitReceipt": {
+            "$ref": "#/components/schemas/ExternalDebitProof"
+          }
+        },
+        "required": [
+          "preparationId",
+          "fingerprint",
+          "debitReceipt"
+        ]
+      },
+      "CancelExternalPurchase": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "preparationId": {
+            "type": "string",
+            "pattern": "^ep_[a-f0-9]{64}$"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "noDebitReceipt": {
+            "$ref": "#/components/schemas/ExternalNoDebitProof"
+          }
+        },
+        "required": [
+          "preparationId",
+          "fingerprint",
+          "noDebitReceipt"
+        ]
+      },
+      "ConfirmExternalCompensation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "preparationId": {
+            "type": "string",
+            "pattern": "^ep_[a-f0-9]{64}$"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "refundReceipt": {
+            "$ref": "#/components/schemas/ExternalRefundProof"
+          }
+        },
+        "required": [
+          "preparationId",
+          "fingerprint",
+          "refundReceipt"
+        ]
+      },
+      "ExternalPurchaseStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "preparationId": {
+            "type": "string",
+            "pattern": "^ep_[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "preparationId"
+        ]
+      },
+      "LookupExternalPurchase": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "transactionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "required": [
+          "providerId",
+          "transactionId"
+        ]
+      },
+      "PendingExternalPurchases": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "after": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^ep_[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "const": ""
+              }
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "providerId"
+        ]
+      },
+      "ReconcileLegacyExternalPurchase": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "transactionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalCurrency": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "externalUnits": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,39}$"
+          },
+          "quote": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "productId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "productRevision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "catalogVersion": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "adminRevision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "price": {
+                "$ref": "#/components/schemas/ExternalPurchasePrice"
+              }
+            },
+            "required": [
+              "productId",
+              "quantity",
+              "productRevision",
+              "catalogVersion",
+              "price"
+            ]
+          },
+          "purchaseKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "debitReceipt": {
+            "$ref": "#/components/schemas/ExternalDebitProof"
+          }
+        },
+        "required": [
+          "key",
+          "providerId",
+          "transactionId",
+          "userId",
+          "externalCurrency",
+          "externalUnits",
+          "quote",
+          "purchaseKey",
+          "debitReceipt"
+        ]
+      },
+      "ExternalLegacyDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "adopt_purchase"
+          },
+          "purchaseKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "required": [
+          "kind",
+          "purchaseKey"
+        ]
+      },
+      "ResolveLegacyExternalPurchase": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "preparationId": {
+            "type": "string",
+            "pattern": "^ep_[a-f0-9]{64}$"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ExternalLegacyDecision"
+          }
+        },
+        "required": [
+          "preparationId",
+          "fingerprint",
+          "key",
+          "reason",
+          "decision"
+        ]
+      },
+      "ExternalLegacyResolution": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "actorId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ExternalLegacyDecision"
+          },
+          "purchaseId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "adoptedQuote": {
+            "$ref": "#/components/schemas/ExternalPurchaseQuote"
+          },
+          "at": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Parseable timestamp returned by the trusted host clock."
+          }
+        },
+        "required": [
+          "key",
+          "actorId",
+          "reason",
+          "decision",
+          "purchaseId",
+          "adoptedQuote",
+          "at"
+        ]
+      },
+      "ExternalPurchaseReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "packs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/ExternalPurchasePack"
+            }
+          },
+          "paid": {
+            "$ref": "#/components/schemas/ExternalPurchasePrice"
+          }
+        },
+        "required": [
+          "id",
+          "packs",
+          "paid"
+        ]
+      },
+      "ExternalPurchasePack": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "ownerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "productId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "productRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lineId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "catalogVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "product": {
+            "type": "object"
+          },
+          "purchaseId": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "batchIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Parseable timestamp returned by the trusted host clock."
+          },
+          "openedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "description": "Parseable timestamp returned by the trusted host clock."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cardCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id",
+          "ownerId",
+          "productId",
+          "productRevision",
+          "lineId",
+          "catalogVersion",
+          "product",
+          "purchaseId",
+          "batchIndex",
+          "metadata",
+          "createdAt",
+          "openedAt",
+          "cardCount"
+        ]
+      },
+      "ExternalPurchaseProjection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "preparationId": {
+            "type": "string",
+            "pattern": "^ep_[a-f0-9]{64}$"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "state": {
+            "enum": [
+              "prepared",
+              "fulfilled",
+              "refund_required",
+              "cancelled",
+              "compensated",
+              "quarantined"
+            ]
+          },
+          "terms": {
+            "$ref": "#/components/schemas/ExternalPurchaseIntent"
+          },
+          "preparedAt": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Parseable timestamp returned by the trusted host clock."
+          },
+          "fulfilledAt": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Parseable timestamp returned by the trusted host clock."
+          },
+          "purchase": {
+            "$ref": "#/components/schemas/ExternalPurchaseReceipt"
+          },
+          "failureCode": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_]{1,64}$"
+          },
+          "compensationId": {
+            "type": "string",
+            "pattern": "^ec_[a-f0-9]{64}$"
+          },
+          "refundRequiredAt": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Parseable timestamp returned by the trusted host clock."
+          },
+          "cancelledAt": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Parseable timestamp returned by the trusted host clock."
+          },
+          "compensatedAt": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Parseable timestamp returned by the trusted host clock."
+          },
+          "quarantinedAt": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Parseable timestamp returned by the trusted host clock."
+          },
+          "legacyResolution": {
+            "$ref": "#/components/schemas/ExternalLegacyResolution"
+          },
+          "debitReference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "required": [
+          "preparationId",
+          "fingerprint",
+          "state",
+          "terms",
+          "preparedAt"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "fulfilled"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "fulfilledAt",
+                "purchase"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "purchase"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "enum": [
+                    "refund_required",
+                    "compensated"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "failureCode",
+                "compensationId",
+                "refundRequiredAt"
+              ]
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "legacyResolution"
+              ]
+            },
+            "then": {
+              "properties": {
+                "state": {
+                  "const": "fulfilled"
+                }
+              },
+              "required": [
+                "quarantinedAt",
+                "failureCode"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "cancelled"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "cancelledAt"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "compensated"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "compensatedAt"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "quarantined"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "quarantinedAt"
+              ]
+            }
+          }
+        ]
+      },
+      "ExternalPurchasePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/ExternalPurchaseProjection"
+            }
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^ep_[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
       }
     }
   }

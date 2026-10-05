@@ -1,9 +1,12 @@
 import {hasPermission} from './access.js';
+import {ExternalPurchaseService} from './external-purchases.js';
 import {deriveStats,inspectCardPolicy} from './card-policy.js';
 import {CardPolicyService,validateGovernedCatalog,redactGovernedCard} from './card-policy-service.js';
 import {randomInt, randomUUID, createHash} from 'node:crypto';
+import {types as utilTypes} from 'node:util';
 import {check, integer, text, jsonObject, validateCatalog} from './catalog.js';
 import {MemoryStore} from './store.js';
+import {memoryQueries} from './storage-query.js';
 import {prepareImport,contentDigest} from './importer.js';
 import {page} from './data.js';
 import {auditState} from './audit.js';
@@ -12,7 +15,7 @@ import {CommerceService} from './commerce.js';
 import {AdminService,adminRevision,adminSite,adminRestrictions,adminTransferReason,effectiveProduct,assertAdminPurchase,invalidateAdminReview} from './admin.js';
 import {ActionService,openingActions,enqueueAction} from './actions.js';
 import {cardBehavior} from './card-types.js';
-import {CodeService,allocateCodes,codeStockAvailable,codeSummary,codeTransferReason,transferCodes} from './codes.js';
+import {CodeService,codeStockAvailable,codeSummary,codeTransferReason} from './codes.js';
 
 const clone = value => structuredClone(value);
 const id = () => randomUUID();
@@ -24,8 +27,8 @@ function fingerprint(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
 export class CardFramework {
-  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce; #cardPolicies; #administration;
-  constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={},actionHandlers={},actionOptions={},eventSubscriptions=[],raffleRandom=randomInt}={}) {
+  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce; #cardPolicies; #administration; #externalPurchases;
+  constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={},codeGenerators={},actionHandlers={},actionOptions={},eventSubscriptions=[],raffleRandom=randomInt,externalPurchaseProviders={},externalPurchaseLimits={}}={}) {
     this.#store=store; this.#clock=clock; this.#random=random;
     this.#cardPolicies=new CardPolicyService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),clock});
     this.#administration=new AdminService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),now:clock,mint:(...args)=>this.#mint(...args),open:(...args)=>this.#openCopy(...args),removePlacements:(...args)=>this.#removePlacements(...args)});
@@ -37,7 +40,8 @@ export class CardFramework {
     this.#subscriptions=eventSubscriptions.map(x=>{text(x.id,'subscription ID',100);text(x.handler,'subscription handler',100);check(Array.isArray(x.events)&&x.events.every(e=>typeof e==='string'),'INVALID_INPUT','Subscription events required');return clone(x);});
     check(new Set(this.#subscriptions.map(x=>x.id)).size===this.#subscriptions.length,'INVALID_INPUT','Duplicate event subscription ID');
     this.#actions=new ActionService({store,clock,handlers:actionHandlers,options:actionOptions});
-    this.#codes=new CodeService({store,vault:codeVault,clock,...codeLimits});
+    this.#codes=new CodeService({store,vault:codeVault,clock,generators:codeGenerators,...codeLimits,emit:(s,type,data,at)=>this.#event(s,type,data,at)});
+    this.#externalPurchases=new ExternalPurchaseService({store,clock,user:(s,a)=>this.#user(s,a),capacity:s=>this.#capacity(s,true),capture:(s,u,q)=>this.#captureExternalPurchase(s,u,q),allocate:(s,row)=>this.#allocateExternalPurchase(s,row),legacy:(s,row)=>this.#reconcileLegacyPurchase(s,row),resolveLegacy:(s,row,key)=>this.#resolveLegacyPurchase(s,row,key),resolutionCandidate:(s,row)=>this.#legacyResolutionCandidate(s,row)},{providers:externalPurchaseProviders,limits:externalPurchaseLimits});
     this.#commerce=new CommerceService({
       read:fn=>store.read(fn),transact:fn=>store.transact(fn),now:clock,
       user:(s,a)=>this.#user(s,a),currency:(s,id)=>this.#currency(s,id),blocked:(s,a,b)=>this.#blocked(s,a,b),
@@ -126,9 +130,9 @@ export class CardFramework {
     this.#admin(actor,permission);text(key,'idempotency key',128);
     return this.#store.transact(s=>{s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,hash=fingerprint({type,input}),previous=s.operatorRequests[token];if(previous){check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Operator key already used',409);return previous.result;}const result=fn(s);this.#capacity(s);this.#event(s,type,{userId:actor.userId??null});s.operatorRequests[token]={hash,result:clone(result)};return result;});
   }
-  #capacity(s){
+  #capacity(s,completion=false){
     for(const field of ['copies','packs','requests','albums','trades','actionJobs','shops','listings','orders'])if(this.#limits[field]!==undefined)
-      check(field==='requests'?Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length+Object.keys(s.externalSettlements??{}).length<this.#limits.requests:Object.keys(s[field]??{}).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
+      check(field==='requests'?Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length+Object.keys(s.externalSettlements??{}).length+Object.keys(s.externalPurchaseKeys??{}).length+Object.values(s.externalPurchases??{}).reduce((total,row)=>total+(row.completionRequests??0),0)+(completion?0:1)<=this.#limits.requests:Object.keys(s[field]??{}).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
     if(this.#limits.copiesPerUser!==undefined){const counts={};for(const c of Object.values(s.copies))if(c.state!=='consumed')counts[c.ownerId]=(counts[c.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.copiesPerUser,'INVENTORY_CAPACITY','Collector inventory capacity reached',507);}
     if(this.#limits.packsPerUser!==undefined){const counts={};for(const p of Object.values(s.packs))counts[p.ownerId]=(counts[p.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.packsPerUser,'PACK_CAPACITY','Collector pack capacity reached',507);}
   }
@@ -136,6 +140,7 @@ export class CardFramework {
   importCodes(actor,input){return this.#codes.importBatch(actor,input);}
   codePools(actor){return this.#codes.pools(actor);}
   codeInventory(actor,options){return this.#codes.inventory(actor,options);}
+  codeRegistrationMaterial(actor,codeId){return this.#codes.registrationMaterial(actor,codeId);}
   codeHistory(actor,options){return this.#codes.history(actor,options);}
   revealCode(actor,input){return this.#codes.reveal(actor,input);}
   reportCodeUsage(actor,input){return this.#codes.reportUsage(actor,input);}
@@ -170,10 +175,18 @@ export class CardFramework {
   }
   #catalog(s) {check(s.catalog,'NO_CATALOG','Publish a catalog first',409); return s.catalog;}
   #feature(s,name) {check(this.#catalog(s).features[name],'FEATURE_DISABLED',name+' is disabled',403);}
-  #event(s,type,data) {const event={id:id(),sequence:s.events.length+1,type,data,at:this.#clock()};s.events.push(event);for(const subscription of this.#subscriptions)if(subscription.events.includes(type)||subscription.events.includes('*'))enqueueAction(s,{handler:subscription.handler,userId:data.userId??data.ownerId??null,params:{event:clone(event)},source:{type:'event',eventId:event.id,subscriptionId:subscription.id}},event.at);check(Object.keys(s.actionJobs??{}).length<=this.#limits.actionJobs,'INSTALLATION_CAPACITY','Action queue capacity reached',507);}
+  #event(s,type,data,at=this.#clock()) {const event={id:id(),sequence:s.events.length+1,type,data,at};s.events.push(event);for(const subscription of this.#subscriptions)if(subscription.events.includes(type)||subscription.events.includes('*'))enqueueAction(s,{handler:subscription.handler,userId:data.userId??data.ownerId??null,params:{event:clone(event)},source:{type:'event',eventId:event.id,subscriptionId:subscription.id}},event.at);check(Object.keys(s.actionJobs??{}).length<=this.#limits.actionJobs,'INSTALLATION_CAPACITY','Action queue capacity reached',507);}
   #notify(s,userId,type,data){s.notifications??=[];s.notifications.push({id:id(),userId,type,data,at:this.#clock(),read:false});const own=s.notifications.filter(n=>n.userId===userId);if(own.length>2000){const remove=new Set(own.slice(0,own.length-2000).map(n=>n.id));s.notifications=s.notifications.filter(n=>!remove.has(n.id));}}
   #preferences(user){return {inventoryVisibility:'traders',favoriteCopyIds:[],wishlistCardIds:[],blockedUserIds:[],...user.preferences};}
-  me(actor){return this.#store.read(s=>{const u=this.#user(s,actor);return {userId:u.id,displayName:u.displayName,preferences:this.#preferences(u),adminStatus:{site:adminSite(s),restrictions:adminRestrictions(s,u.id)}};});}
+  #query(fn){return this.#store.query?this.#store.query(fn):this.#store.read(s=>fn(memoryQueries(s)));}
+  #queryUser(q,actor){check(actor?.disabled!==true&&typeof actor?.userId==='string','UNAUTHENTICATED','A verified framework user is required',401);const user=q.get('users',actor.userId);check(user,'UNAUTHENTICATED','A verified framework user is required',401);return user;}
+  #viewState(q,copies=[],userIds=[]){
+    const ids=[...new Set([...userIds,...copies.flatMap(copy=>[copy.ownerId,copy.openedBy])].filter(Boolean))],codeIds=[...new Set(copies.flatMap(copy=>copy.codeIds??[]))];
+    const records=(field,keys)=>{const result={};for(let i=0;i<keys.length;i+=2000)Object.assign(result,q.records(field,{ids:keys.slice(i,i+2000)}));return result;};
+    return {catalog:q.value('catalog'),adminControls:q.value('adminControls'),cardAuthoring:q.value('cardAuthoring'),cardValidation:q.value('cardValidation'),tradingPolicy:q.value('tradingPolicy'),users:records('users',ids),copies:Object.fromEntries(copies.map(copy=>[copy.id,copy])),codes:records('codes',codeIds)};
+  }
+  #inventoryViews(s,copies,userId){return copies.map(copy=>{check(copy.ownerId===userId&&copy.state==='owned','INVALID_STATE','Indexed card ownership differs',500);const reason=this.#tradeReason(copy,userId,s);return {...this.#copyView(s,copy,userId),tradable:!reason,untradableReason:reason};});}
+  me(actor){return this.#query(q=>{const u=this.#queryUser(q,actor),s={adminControls:q.value('adminControls')};return {userId:u.id,displayName:u.displayName,preferences:this.#preferences(u),adminStatus:{site:adminSite(s),restrictions:adminRestrictions(s,u.id)}};});}
   setPreferences(actor,{key,inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds}){
     return this.#command(actor,key,'preferences.updated',{inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds},(s,u)=>{
       const next=this.#preferences(u);
@@ -192,13 +205,24 @@ export class CardFramework {
     const cards=Object.values(s.copies).filter(c=>c.ownerId===owner.id&&c.state==='owned').map(c=>{const reason=this.#tradeReason(c,owner.id,s);return {...this.#copyView(s,c,viewer.id),tradable:!reason,untradableReason:reason};});
     return {owner:{id:owner.id,name:owner.displayName},...page(cards,options)};
   });}
-  inventoryPage(actor,options={}){return page(this.inventory(actor),options);}
+  inventoryPage(actor,options={}){return this.#query(q=>{
+    const user=this.#queryUser(q,actor);
+    if(options.search||options.sort==='name'){
+      // Legacy free-text and locale-name semantics operate on public projections.
+      // This optional path loads the matching account inventory, not all state.
+      const copies=[];let after='';do{const result=q.pageCopies({...options,search:'',sort:'ordinal',ownerId:user.id,state:'owned',limit:200,after});copies.push(...result.items);after=result.next;}while(after);
+      return page(this.#inventoryViews(this.#viewState(q,copies,[user.id]),copies,user.id),options);
+    }
+    const result=q.pageCopies({...options,ownerId:user.id,state:'owned'}),s=this.#viewState(q,result.items,[user.id]);return {...result,items:this.#inventoryViews(s,result.items,user.id)};
+  });}
+  collectionSummary(actor,options={}){return this.#query(q=>{const user=this.#queryUser(q,actor),result=q.variantCounts({...options,ownerId:user.id}),copies=Object.values(q.records('copies',{ids:result.items.map(row=>row.copyId)})),s=this.#viewState(q,copies,[user.id]),views=new Map(this.#inventoryViews(s,copies,user.id).map(copy=>[copy.id,copy]));return {...result,items:result.items.map(({copyId,...row})=>({...row,card:views.get(copyId)}))};});}
   notifications(actor,options={}){return this.#store.read(s=>{const u=this.#user(s,actor);return page((s.notifications??[]).filter(n=>n.userId===u.id),options);});}
   readNotifications(actor,{key,ids}){check(Array.isArray(ids)&&ids.length<=200,'INVALID_INPUT','Select at most 200 notifications');return this.#command(actor,key,'notifications.read',{ids},(s,u)=>{for(const n of s.notifications??[])if(n.userId===u.id&&ids.includes(n.id))n.read=true;return {ok:true};});}
   #command(actor,key,type,input,fn) {
     text(key,'idempotency key',128);
     return this.#store.transact(s=>{
       const user=this.#user(s,actor), token=user.id+':'+key, hash=fingerprint({type,input});
+      if(type==='packs.purchased')check(!Object.values(s.externalPurchases??{}).some(row=>row.terms.userId===user.id&&row.legacy?.purchaseKey===key),'EXTERNAL_PURCHASE_STATE','Legacy purchase is managed by external reconciliation',409);
       const previous=s.requests[token];
       if (previous) {check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409); return previous.result;}
       const result=fn(s,user);
@@ -257,9 +281,14 @@ export class CardFramework {
     }
     return result;
   }
-  catalog() {return this.#store.read(s=>this.#publicCatalog(this.#catalog(s),s));}
+  catalog() {return this.#query(q=>{const s=this.#viewState(q);return this.#publicCatalog(this.#catalog(s),s);});}
+  catalogVersion(){return this.#query(q=>q.get('catalog','version')??0);}
+  userByIdentity(actor,{provider,subject}){this.#admin(actor,'accounts.register');text(provider,'identity provider',2048);text(subject,'identity subject',300);return this.#query(q=>q.userByIdentity(provider,subject)??null);}
+  providerIdentity(actor,userId){this.#admin(actor,'accounts.register');text(userId,'user ID',100);return this.#query(q=>q.providerIdentity(userId)??null);}
   registerUser(actor,{provider,subject,displayName}) {
     this.#admin(actor,'accounts.register'); text(provider,'identity provider',2048); text(subject,'identity subject',300); text(displayName,'display name',100);
+    const unchanged=this.#query(q=>q.userByIdentity(provider,subject));
+    if(unchanged?.displayName===displayName)return unchanged;
     return this.#store.transact(s=>{
       const existing=Object.values(s.users).find(u=>u.provider===provider && u.subject===subject);
       if (existing) {existing.displayName=displayName; return existing;}
@@ -285,10 +314,11 @@ export class CardFramework {
     check(/^[1-9][0-9]{0,39}$/.test(externalUnits),'INVALID_INPUT','Invalid external units');
     const token=fingerprint({providerId,transactionId}), hash=fingerprint({userId,currencyId,amount,externalCurrency,externalUnits});
     return this.#store.transact(s=>{
+      check(!s.externalPurchases?.['ep_'+fingerprint({providerId,transactionId})],'EXTERNAL_PURCHASE_STATE','Use the existing external purchase lifecycle',409);
       this.#user(s,{userId});this.#currency(s,currencyId);s.externalSettlements??={};
       const old=s.externalSettlements[token];
       if(old){check(old.hash===hash,'SETTLEMENT_CONFLICT','External transaction already credited with different terms',409);return old.result;}
-      if(this.#limits.requests!==undefined)check(Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length+Object.keys(s.externalSettlements).length<this.#limits.requests,'INSTALLATION_CAPACITY','Settlement capacity reached',507);
+      if(this.#limits.requests!==undefined)check(Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length+Object.keys(s.externalSettlements).length+Object.keys(s.externalPurchaseKeys??{}).length+Object.values(s.externalPurchases??{}).reduce((total,row)=>total+(row.completionRequests??0),0)<this.#limits.requests,'INSTALLATION_CAPACITY','Settlement capacity reached',507);
       this.#adjust(s,userId,currencyId,amount,'external-credit',token);
       const result={providerId,transactionId,userId,currencyId,amount,balance:s.balances[userId][currencyId],at:this.#clock()};
       s.externalSettlements[token]={hash,result,externalCurrency,externalUnits};
@@ -300,6 +330,126 @@ export class CardFramework {
     const currency=lookup(this.#catalog(s).currencies,currencyId);
     check(currency,'UNKNOWN_CURRENCY','Currency not found',404); return currency;
   }
+  prepareExternalPurchase(actor,input){return this.#externalPurchases.prepare(actor,input);}
+  commitExternalPurchase(actor,input){return this.#externalPurchases.commit(actor,input);}
+  cancelExternalPurchase(actor,input){return this.#externalPurchases.cancel(actor,input);}
+  confirmExternalCompensation(actor,input){return this.#externalPurchases.compensate(actor,input);}
+  externalPurchaseStatus(actor,input){return this.#externalPurchases.status(actor,input);}
+  lookupExternalPurchase(actor,input){return this.#externalPurchases.lookup(actor,input);}
+  pendingExternalPurchases(actor,input){return this.#externalPurchases.pending(actor,input);}
+  reconcileLegacyExternalPurchase(actor,input){return this.#externalPurchases.legacy(actor,input);}
+  resolveLegacyExternalPurchase(actor,input){return this.#externalPurchases.resolveLegacy(actor,input);}
+  #captureExternalPurchase(s,user,quote){
+    const catalog=this.#catalog(s),base=lookup(catalog.products,quote.productId);
+    check(base&&base.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
+    assertAdminPurchase(s,user.id,base);const product=effectiveProduct(s,base);this.#productTime(product);
+    check(quote.quantity<=product.maxQuantity,'INVALID_INPUT','Quantity exceeds product limit');
+    const expected={productId:product.id,quantity:quote.quantity,productRevision:product.revision,catalogVersion:catalog.version,adminRevision:adminRevision(s),price:{currencyId:product.price.currencyId,amount:product.price.amount*quote.quantity}};
+    check(fingerprint(expected)===fingerprint(quote),'STALE_QUOTE','Get a fresh quote before buying',409);
+    const maxCopies=product.slots.reduce((total,slot)=>total+slot.count,0)*quote.quantity;
+    for(const [field,count,added]of [['copies',Object.keys(s.copies).length,maxCopies],['packs',Object.keys(s.packs).length,quote.quantity],['copiesPerUser',Object.values(s.copies).filter(c=>c.ownerId===user.id&&c.state!=='consumed').length,maxCopies],['packsPerUser',Object.values(s.packs).filter(p=>p.ownerId===user.id).length,quote.quantity]])if(this.#limits[field]!==undefined)check(count+added<=this.#limits[field],'INSTALLATION_CAPACITY','Purchase exceeds '+field+' capacity',507);
+    this.#assertExternalAllocationReady(s,user,product,quote.quantity);
+    return {catalog:clone(catalog),product:clone(product),cardValidation:clone(s.cardValidation??{})};
+  }
+  #assertExternalAllocationReady(s,user,product,quantity){
+    const catalog=this.#catalog(s),at=this.#clock(),checked=new Set(),readiness=new Map(),guaranteedCodes=new Map(),guaranteedVariants=new Map();let minimumGeneratedTotal=0;
+    for(const slot of product.slots){
+      if(slot.probability?.numerator===0)continue;
+      let available=this.#available(s,slot.pool);
+      if(slot.role!=='insert'&&product.duplicatePolicy.scope==='inventory'&&product.duplicatePolicy.fallback!=='allow'){
+        const owned=new Set(Object.values(s.copies).filter(copy=>copy.ownerId===user.id&&['sealed','owned'].includes(copy.state)).map(copy=>copy.cardId));
+        available=available.filter(entry=>!owned.has(lookup(catalog.variants,entry.variantId).cardId));
+      }
+      const mandatory=!slot.probability||slot.probability.numerator===slot.probability.denominator;
+      check(!mandatory||available.length,'POOL_EXHAUSTED','No eligible card remains in this pack slot',409);
+      const variants=available.map(entry=>lookup(catalog.variants,entry.variantId));
+      for(const variant of variants)if(!checked.has(variant.id)){
+        checked.add(variant.id);
+        for(const spec of Object.values(variant.bindings??{}))if(spec.factory){
+          const factory=Object.hasOwn(this.#bindings,spec.factory)&&this.#bindings[spec.factory];
+          check(typeof factory==='function','MISSING_PROVIDER','Binding factory unavailable: '+spec.factory,409);
+          check(!utilTypes.isAsyncFunction(factory)&&!utilTypes.isGeneratorFunction(factory)&&!['[object AsyncFunction]','[object GeneratorFunction]','[object AsyncGeneratorFunction]'].includes(Object.prototype.toString.call(factory)),'INVALID_PROVIDER','Binding factories must return synchronously',500);
+        }
+        const governed=s.cardValidation?.[variant.id];
+        if(governed?.fields.some(field=>field.scope==='copy')){
+          const fields=governed.fields,defaults=Object.fromEntries(fields.filter(field=>field.scope==='copy'&&(Object.hasOwn(field,'default')||Object.hasOwn(field,'fixed'))).map(field=>[field.key,clone(Object.hasOwn(field,'fixed')?field.fixed:field.default)]));
+          const stats=deriveStats(fields,defaults,'copy'),policy={fields,defaults:{},requirements:{},references:governed.policies,provenance:{}};
+          check(!inspectCardPolicy(policy,{copy:{stats}}).length,'COPY_STATS','Required copy stats need valid issuance defaults',409);
+        }
+        readiness.set(variant.id,this.#codes.assertAllocationReady(s,variant.codes??[],at));
+      }
+      if(mandatory&&variants.length){
+        const draws=slot.count*quantity;
+        minimumGeneratedTotal+=Math.min(...variants.map(variant=>readiness.get(variant.id).generatedCodes))*draws;
+        if(variants.length===1)guaranteedVariants.set(variants[0].id,(guaranteedVariants.get(variants[0].id)??0)+draws);
+        const pools=new Set(variants.flatMap(variant=>(variant.codes??[]).map(spec=>spec.poolId)));
+        for(const poolId of pools){const count=Math.min(...variants.map(variant=>(variant.codes??[]).filter(spec=>spec.poolId===poolId).length))*draws;if(count)guaranteedCodes.set(poolId,(guaranteedCodes.get(poolId)??0)+count);}
+      }
+    }
+    for(const [variantId,count]of guaranteedVariants){const variant=lookup(catalog.variants,variantId);check(variant.supplyLimit===undefined||(s.supply[variantId]??0)+count<=variant.supplyLimit,'SOLD_OUT','Edition cannot satisfy this purchase',409);}
+    const specs=[];for(const [poolId,count]of guaranteedCodes)for(let n=0;n<count;n++)specs.push({poolId});
+    this.#codes.assertAllocationReady(s,specs,at);
+    if(minimumGeneratedTotal>0)this.#codes.assertGeneratedCapacity(s,minimumGeneratedTotal);
+  }
+  #allocateExternalPurchase(s,row){
+    const user=this.#user(s,{userId:row.terms.userId});
+    check(!adminRestrictions(s,user.id).buyingBlocked,'ACCOUNT_RESTRICTED','This account cannot buy',403);
+    check(row.snapshot,'STALE_QUOTE','Original allocation terms are unavailable',409);
+    const currentCatalog=s.catalog,currentValidation=s.cardValidation;
+    s.catalog=clone(row.snapshot.catalog);s.cardValidation=clone(row.snapshot.cardValidation);
+    try{
+      const purchaseId=id(),packs=this.#allocatePacks(s,user,row.snapshot.product,row.terms.quote.quantity,{purchaseId,externalPreparationId:row.preparationId});
+      this.#event(s,'packs.purchased',{userId:user.id,preparationId:row.preparationId,purchaseId});
+      return {id:purchaseId,packs,paid:clone(row.terms.quote.price)};
+    }finally{s.catalog=currentCatalog;if(currentValidation===undefined)delete s.cardValidation;else s.cardValidation=currentValidation;}
+  }
+  #reconcileLegacyPurchase(s,row){
+    const terms=row.terms,quote=terms.quote,token=fingerprint({providerId:terms.providerId,transactionId:terms.transactionId});
+    const settlement=s.externalSettlements?.[token],request=s.requests[terms.userId+':'+row.legacy.purchaseKey];
+    const expectedSettlement=fingerprint({userId:terms.userId,currencyId:quote.price.currencyId,amount:quote.price.amount,externalCurrency:terms.externalCurrency,externalUnits:terms.externalUnits});
+    const credits=s.ledger.filter(entry=>entry.type==='external-credit'&&entry.reference===token);
+    if(settlement&&(settlement.hash!==expectedSettlement||settlement.externalCurrency!==terms.externalCurrency||settlement.externalUnits!==terms.externalUnits||settlement.result?.providerId!==terms.providerId||settlement.result?.transactionId!==terms.transactionId||settlement.result?.userId!==terms.userId||settlement.result?.currencyId!==quote.price.currencyId||settlement.result?.amount!==quote.price.amount))return {quarantine:'LEGACY_SETTLEMENT_CONFLICT'};
+    if(settlement&&(credits.length!==1||credits[0].userId!==terms.userId||credits[0].currencyId!==quote.price.currencyId||credits[0].delta!==quote.price.amount||!Number.isSafeInteger(settlement.result.balance)||settlement.result.balance<0||settlement.result.balance!==credits[0].balance))return {quarantine:'LEGACY_CREDIT_EVIDENCE'};
+    if(!settlement&&credits.length)return {quarantine:'LEGACY_CREDIT_EVIDENCE'};
+    if(request){
+      const input={productId:quote.productId,quantity:quote.quantity,productRevision:quote.productRevision,catalogVersion:quote.catalogVersion};
+      const hashes=[fingerprint({type:'packs.purchased',input}),fingerprint({type:'packs.purchased',input:{...input,adminRevision:quote.adminRevision}})];
+      const result=request.result,debits=s.ledger.filter(entry=>entry.type==='purchase'&&entry.reference===result?.id);
+      if(!settlement||!hashes.includes(request.hash)||!result?.paid||fingerprint(result.paid)!==fingerprint(quote.price)||typeof result?.id!=='string'||!Array.isArray(result?.packs)||result.packs.length!==quote.quantity||new Set(result.packs.map(pack=>pack?.id)).size!==quote.quantity||debits.length!==1||debits[0].userId!==terms.userId||debits[0].currencyId!==quote.price.currencyId||debits[0].delta!==-quote.price.amount)return {quarantine:'LEGACY_PURCHASE_CONFLICT'};
+      if(s.ledger.indexOf(debits[0])<=s.ledger.indexOf(credits[0]))return {quarantine:'LEGACY_PURCHASE_CONFLICT'};
+      if(Object.values(s.externalPurchases??{}).some(other=>other.preparationId!==row.preparationId&&other.purchase?.id===result.id)||Object.entries(s.requests).some(([key,receipt])=>key!==terms.userId+':'+row.legacy.purchaseKey&&receipt.result?.id===result.id))return {quarantine:'LEGACY_PURCHASE_ALREADY_BOUND'};
+      for(const receipt of result.packs){
+        const pack=s.packs[receipt?.id];
+        if(!pack||!receipt||receipt.ownerId!==terms.userId||receipt.purchaseId!==result.id||pack.purchaseId!==result.id||pack.productId!==quote.productId||receipt.productId!==pack.productId||pack.productRevision!==quote.productRevision||receipt.productRevision!==pack.productRevision||pack.catalogVersion!==quote.catalogVersion||receipt.catalogVersion!==pack.catalogVersion||!Array.isArray(pack.copyIds)||new Set(pack.copyIds).size!==pack.copyIds.length||receipt.cardCount!==pack.copyIds.length||!receipt.product||!pack.product||fingerprint(receipt.product)!==fingerprint(pack.product)||pack.product?.price?.currencyId!==quote.price.currencyId||pack.product.price.amount*quote.quantity!==quote.price.amount)return {quarantine:'LEGACY_DELIVERY_EVIDENCE'};
+        for(const copyId of pack.copyIds){const copy=s.copies[copyId];if(!copy||copy.source?.packId!==pack.id||copy.source?.purchaseId!==result.id||(!pack.openedAt&&(copy.state!=='sealed'||copy.ownerId!==pack.ownerId))||(copy.codeIds??[]).some(codeId=>s.codes?.[codeId]?.copyId!==copyId))return {quarantine:'LEGACY_DELIVERY_EVIDENCE'};}
+      }
+      return {purchase:request.result};
+    }
+    if(settlement){
+      const entries=s.ledger.filter(entry=>entry.userId===terms.userId&&entry.currencyId===quote.price.currencyId);
+      if(entries.slice(entries.indexOf(credits[0])+1).some(entry=>entry.delta<0)||(s.balances[terms.userId]?.[quote.price.currencyId]??0)<quote.price.amount)return {quarantine:'LEGACY_CREDIT_SPENT'};
+      this.#adjust(s,terms.userId,quote.price.currencyId,-quote.price.amount,'external-credit-reversed',row.preparationId);
+      row.legacy.reversedCredit=true;
+    }
+    try{return {snapshot:this.#captureExternalPurchase(s,this.#user(s,{userId:terms.userId}),quote)};}catch(error){return {failure:error.code??'LEGACY_TERMS_UNAVAILABLE'};}
+  }
+  #resolveLegacyPurchase(s,row,purchaseKey){
+    check(Object.hasOwn(s.requests,row.terms.userId+':'+purchaseKey),'LEGACY_RESOLUTION_REJECTED','Existing purchase receipt required',409);
+    const candidate={...row,legacy:{...row.legacy,purchaseKey}},resolution=this.#reconcileLegacyPurchase(s,candidate);
+    check(resolution.purchase,'LEGACY_RESOLUTION_REJECTED','Purchase evidence does not match the paid obligation',409);
+    const terms=row.terms,token=fingerprint({providerId:terms.providerId,transactionId:terms.transactionId}),entries=s.ledger.filter(entry=>entry.userId===terms.userId&&entry.currencyId===terms.quote.price.currencyId);
+    const index=entries.findIndex(entry=>entry.type==='external-credit'&&entry.reference===token),credit=entries[index],debit=entries[index+1],amount=terms.quote.price.amount;
+    check(index>=0&&credit.delta===amount&&credit.balance===amount&&(index===0||entries[index-1].balance===0)&&debit?.type==='purchase'&&debit.reference===resolution.purchase.id&&debit.delta===-amount&&debit.balance===0,'LEGACY_RESOLUTION_REJECTED','Unambiguous credit-funded purchase evidence required',409);
+    return resolution.purchase;
+  }
+  #legacyResolutionCandidate(s,row){
+    const terms=row.terms,token=fingerprint({providerId:terms.providerId,transactionId:terms.transactionId}),entries=s.ledger.filter(entry=>entry.userId===terms.userId&&entry.currencyId===terms.quote.price.currencyId),index=entries.findIndex(entry=>entry.type==='external-credit'&&entry.reference===token),next=entries[index+1];
+    if(index<0||next?.type!=='purchase')return null;
+    const requests=Object.entries(s.requests).filter(([key,request])=>key.startsWith(terms.userId+':')&&request.result?.id===next.reference);
+    if(requests.length!==1)return null;
+    const purchaseKey=requests[0][0].slice(terms.userId.length+1);
+    try{return {purchaseKey,purchase:this.#resolveLegacyPurchase(s,row,purchaseKey)};}catch(error){if(error.code==='LEGACY_RESOLUTION_REJECTED')return null;throw error;}
+  }
   #adjust(s,userId,currencyId,delta,type,reference) {
     const old=s.balances[userId][currencyId]??0, next=old+delta;
     check(Number.isSafeInteger(next),'BALANCE_OVERFLOW','Balance exceeds integer range',409);
@@ -307,7 +457,7 @@ export class CardFramework {
     s.balances[userId][currencyId]=next;
     s.ledger.push({id:id(),userId,currencyId,delta,balance:next,type,reference,at:this.#clock()});
   }
-  wallet(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return clone(s.balances[u.id]);});}
+  wallet(actor) {return this.#query(q=>{const u=this.#queryUser(q,actor);return q.get('balances',u.id);});}
   history(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return s.ledger.filter(e=>e.userId===u.id);});}
   #weighted(pool) {
     const sum=pool.reduce((n,x)=>n+x.weight,0), roll=this.#random(sum);
@@ -349,7 +499,7 @@ export class CardFramework {
       copy.issuedStats=clone(copy.stats);
     }
     copy.provenance={version:1,catalogVersion:c.version,issuedAt:copy.createdAt,definitionDigest:contentDigest(card),variantDigest:contentDigest(variant),...clone(source)};
-    s.copies[copy.id]=copy;allocateCodes(s,copy,variant.codes,this.#clock());
+    s.copies[copy.id]=copy;this.#codes.allocate(s,copy,variant.codes,this.#clock());
     this.#event(s,'card.issued',{copyId:copy.id,ownerId,variantId,provenance:clone(copy.provenance)});return copy;
   }
   quote(actor,{productId,quantity=1}) {
@@ -365,7 +515,7 @@ export class CardFramework {
     });
   }
   #productTime(product){const time=Date.parse(this.#clock());check(!product.availableFrom||time>=Date.parse(product.availableFrom),'NOT_RELEASED','This pack is not available yet',409);check(!product.availableUntil||time<Date.parse(product.availableUntil),'PRODUCT_ENDED','This pack is no longer available',409);}
-  availability(){return this.#store.read(s=>{const c=this.#catalog(s);return {version:c.version,variants:c.variants.map(v=>({id:v.id,issued:s.supply[v.id]??0,remaining:v.supplyLimit===undefined?null:Math.max(0,v.supplyLimit-(s.supply[v.id]??0))})),products:c.products.map(base=>{const p=effectiveProduct(s,base);return {id:p.id,available:p.enabled!==false&&(!p.availableFrom||Date.parse(this.#clock())>=Date.parse(p.availableFrom))&&(!p.availableUntil||Date.parse(this.#clock())<Date.parse(p.availableUntil)),pity:p.pity??null};})};});}
+  availability(){return this.#query(q=>{const s={catalog:q.value('catalog'),supply:q.value('supply'),adminControls:q.value('adminControls')},c=this.#catalog(s);return {version:c.version,variants:c.variants.map(v=>({id:v.id,issued:s.supply[v.id]??0,remaining:v.supplyLimit===undefined?null:Math.max(0,v.supplyLimit-(s.supply[v.id]??0))})),products:c.products.map(base=>{const p=effectiveProduct(s,base);return {id:p.id,available:p.enabled!==false&&(!p.availableFrom||Date.parse(this.#clock())>=Date.parse(p.availableFrom))&&(!p.availableUntil||Date.parse(this.#clock())<Date.parse(p.availableUntil)),pity:p.pity??null};})};});}
   pityProgress(actor){return this.#store.read(s=>{const u=this.#user(s,actor);return s.pity?.[u.id]??{};});}
   purchase(actor,{key,productId,quantity=1,productRevision,catalogVersion,adminRevision:quotedAdminRevision}) {
     integer(quantity,'quantity',1,100);
@@ -414,7 +564,9 @@ export class CardFramework {
     return packs;
   }
   #packView(pack) {const {copyIds,receipt,...view}=clone(pack); return {...view,cardCount:copyIds.length};}
-  packs(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return Object.values(s.packs).filter(p=>p.ownerId===u.id).map(p=>this.#packView(p));});}
+  packs(actor) {return this.#query(q=>{const user=this.#queryUser(q,actor),items=[];let after='';do{const result=q.pagePacks({ownerId:user.id,after,limit:200,sort:'ordinal'});items.push(...result.items.map(pack=>this.#packView(pack)));after=result.next;}while(after);return items;});}
+  packsPage(actor,options={}){return this.#query(q=>{const user=this.#queryUser(q,actor),result=q.pagePacks({...options,ownerId:user.id});return {...result,items:result.items.map(pack=>{check(pack.ownerId===user.id,'INVALID_STATE','Indexed pack ownership differs',500);return this.#packView(pack);})};});}
+  packPage(actor,options={}){return this.packsPage(actor,options);}
   #copyView(s,copy,viewerId) {
     const result=clone(copy);
     const visibility=viewerId===copy.ownerId?'owner':'public',fields=copy.cardPolicy?.fields;
@@ -447,12 +599,12 @@ export class CardFramework {
       return pack.receipt;
     });
   }
-  inventory(actor) {return this.#store.read(s=>{const u=this.#user(s,actor); return Object.values(s.copies).filter(x=>x.ownerId===u.id && x.state==='owned').map(x=>{const reason=this.#tradeReason(x,u.id,s);return {...this.#copyView(s,x,u.id),tradable:!reason,untradableReason:reason};});});}
+  inventory(actor) {return this.#query(q=>{const user=this.#queryUser(q,actor),copies=[];let after='';do{const result=q.pageCopies({ownerId:user.id,after,limit:200,sort:'ordinal'});copies.push(...result.items);after=result.next;}while(after);return this.#inventoryViews(this.#viewState(q,copies,[user.id]),copies,user.id);});}
   inspectCard(actor,copyId) {
-    return this.#store.read(s=>{
-      const user=this.#user(s,actor), copy=s.copies[copyId];
+    return this.#query(q=>{
+      const user=this.#queryUser(q,actor),copy=q.get('copies',copyId);
       check(copy && copy.ownerId===user.id && copy.state==='owned','NOT_FOUND','Owned card not found',404);
-      return this.#copyView(s,copy,user.id);
+      return this.#copyView(this.#viewState(q,[copy],[user.id]),copy,user.id);
     });
   }
   consumeBinding(actor,{key,copyId,namespace}) {
@@ -576,7 +728,7 @@ export class CardFramework {
     const copy=s.copies[copyId]; copy.ownerId=to; copy.acquiredAt=this.#clock(); copy.version++;
     delete copy.lockedBy;
     for(const b of Object.values(copy.bindings)) if(b.transfer==='follow') b.holderId=to;
-    transferCodes(s,copy,from,to,tradeId,this.#clock());
+    this.#codes.transfer(s,copy,from,to,tradeId,this.#clock());
     copy.metadata.transfers??=[]; copy.metadata.transfers.push({from,to,tradeId,at:this.#clock()});
     this.#event(s,'card.transferred',{copyId,from,to,tradeId});
   }

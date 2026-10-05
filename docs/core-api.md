@@ -2,6 +2,8 @@
 
 API version 0.2. All core methods are synchronous, detached-result methods. Browser/HTTP methods are asynchronous. Hosts pass verified server contexts: {userId} for players and {role:'admin'} for operator-only methods. Never derive authority from request body fields. A provider + immutable subject identifies one registered user; display name changes retain inventory. See [content authoring](content-authoring.md), [production operations](production.md) and [generated HTTP contract](openapi.json) for the 0.2 additions.
 
+For a balance owned by another service, use the [external purchase workflow](external-purchases.md). It binds a reviewed quote to one external payment and records either complete delivery or required compensation.
+
 ## Catalog
 
 publishCatalog(operator, manifest) validates and persists a complete JSON catalog. version increases for each publication. Variants, products and recipes can be disabled through enabled:false; published IDs are retained. Card line identity and variant card/rarity/supplyLimit are immutable. Use a new variant ID for another edition. Modified pack products increment revision. Each acquired copy retains its definition/variant snapshot.
@@ -49,19 +51,25 @@ Recipes currently reject all bound input cards to avoid silently destroying an e
 
 Read methods: catalog(), wallet(actor), history(actor), inventory(actor), packs(actor), inspectCard(actor,copyId), albums(actor), viewAlbum(actorOrNull,albumId), publicAlbums(), bindings(actor), events(operator,{after,limit}). Sealed pack lists hide copy IDs and outcomes. Owner inventories contain revealed copies only. Public album views omit owner-only binding data. Serial numbers are per finite variant edition; uncapped copies have null serialNumber/editionTotal.
 
+For bounded reads, use `inventoryPage(actor,options)`, `packsPage(actor,options)` and `collectionSummary(actor,options)`. The `packPage` alias is retained. Pages accept `limit` and an exclusive `after` cursor; normal record pages default to 50 and allow at most 200. Results contain `items`, `total` and `next`. A changed or missing cursor returns `INVALID_CURSOR`; restart the view. Ownership comes from the verified actor.
+
+`collectionSummary` groups revealed copies by variant and returns `items:[{variantId,count,card}]`, `totalCards`, `uniqueCards`, `total` and `next`. Its cursor is a variant ID; `card` is an owner-safe representative copy. Optional `excludeTypes` omits specified card types. Sealed cards do not contribute to these counts. Default collection pages use indexed reads. Legacy free-text inventory search and locale name sorting load that account's matching copies to preserve their existing semantics.
+
+Trusted account services may use `userByIdentity(operator,{provider,subject})` and `providerIdentity(operator,userId)` with `accounts.register`. They return a detached record or `null`; keep immutable provider subjects server-side. Re-registering an unchanged identity performs no state write. `catalogVersion()` returns the active version, or zero before initialization.
+
 ## HTTP adapter
 
 createApiHandler({framework,resolveIdentity,allowedOrigin}) returns an async Node request handler that handles /api/* and returns true, or false for another route. createFrameworkServer wraps it in an HTTP server. resolveIdentity(request) must return a verified {userId} or null, never an unverified client account ID. Public GET catalog/public albums/individual public album can run anonymously. Other routes require identity. POST requires JSON and the exact configured Origin.
 
-No operator endpoints are exposed. Host administrative code owns publication, identity linkage and grants. HTTP responses use stable code,message errors with status 400/401/403/404/409/413/415; unknown internal exceptions are redacted as INTERNAL_ERROR. See openapi.json for command schemas.
+Operator endpoints require a verified host principal with the permissions stated in [the HTTP contract](openapi.json). The [admin panel](admin-panel.md) uses those routes for supported administration tasks. Identity linkage and external payment evidence remain trusted host responsibilities. HTTP errors use stable code,message fields; unknown internal exceptions are redacted as INTERNAL_ERROR.
 
 The browser client exposes corresponding commands, read methods and requestKey(). createCommandRunner({client,storage,namespace}) persists pending commands before dispatch, coalesces repeated clicks, retains key/payload after ambiguous failures, and clears on success or definitive HTTP errors. Use a principal-specific namespace and Web Storage implementation. Without storage, retries survive only within the current client instance. The default app uses sessionStorage. The reveal controller independently retains its opening request key.
 
-The event journal is committed with commands, accessible only to operators, and supports a sequence cursor. It is a polling source; webhook delivery and acknowledgment/retry workers are not implemented.
+The event journal is committed with commands, accessible only to operators, and supports a sequence cursor. [Card actions](card-actions.md) describes durable action delivery and configured event subscriptions.
 
 ## Host contract example
 
-Map your existing verified session to registerUser(operator,{provider:'host',subject:session.immutableSubject,...}). Cache its framework user ID in your host account mapping. Supply that ID from resolveIdentity after verifying the session on every request. Currency issuance uses grants with durable host event IDs. This supports host-controlled issuance into framework wallets; direct spending of an externally authoritative live wallet requires additional integration work.
+Map your existing verified session to registerUser(operator,{provider:'host',subject:session.immutableSubject,...}). Cache its framework user ID in your host account mapping. Supply that ID from resolveIdentity after verifying the session on every request. Currency issuance uses grants with durable host event IDs. Direct spending from an external wallet uses the [external purchase provider contract](external-purchases.md); the host supplies authenticated, durable debit and refund evidence.
 
 
 ## Transfer policy, account actions and commerce
