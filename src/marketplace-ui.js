@@ -1,24 +1,11 @@
-import { el, button, field, select, section } from "./ui-kit.js";
+import { el, button as baseButton, field, select, section } from "./ui-kit.js";
+import {createCommandRunner} from "./client.js";
 
-function commands(client) {
-  const keys = new Map();
-  return async (name, input) => {
-    const token = name + JSON.stringify(input);
-    if (!keys.has(token)) keys.set(token, client.requestKey());
-    try {
-      const result = await client[name]({ ...input, key: keys.get(token) });
-      keys.delete(token);
-      return result;
-    } catch (error) {
-      if (error.status && error.status < 500) keys.delete(token);
-      throw error;
-    }
-  };
-}
 export function renderMarketplace(
   model,
-  { client, cardRenderer, listingRenderer, refresh } = {},
+  { client, cardRenderer, listingRenderer, refresh, mutate, storage } = {},
 ) {
+  const button=(label,callback,...options)=>baseButton(label,(...args)=>{if(disposed)return;return callback(...args)},...options);
   const node = section(
       "Marketplace",
       "Browse upcoming releases, buy reserved stock, or visit player shops.",
@@ -33,16 +20,18 @@ export function renderMarketplace(
     busy = false,
     cursor = null,
     generation = 0;
+  let persistence=storage;
+  if(persistence===undefined)try{persistence=node.ownerDocument.defaultView?.sessionStorage;}catch{}
   const cleanups = [],
     reviewCleanups = [],
-    run = commands(client);
+    run = mutate ?? createCommandRunner({client,storage:persistence,namespace:model.me.userId});
   function clearReview() {
     reviewCleanups.splice(0).forEach((fn) => fn());
     review.replaceChildren();
     review.style.display = "none";
   }
   async function action(fn) {
-    if (busy) return;
+    if (busy || disposed) return;
     busy = true;
     try {
       await fn();
@@ -52,17 +41,20 @@ export function renderMarketplace(
       busy = false;
     }
   }
-  async function purchase(listing) {
+  async function purchase(listing,{newPurchase=false}={}) {
     await action(async () => {
-      const quote = await client.quoteListing({ listingId: listing.id });
+      const original=run.pending?.('buyListing');
+      if(original&&!original._confirmed&&original.listingId!==listing.id)throw new Error('Resolve the original pending purchase before selecting another listing.');
+      if(newPurchase&&original&&!original._confirmed)throw new Error('Recover the original result before starting another purchase.');
+      const quote = !newPurchase&&original ? original : await client.quoteListing({ listingId: listing.id });
       if (disposed) return;
       clearReview();
       review.style.display = "";
       review.replaceChildren(
-        el("h3", "", "Review purchase"),
+        el("h3", "", !newPurchase&&original ? "Retry original purchase" : "Review purchase"),
         el("p", "", quote.price.amount + " " + quote.price.currencyId),
       );
-      for (const item of quote.items) {
+      for (const item of quote.items ?? []) {
         if (item.copy && cardRenderer) {
           const rendered = cardRenderer(item.copy, { interactive: false });
           review.append(rendered.node ?? rendered);
@@ -73,12 +65,13 @@ export function renderMarketplace(
       review.append(
         button("Confirm purchase", () =>
           action(async () => {
-            const order = await run("buyListing", quote);
+            const order = await (newPurchase&&run.beginNew ? run.beginNew("buyListing",quote) : original&&run.recover ? run.recover("buyListing",quote) : run("buyListing", quote));
             if (disposed) return;
             clearReview();
             review.style.display = "";
             review.replaceChildren(
               el("p", "", "Purchase complete · " + order.id),
+              button("New purchase",()=>purchase(listing,{newPurchase:true})),
             );
             if (refresh) await refresh();
             else await load(true);
@@ -168,6 +161,7 @@ export function renderMarketplace(
   }
   const more = button("Load more listings", () => load(false), "dc-quiet");
   async function load(reset) {
+    if(disposed)return;
     const current = ++generation;
     if (reset) {
       cursor = null;
@@ -196,12 +190,13 @@ export function renderMarketplace(
     } catch (error) {
       if (!disposed) status.textContent = error.message;
     } finally {
-      more.disabled = false;
+      if(!disposed)more.disabled = false;
     }
   }
   node.prepend(button("Refresh marketplace", () => load(true), "dc-quiet"));
   node.append(more);
   async function compose() {
+    if(disposed)return;
     try {
       const [shops, settings] = await Promise.all([
         client.shops({ limit: 200 }),
@@ -414,7 +409,10 @@ export function renderMarketplace(
   );
   history.append(orderMore, orders);
   node.append(history);
-  const ready = Promise.all([load(true), compose()]);
+  const ready = Promise.all([load(true), compose()]).then(()=>{
+    if(disposed)return;const original=run.pending?.('buyListing');
+    if(original){status.textContent='A previous purchase needs confirmation. Retry its original terms before buying again.';const retry=button('Retry original purchase',()=>purchase({id:original.listingId}));node.insertBefore(retry,review);}
+  });
   return {
     node,
     ready,
@@ -423,11 +421,13 @@ export function renderMarketplace(
       generation++;
       cleanups.splice(0).forEach((fn) => fn());
       clearReview();
+      if(!mutate)run.dispose();
       node.replaceChildren();
     },
   };
 }
 export function renderFulfillments(model, { client } = {}) {
+  const button=(label,callback,...options)=>baseButton(label,(...args)=>{if(disposed)return;return callback(...args)},...options);
   const node = section(
       "Account rewards",
       "Opening actions are delivered to your account. Pending deliveries retry without opening another pack.",
@@ -458,6 +458,7 @@ export function renderFulfillments(model, { client } = {}) {
     more,
   );
   async function load(reset) {
+    if(disposed)return;
     const current = ++generation;
     if (reset) {
       cursor = null;
@@ -499,7 +500,7 @@ export function renderFulfillments(model, { client } = {}) {
     } catch (error) {
       if (!disposed) status.textContent = error.message;
     } finally {
-      more.disabled = false;
+      if(!disposed)more.disabled = false;
     }
   }
   scope.addEventListener("change", () => load(true));
@@ -516,6 +517,7 @@ export function renderFulfillments(model, { client } = {}) {
 }
 
 export function renderTradingControls(model, { client } = {}) {
+  const button=(label,callback,...options)=>baseButton(label,(...args)=>{if(disposed)return;return callback(...args)},...options);
   const node = section(
       "Trading controls",
       "Deployment policy applies again at completion. Ownership and code restrictions always remain in force.",
@@ -524,6 +526,7 @@ export function renderTradingControls(model, { client } = {}) {
   node.append(status);
   let disposed = false;
   async function load() {
+    if(disposed)return;
     try {
       const current = await client.tradingPolicy();
       if (disposed) return;
@@ -540,6 +543,7 @@ export function renderTradingControls(model, { client } = {}) {
               expectedRevision: current.revision,
               policy: JSON.parse(json.value),
             });
+            if(disposed)return;
             current.revision = result.revision;
             status.textContent = "Trading policy saved.";
           } catch (error) {
@@ -567,7 +571,7 @@ export function renderTradingControls(model, { client } = {}) {
                 ? "Card locked."
                 : "Card lock removed.";
             } catch (error) {
-              status.textContent = error.message;
+              if(!disposed)status.textContent = error.message;
             }
           }),
         );

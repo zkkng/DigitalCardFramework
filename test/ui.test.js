@@ -74,4 +74,13 @@ test('custom views dispose across refresh, navigation and unmount; public inspec
     const inspector=x.mount(renderInspector(x.model.inventory[0]));const stage=inspector.querySelector('.dc-3d-stage');stage.dispatchEvent(new x.window.KeyboardEvent('keydown',{key:'ArrowRight'}));assert.equal(stage.dataset.yaw,'15');click(inspector,'Flip');assert.equal(stage.dataset.yaw,'195');
   }finally{x.close();}});
 
-test('blocked or corrupted browser storage preserves retry keys within a session',async()=>{for(const storage of [{getItem:()=>'{bad',setItem:()=>{throw new Error('quota');}},{getItem:()=>{throw new Error('blocked');},setItem:()=>{throw new Error('blocked');}}]){const keys=[];const runner=createCommandRunner({storage,client:{requestKey:randomUUID,purchase:async input=>{keys.push(input.key);if(keys.length===1)throw new Error('network');return {ok:true};}}});await assert.rejects(runner('purchase',{productId:'pack',quantity:1}));assert.deepEqual(await runner('purchase',{productId:'pack',quantity:1}),{ok:true});assert.equal(keys[0],keys[1]);}});
+test('blocked or corrupted browser storage rejects mutations before any dispatch',async()=>{for(const storage of [{getItem:()=>'{bad',setItem:()=>{throw new Error('quota');}},{getItem:()=>{throw new Error('blocked');},setItem:()=>{throw new Error('blocked');}},undefined]){let calls=0;const runner=createCommandRunner({storage,namespace:'collector',client:{requestKey:randomUUID,purchase:async()=>{calls++;return {ok:true};}}});await assert.rejects(runner('purchase',{productId:'pack',quantity:1}),error=>error.code==='COMMAND_STORAGE_UNAVAILABLE');assert.equal(calls,0);}});
+
+test('the reference conversion control executes a deliberate repeated amount twice',async()=>{
+  const x=setup();let mounted;
+  try{
+    x.client.convert=async input=>x.core.convert(x.alice,input);const before=x.core.wallet(x.alice).credits,root=document.createElement('main');document.body.append(root);mounted=mountFramework(root,{client:x.client,sections:['wallet']});await mounted.ready;
+    for(let n=0;n<2;n++){field(root,'Amount to spend').value='300';root.querySelector('[aria-label="From"]').value='credits';root.querySelector('[aria-label="To"]').value='gems';click(root,'Convert currencies');await settle();}
+    assert.equal(before-x.core.wallet(x.alice).credits,600);assert.equal(x.core.wallet(x.alice).gems,6);
+  }finally{mounted?.dispose();x.close();}
+});

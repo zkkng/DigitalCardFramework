@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRevealController,createCommandRunner,ApiError} from '../src/client.js';
+const memory=()=>{const map=new Map();return {getItem:key=>map.get(key)??null,setItem:(key,value)=>map.set(key,value)};};
 
 test('headless reveal can skip/replay without another opening or changing result',async()=>{
   let calls=0;
@@ -33,29 +34,29 @@ test('durable command survives client recreation and keeps the original purchase
 test('durable runner coalesces double clicks and releases keys after definitive rejection',async()=>{
   let resolve,calls=0,keys=0;
   const client={requestKey:()=>String(++keys),convert:input=>{calls++;return new Promise(r=>resolve=r);}};
-  const run=createCommandRunner({client});
+  const run=createCommandRunner({client,storage:memory(),namespace:'collector'});
   const a=run('convert',{from:'a',to:'b',amount:2}),b=run('convert',{from:'a',to:'b',amount:2});
   assert.equal(a,b);await Promise.resolve();resolve({ok:true});await a;assert.equal(calls,1);
   client.convert=async()=>{throw new ApiError('INSUFFICIENT_FUNDS','no funds',409);};
-  await assert.rejects(run('convert',{from:'a',to:'b',amount:2}));
+  await assert.rejects(run.beginNew('convert',{from:'a',to:'b',amount:2}));
   await assert.rejects(run('convert',{from:'a',to:'b',amount:2}));assert.equal(keys,3);
 });
 
 test('durable runner handles synchronous provider errors without retaining a dead active promise',async()=>{
   let count=0;
-  const run=createCommandRunner({client:{requestKey:()=> 'fixed',convert:()=>{count++;throw new Error('offline');}}});
+  const run=createCommandRunner({storage:memory(),namespace:'collector',client:{requestKey:()=> 'fixed',convert:()=>{count++;throw new Error('offline');}}});
   await assert.rejects(run('convert',{amount:1}));
   await assert.rejects(run('convert',{amount:1}));
   assert.equal(count,2);
 });
 test('storage cleanup failure after a committed command cannot turn success into a duplicate debit',async()=>{
   let stored=null,calls=0,failClear=true;
-  const storage={getItem:()=>stored,setItem:(key,value)=>{if(value==='{}'&&failClear)throw new Error('storage unavailable');stored=value;}};
+  const storage={getItem:()=>stored,setItem:(key,value)=>{if(value.includes('"_confirmed":true')&&failClear)throw new Error('storage unavailable');stored=value;}};
   const inputs=[];
-  const run=createCommandRunner({storage,client:{requestKey:()=> 'stable',purchase:async input=>{calls++;inputs.push(input);return {id:'same-receipt'};}}});
+  const run=createCommandRunner({storage,namespace:'collector',client:{requestKey:()=> 'stable',purchase:async input=>{calls++;inputs.push(input);return {id:'same-receipt'};}}});
   assert.equal((await run('purchase',{productId:'a',quantity:1})).id,'same-receipt');
   failClear=false;
   assert.equal((await run('purchase',{productId:'a',quantity:1})).id,'same-receipt');
   assert.equal(inputs[0].key,inputs[1].key);
-  assert.equal(stored,'{}');
+  assert.equal(Object.values(JSON.parse(stored))[0]._confirmed,true);
 });

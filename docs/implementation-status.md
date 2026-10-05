@@ -10,7 +10,7 @@
 | Rarity/finite editions/1 of 1 | Lifetime supply includes sealed allocations, serials never reused; two-process last-copy tests |
 | Duplicate systems/trade-ups | Optional pack/inventory protection, explicit fallback, configured counts/outputs and rollback |
 | Beautiful replaceable defaults | Card Atelier, runtime sample imagery, full view/renderer/layout replacement, alternate composition and cleanup tests |
-| Custom albums | Private/public, ordered placements, layout JSON, isolated CSS, export/import, optimistic edits and transfer cleanup |
+| Custom albums | Private/public, ordered placements, layout JSON, bounded appearance with historical CSS migration, export/import, optimistic edits and transfer cleanup |
 | Special data/codes | Owner/public bindings, factories and follow/retain/block rules; privacy/local-use tests |
 | Stats/metadata/opener/time/X of Y | Structured data, local schemas, display labels, snapshots and provenance |
 | Visual player trading | Two inventories, drag/drop or Add/Remove, card/currency trays, immutable review, counters and atomic escrow/acceptance |

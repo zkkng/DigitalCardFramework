@@ -19,16 +19,19 @@ export function createAdminController({client,storage,namespace} = {}) {
     catch (error) { if (current === generation) publish({phase:'error',error:errors(error)}); }
   }
   async function users({search = '',after,limit = 30} = {}) {
+    if (disposed) return;
     const current = ++usersGeneration; publish({loadingUsers:true,error:null});
     try { const result = await client.adminUsers({search,after,limit}); if (disposed || current !== usersGeneration) return; publish({loadingUsers:false,users:after ? {...result,items:[...state.users.items,...result.items]} : result}); }
     catch (error) { if (current === usersGeneration) publish({loadingUsers:false,error:errors(error)}); }
   }
   async function person(userId,{after,limit = 50} = {}) {
+    if (disposed) return;
     const current = ++personGeneration; publish({loadingPerson:true,error:null,...(!after ? {person:null} : {})});
     try { const result = await client.adminUser({userId,after,limit}); if (disposed || current !== personGeneration) return; if (after && state.person?.user.id === result.user.id) result.inventory.items = [...state.person.inventory.items,...result.inventory.items]; publish({loadingPerson:false,person:result}); }
     catch (error) { if (current === personGeneration) publish({loadingPerson:false,error:errors(error)}); }
   }
   async function history({search = '',after,limit = 30} = {}) {
+    if (disposed) return;
     const current = ++historyGeneration; publish({loadingHistory:true,error:null});
     try { const result = await client.adminHistory({search,after,limit}); if (disposed || current !== historyGeneration) return; publish({loadingHistory:false,history:after ? {...result,items:[...state.history.items,...result.items]} : result}); }
     catch (error) { if (current === historyGeneration) publish({loadingHistory:false,error:errors(error)}); }
@@ -51,6 +54,7 @@ export function createAdminController({client,storage,namespace} = {}) {
     }
     const operation = pending; publish({phase:'saving',pending:true,error:null,message:''});
     active = Promise.resolve().then(async () => {
+      if(disposed)return null;
       let receipt;
       try { receipt = await client[operation.command](copy(operation.input)); pending = null; persist(operation.input.key); publish({phase:'ready',pending:false,review:null,error:null,message:'Changes saved. They apply to new actions immediately.'}); }
       catch (error) { const definite = Number.isInteger(error.status) && error.status >= 400 && error.status < 500; if (definite) { pending = null; persist(operation.input.key); } publish({phase:'error',pending:!!pending,error:errors(error),message:definite ? '' : 'The result is not confirmed. Retry this same change; it will not run twice.'}); return null; }

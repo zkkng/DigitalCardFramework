@@ -76,7 +76,7 @@ await panel.ready;
 
 The namespace identifies the authenticated operator. The reference uses `renderAdminPanel` as its `admin` view; replace that view or mount the panel independently. Styles are scoped. `requestLeave(callback)` lets a host route guard unsaved changes before navigation.
 
-For custom markup, import `createAdminController` from `@digital-card/framework/admin-client`. It takes `{client,storage,namespace}` and exposes `getState`, `subscribe`, `load`, `users`, `person`, `history`, `stage`, `cancel`, `confirm` and `dispose`. Stage a `configureAdmin` or `administerCards` command with a named target and readable before/after rows, then confirm after review. The raw controller persists only when storage is supplied. Dispose it on unmount.
+For custom markup, import `createAdminController` from `@digital-card/framework/admin-client`. It takes `{client,storage,namespace}` and exposes `getState`, `subscribe`, `load`, `users`, `person`, `history`, `stage`, `cancel`, `confirm` and `dispose`. Stage a `configureAdmin` or `administerCards` command with a named target and readable before/after rows, then confirm after review. The raw controller persists only when storage is supplied. Dispose it on unmount. Disposal is terminal: later load, user/history queries, subscriptions and mutations cannot restart the instance. A queued confirmation disposed before dispatch remains pending for recovery.
 
 The public client exposes `adminOverview`, `adminUsers`, `adminUser`, `adminHistory`, `configureAdmin` and `administerCards`. Reads require `admin.read`, settings `admin.manage`, and inventory changes `admin.cards`. A trusted admin has all three. Advanced mode does not alter authority.
 

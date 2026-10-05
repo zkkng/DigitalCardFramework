@@ -42,11 +42,11 @@ examples/alternate.js provides backRenderer and metadataRenderer using textConte
 
 createRevealController({open,key}) provides getState, subscribe, load, reveal, skip, replay and dispose. States are idle/loading/ready/revealing/complete/error. ready arrives only after the authoritative opening result. revealed is presentation progress. Complete/skip/replay never changes the allocation.
 
-mountOpener(root,{controller,view}) subscribes to that controller. view returns a DOM node, or {node,dispose} for a custom view with external resources. Dispose runs before replacement and unmount. Subscribe returns an unsubscribe function; dispose invalidates outstanding loads. examples/alternate.js renders all results instantly in a host-owned dialog. This does not grant new cards.
+mountOpener(root,{controller,view}) subscribes to that controller. view returns a DOM node, or {node,dispose} for a custom view with external resources. Dispose runs before replacement and unmount. Subscribe returns an unsubscribe function; disposal is terminal and suppresses outstanding loads. Later load, reveal, replay or subscription calls cannot restart that instance. examples/alternate.js renders all results instantly in a host-owned dialog. This does not grant new cards.
 
 ## Replace the album and all CSS
 
-saveAlbum stores layout:{id,columns,gap,...customData} plus ordered placements with per-placement data. The default renderer recognizes columns/gap only. renderAlbum(model,{layouts:{journal:renderer}}) selects a trusted registered layout when layout.id is journal. Alternatively supply albumRenderer to replace the entire album, as the alternate example does.
+saveAlbum stores layout:{id,columns,gap,...customData} plus ordered placements with per-placement data. The default renderer recognizes columns, gap and the bounded appearance fields described below. renderAlbum(model,{layouts:{journal:renderer}}) selects a trusted registered layout when layout.id is journal. Alternatively supply albumRenderer to replace the entire album, as the alternate example does.
 
 A renderer can implement grid, binder pages, horizontal rails, freely positioned cards or another layout using placements/data. CSS belongs to the host; album JSON is data, never executable code. Multiple albums may reference the same owned copy, while one album has one placement per copy.
 
@@ -105,12 +105,26 @@ The bundled `examples/app.js` is an executable public-API composition with colle
 | Odds/pity/windows/recipes | Validated product/recipe data, independent feature switches | Nightfall/sample products; pity/exhaustion/rollback tests |
 | Host deployment | Trusted `HOST_MODULE` exports; `createApiHandler({resolveIdentity,...})`, auth/provider/session/store contracts | Production entrypoint and real-entrypoint integration test |
 
-`createTradeDraft` exposes subscribe/getState/load/more/add/remove/setCurrency/setMessage/review/buildOffer/clear/dispose. Edits clear review. Loads ignore obsolete recipients and late completion after disposal. Built offers include copy versions. Saved drafts contain IDs/intentions, not card snapshots or binding codes. The authoritative server still validates every transfer.
+`createTradeDraft` exposes subscribe/getState/load/more/add/remove/setCurrency/setMessage/review/buildOffer/clear/dispose. Edits clear review. Loads ignore obsolete recipients and late completion after disposal. A disposed draft cannot start reads, clear saved drafts, attach listeners or build an offer. Built offers include copy versions. Saved drafts contain IDs/intentions, not card snapshots or binding codes. The authoritative server still validates every transfer.
 
-`action(fn,{refreshAfter,message})` serializes UI actions, reports errors and refreshes committed models by default. `mutate(command,input)` uses a persisted idempotency key and coalesces identical in-flight intentions. When Web Storage is unavailable, keys survive retries within that mounted session; reload durability then requires host storage/recovery. Never reroll committed results based on presentation completion.
+`action(fn,{refreshAfter,message})` serializes UI actions, reports errors and refreshes committed models by default. `mutate(command,input)` uses a persisted idempotency key and coalesces identical in-flight intentions. Mutations fail before dispatch when Web Storage is missing, blocked or corrupt. Recover the original result before beginning a new identical intention; use `mutate.beginNew` for that deliberate new operation. Account change and unmount dispose the runner. Never reroll committed results based on presentation completion.
 
 `CardFramework({limits})` accepts users/copies/packs/requests/albums/trades/copiesPerUser/packsPerUser positive integer caps. `policies.canTransfer` is a synchronous eligibility veto. Named `bindings` factories synchronously generate copy data before commit. A custom store implements synchronous detached `read(fn)`, atomic `transact(fn)` and `close()`. Async/network work inside a transaction is unsupported.
 
 A production `HOST_MODULE` exports any of bindings, policies, limits, sessionOptions, rateLimits, rateLimiter, identityProvider or handleStatic. `sessionOptions.maxSessions` controls the bounded active session/challenge capacity. `identityProvider.begin()` returns `{url,data}` for the login challenge; `finish(callbackUrl,data)` returns a verified `{issuer,subject,displayName}`. This module is trusted server code. The default OIDC provider and public imports remain separate. `test/host.test.js` supplies an executable fixture module and exercises the real host.
 
 Portable presentation packaging has its own public contract/status. It can be integrated through the card/inspector replacement boundaries after its independent conformance gates pass.
+
+## Album appearance
+
+The default album renderer accepts `layout.appearance` with solid `background`, text `color`, `borderColor`, `padding`, `radius` and `borderWidth`. Colors accept hexadecimal RGB/RGBA, comma-separated integer `rgb()`/`rgba()`, or transparent/black/white/red/green/blue/gray/grey/yellow/orange/purple/pink/brown/navy/teal. RGB channels range from 0 to 255 and alpha from 0 to 1. Padding and radius range from 0 to 100 pixels; border width ranges from 0 to 12 pixels. Omitted properties use the reference styles. Appearance applies to the album grid, without changing ownership or placements.
+
+In the album editor, open **Album appearance & layout JSON**, enter these fields in **Appearance JSON**, then choose **Preview album** and **Save album**. Invalid fields or values prevent saving through this editor. `validateAlbumAppearance` from `@digital-card/framework/ui` supplies the same checks to custom editors.
+
+```json
+{"appearance":{"background":"#142321","color":"white","padding":24,"radius":8,"borderWidth":1,"borderColor":"#477766"}}
+```
+
+Historical `layout.css` is retained as data. The default renderer migrates supported solid colors and bounded pixel declarations from exact `.dc-album` rules; explicit appearance fields override those values. It never inserts historical CSS as a stylesheet. Other selectors, positioning, transforms, URLs, imports and unbounded dimensions are ignored. Saving from the editor writes the normalized appearance and preserves additional layout/placement data. Invalid historical appearance falls back to reference styling.
+
+Each default album uses its own shadow root and a clipped paint boundary. Trusted host `layouts[id]` or `albumRenderer` replacements are privileged application code and are responsible for their own containment and resource cleanup. Imported album data cannot register those replacements.

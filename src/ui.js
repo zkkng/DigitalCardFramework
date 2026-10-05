@@ -2,6 +2,8 @@ import {createCardRenderer} from './presentation/card-view.js';
 const portableRenderers=new Map();
 import {createRevealController,createCommandRunner} from './client.js';
 import {defaultCSS} from './styles.js';
+import {albumAppearance,applyAlbumAppearance} from './album-appearance.js';
+export {albumAppearance,validateAlbumAppearance} from './album-appearance.js';
 import {render3DInspector,renderComparison} from './inspector-ui.js';
 import {renderCollection,renderAlbums} from './collection-ui.js';
 import {renderTrading} from './trading-ui.js';
@@ -101,13 +103,16 @@ export function renderTiltInspector(copy,{cardRenderer=renderCard,metadataRender
   grid.append(card,details);node.append(grid);return node;
 }
 export function renderAlbum(model,{cardRenderer=renderCard,onSelect,layouts={}}={}) {
-  const custom=layouts[model.layout?.id];
+  const custom=Object.hasOwn(layouts,model.layout?.id)?layouts[model.layout.id]:null;
   if(custom) return custom(model,{cardRenderer,onSelect});
   const node=element('div','dc-album');if(model.layout?.id==='panorama')node.classList.add('dc-panorama');
   const columns=Number(model.layout?.columns??3);if(Number.isInteger(columns)&&columns>=1&&columns<=12)node.style.setProperty('--dc-album-columns',String(columns));
   const gap=Number(model.layout?.gap??18);if(Number.isFinite(gap)&&gap>=0&&gap<=100)node.style.setProperty('--dc-album-gap',gap+'px');
   for(const {copy} of model.cards)node.append(cardRenderer(copy,{onSelect}));
-  if(typeof model.layout?.css==='string'&&model.layout.css){const host=element('div','dc-album-host'),shadow=host.attachShadow({mode:'open'}),wrap=element('div','dc-root dc-album-isolated'),style=element('style');style.textContent=defaultCSS+'\n.dc-root.dc-album-isolated{padding:0;border:0;background:transparent;'+themes.map(name=>name+':inherit').join(';')+'}\n'+model.layout.css;wrap.append(node);shadow.append(style,wrap);return host;}return node;
+  const host=element('div','dc-album-host'),shadow=host.attachShadow({mode:'open'}),wrap=element('div','dc-root dc-album-isolated'),style=element('style');
+  Object.assign(host.style,{position:'relative',contain:'layout paint',isolation:'isolate',overflow:'hidden',maxWidth:'100%',minWidth:'0'});
+  style.textContent=defaultCSS+'\n.dc-root.dc-album-isolated{padding:0;border:0;background:transparent;'+themes.map(name=>name+':inherit').join(';')+'}';
+  applyAlbumAppearance(node,albumAppearance(model.layout));wrap.append(node);shadow.append(style,wrap);return host;
 }
 export function mountOpener(root,{controller,cardRenderer=renderCard,view,onSelect}={}) {
   let cleanup;
@@ -153,11 +158,12 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
   const num=n=>Number(n).toLocaleString();
   const closeInspector=()=>inspector.close();
   function inspect(copy) {
+    if(disposed)return;
     inspector.replaceChildren(inspectorRenderer(copy,{cardRenderer:renderer,metadataRenderer,backRenderer,onClose:closeInspector,catalog:model.catalog,
       labels:{line:lineName(copy.lineId),rarity:model.catalog.rarities.find(r=>r.id===copy.rarityId)?.name}}));
     if(!inspector.open)inspector.showModal();
   }
-  function inspectTogether(copies){if(!copies.length)return;inspector.replaceChildren(comparisonRenderer(copies,{cardRenderer:renderer,catalog:model.catalog,onClose:closeInspector}));if(!inspector.open)inspector.showModal();}
+  function inspectTogether(copies){if(disposed||!copies.length)return;inspector.replaceChildren(comparisonRenderer(copies,{cardRenderer:renderer,catalog:model.catalog,onClose:closeInspector}));if(!inspector.open)inspector.showModal();}
   inspector.addEventListener('click',event=>{if(event.target===inspector)inspector.close();});
   const controller=createRevealController({open:input=>mutate('openPack',{packId:input.packId}),key:client.requestKey});
   async function action(fn,{refreshAfter=true,message='Changes saved.'}={}) {
@@ -226,8 +232,18 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
       }
       details.append(element('p','dc-muted','Base rates. Remaining editions and duplicate protection affect eligible cards.'));info.append(details);
       const purchase=element('div','dc-purchase-row'),quantity=field(purchase,'Packs','number','1');quantity.min='1';quantity.max=String(product.maxQuantity);quantity.step='1';
-      const buy=button('',()=>action(async()=>{const quote=await client.quote({productId:product.id,quantity:Number(quantity.value)});if(quote.price.currencyId!==product.price.currencyId||quote.price.amount!==product.price.amount*Number(quantity.value)){await refresh();throw new Error('The pack price changed. Review the updated price before buying.');}const receipt=await mutate('purchase',quote);active='packs';return receipt;},{message:r=>'Purchased '+r.packs.length+' pack'+(r.packs.length===1?'':'s')+'. Choose Open pack to reveal your cards.'}));
-      function update(){const total=product.price.amount*Number(quantity.value),available=model.availability?.products.find(p=>p.id===product.id)?.available!==false;buy.textContent=available?'Buy · '+num(total)+' '+currencyName(product.price.currencyId):'Currently unavailable';buy.disabled=!available||!Number.isInteger(Number(quantity.value))||Number(quantity.value)<1||Number(quantity.value)>product.maxQuantity||total>(model.wallet[product.price.currencyId]??0);}
+      const pendingPurchase=mutate.pending('purchase'),recover=pendingPurchase&&!pendingPurchase._confirmed&&pendingPurchase.productId===product.id;
+      if(recover){quantity.value=String(pendingPurchase.quantity);quantity.disabled=true;}
+      const buy=button('',()=>action(async()=>{
+        const quote=recover?pendingPurchase:await client.quote({productId:product.id,quantity:Number(quantity.value)});
+        if(!recover&&(quote.price.currencyId!==product.price.currencyId||quote.price.amount!==product.price.amount*Number(quantity.value))){await refresh();throw new Error('The pack price changed. Review the updated price before buying.');}
+        const original=mutate.pending('purchase');const receipt=await (!recover&&original?._confirmed?mutate.beginNew('purchase',quote):mutate('purchase',quote));active='packs';return receipt;
+      },{message:r=>'Purchased '+r.packs.length+' pack'+(r.packs.length===1?'':'s')+'. Choose Open pack to reveal your cards.'}));
+      function update(){
+        const total=recover?pendingPurchase.price.amount:product.price.amount*Number(quantity.value),currency=recover?pendingPurchase.price.currencyId:product.price.currencyId,available=model.availability?.products.find(p=>p.id===product.id)?.available!==false;
+        buy.textContent=recover?'Retry original purchase · '+num(total)+' '+currencyName(currency):available?'Buy · '+num(total)+' '+currencyName(currency):'Currently unavailable';
+        buy.disabled=!recover&&(!available||!!pendingPurchase&&!pendingPurchase._confirmed||!Number.isInteger(Number(quantity.value))||Number(quantity.value)<1||Number(quantity.value)>product.maxQuantity||total>(model.wallet[currency]??0));
+      }
       quantity.addEventListener('input',update);update();purchase.append(buy);info.append(purchase);box.append(info);grid.append(box);
     }node.append(grid);return node;
   }
@@ -260,12 +276,13 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
     for(const name of (navigation==='tabs'?[active]:sections)){const view=typeof name==='function'?()=>name(model,{client,inspect,inspectTogether,refresh,mutate,action,navigate,cardRenderer:renderer}):views[name];if(view){const result=view();content.append(result.node??result);if(result.dispose)viewDisposers.push(result.dispose);if(result.requestLeave)viewLeave=result.requestLeave;}}
   }
   async function refresh() {
+    if(disposed)return;
     const generation=++refreshGeneration;
     const [catalog,me,walletData,packData,inventory,albumData,tradeData,availability,pity]=await Promise.all([client.catalog(),client.me(),client.wallet(),client.packs(),client.inventory(),client.albums(),client.trades(),client.availability?.()??null,client.pity?.()??{}]);
     if(disposed||generation!==refreshGeneration)return;
-    if(commandPrincipal!==me.userId){commandPrincipal=me.userId;mutate=createCommandRunner({client,storage:globalThis.sessionStorage,namespace:me.userId});}
+    if(commandPrincipal!==me.userId){mutate?.dispose();commandPrincipal=me.userId;mutate=createCommandRunner({client,namespace:me.userId});}
     model={catalog,me,wallet:walletData,packs:packData,inventory,albums:albumData,trades:tradeData,availability,pity};renderView();
   }
-  const ready=refresh().catch(error=>{status.className='dc-status dc-error';status.textContent=error.message;throw error;});
-  return {ready,refresh,inspect,inspectTogether,dispose(){disposed=true;openerDispose?.();viewDisposers.forEach(fn=>fn());controller.dispose();inspector.close();removeStyles();root.replaceChildren();}};
+  const ready=refresh().catch(error=>{if(disposed)return;status.className='dc-status dc-error';status.textContent=error.message;throw error;});
+  return {ready,refresh,inspect,inspectTogether,dispose(){disposed=true;mutate?.dispose();openerDispose?.();viewDisposers.forEach(fn=>fn());controller.dispose();inspector.close();removeStyles();root.replaceChildren();}};
 }
