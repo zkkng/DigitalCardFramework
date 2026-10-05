@@ -19,7 +19,7 @@ test('encrypted state rejects tampering and wrong keys, backs up consistently, a
   const store=new SQLiteStore(path,{encryptionKey:key});const x=fixture({store});x.open('unique');assert(x.core.audit(admin).ok);assert(store.integrity());
   const backup=join(dir,'backup.sqlite');await store.backup(backup);assert(!readFileSync(backup).includes(Buffer.from('PRIVATE-DEMO-CODE')));assert.throws(()=>new SQLiteStore(path,{encryptionKey:randomBytes(32)}));
   const restored=new SQLiteStore(backup,{encryptionKey:key});assert.deepEqual(restored.read(s=>s),store.read(s=>s));restored.close();x.core.close();
-  const bounded=new SQLiteStore(path,{encryptionKey:key,maxStateBytes:1});const before=bounded.read(s=>s.revision);assert.throws(()=>bounded.transact(s=>s.users={}),e=>e.code==='STORAGE_CAPACITY');assert.equal(bounded.read(s=>s.revision),before);bounded.close();rmSync(dir,{recursive:true});
+  const bounded=new SQLiteStore(path,{encryptionKey:key,maxStateBytes:1});const before=bounded.read(s=>s.revision);assert.throws(()=>bounded.transact(s=>s.additionalData='x'.repeat(1000)),e=>e.code==='STORAGE_CAPACITY');assert.equal(bounded.read(s=>s.revision),before);bounded.close();rmSync(dir,{recursive:true});
 });
 
 test('opaque sessions survive restart, expire, consume login challenges once and hide tokens',()=>{

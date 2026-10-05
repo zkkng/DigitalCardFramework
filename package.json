@@ -26,6 +26,7 @@
     "./auth": "./src/auth.js",
     "./encryption": "./src/encryption.js",
     "./contracts": "./src/contracts.js",
+    "./external-purchase-contracts": "./src/external-purchase-contracts.js",
     "./presentation": "./src/presentation/index.js",
     "./presentation/studio": "./src/presentation/studio.js",
     "./presentation/service": "./src/presentation/service.js",

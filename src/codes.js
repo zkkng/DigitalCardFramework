@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { types } from 'node:util';
 import { check, text, integer, jsonObject } from './catalog.js';
 import { hasPermission } from './access.js';
 import { safeData, page } from './data.js';
@@ -18,11 +19,11 @@ const user = (s, actor) => {
   return s.users[actor.userId];
 };
 function event(s, type, data, at) { s.events.push({ id: randomUUID(), sequence: s.events.length + 1, type, data, at }); }
-function touch(s, row, at, type, actorId, details = {}) {
+function touch(s, row, at, type, actorId, details = {}, emit = event) {
   row.history.push({ type, at, actorId, ...details });
   const copy = s.copies[row.copyId];
   if (copy && copy.ownerId === row.holderId) copy.version++;
-  event(s, type, { codeId: row.id, copyId: row.copyId, actorId, ...details }, at);
+  emit(s, type, { codeId: row.id, copyId: row.copyId, actorId, ...details }, at);
 }
 function held(s, actor, codeId) {
   const u = user(s, actor), row = s.codes?.[codeId], copy = s.copies[row?.copyId];
@@ -60,14 +61,14 @@ export function codeTransferReason(s, copy) {
   }
   return null;
 }
-export function transferCodes(s, copy, from, to, tradeId, at) {
+export function transferCodes(s, copy, from, to, tradeId, at, emit = event) {
   for (const codeId of copy.codeIds ?? []) {
     const row = s.codes[codeId];
     if (row.transfer !== 'follow-unrevealed') continue;
     row.holderId = to;
     row.holderHistory.push(from);
     row.history.push({ type: 'code.transferred', from, to, tradeId, at });
-    event(s, 'code.transferred', { codeId, copyId: copy.id, from, to, tradeId }, at);
+    emit(s, 'code.transferred', { codeId, copyId: copy.id, from, to, tradeId }, at);
   }
 }
 export function codeStockAvailable(s, specs, at) {
@@ -80,7 +81,7 @@ export function codeStockAvailable(s, specs, at) {
   }
   return true;
 }
-export function allocateCodes(s, copy, specs, at, generate) {
+export function allocateCodes(s, copy, specs, at, generate, emit = event) {
   copy.codeIds = [];
   for (const spec of specs ?? []) {
     const pool = s.codePools?.[spec.poolId];
@@ -91,17 +92,18 @@ export function allocateCodes(s, copy, specs, at, generate) {
       attachmentId: spec.id, reveal: spec.reveal, transfer: spec.transfer, title: spec.title ?? pool.name,
       redeemUrl: pool.redeemUrl, instructions: pool.instructions, allocatedAt: at });
     copy.codeIds.push(row.id);
-    touch(s, row, at, 'code.allocated', copy.ownerId);
+    touch(s, row, at, 'code.allocated', copy.ownerId, {}, emit);
   }
 }
 
 /** Uses the same transaction store as pack allocation. No raw codes in projections or retry records. */
 export class CodeService {
-  #store; #vault; #clock; #maxCodes; #maxRequests; #generators;
-  constructor({ store, vault, clock, generators = {}, maxCodes = 50000, maxRequests = 200000 }) {
+  #store; #vault; #clock; #maxCodes; #maxRequests; #generators; #emit;
+  constructor({ store, vault, clock, generators = {}, maxCodes = 50000, maxRequests = 200000, emit = event }) {
     integer(maxCodes, 'code capacity', 1, 1000000); integer(maxRequests, 'code request capacity', 1, 10000000);
     this.#store = store; this.#vault = vault; this.#clock = clock; this.#generators = generators;
-    this.#maxCodes = maxCodes; this.#maxRequests = maxRequests;
+    check(typeof emit === 'function', 'INVALID_INPUT', 'Code event emitter must be a function');
+    this.#maxCodes = maxCodes; this.#maxRequests = maxRequests; this.#emit = emit;
   }
   #keys() { check(this.#vault, 'CODE_KEYS', 'Configure the server code vault first', 503); return this.#vault; }
   #checkVault(s) {
@@ -116,6 +118,50 @@ export class CodeService {
     if (old) { check(old.hash === hash, 'IDEMPOTENCY_CONFLICT', 'Code request key already used', 409); return structuredClone(old.result); }
     check(Object.keys(s.codeRequests).length < this.#maxRequests, 'INSTALLATION_CAPACITY', 'Code request capacity reached', 507);
     const result = fn(); s.codeRequests[token] = { hash, result: structuredClone(result) }; return result;
+  }
+
+  /** Read-only readiness check; it never allocates stock or invokes a generator. */
+  assertAllocationReady(s, specs = [], at, { quantity = 1 } = {}) {
+    integer(quantity, 'code allocation quantity', 1, 1000000);
+    check(Array.isArray(specs), 'INVALID_INPUT', 'Code attachments must be an array');
+    if (!specs.length) return { requiredCodes: 0, generatedCodes: 0 };
+    check(typeof at === 'string' && Number.isFinite(Date.parse(at)), 'INVALID_INPUT', 'Allocation time is required');
+    const vault = this.#keys(), marker = vault.fingerprint({ purpose: 'digital-card-code-index-v1' });
+    check(!s.codeIndexCheck || s.codeIndexCheck === marker, 'CODE_KEYS', 'Code index key does not match stored inventory', 503);
+    const required = new Map();
+    for (const spec of specs) {
+      const count = (required.get(spec?.poolId) ?? 0) + quantity;
+      integer(count, 'required code count', 1, 1000000);
+      required.set(spec?.poolId, count);
+    }
+    let generatedCodes = 0, requiredCodes = 0;
+    for (const [poolId, count] of required) {
+      const pool = s.codePools?.[poolId];
+      check(pool?.enabled, 'CODE_POOL_UNAVAILABLE', 'Code pool is unavailable', 409);
+      requiredCodes += count;
+      if (pool.generator) {
+        const generator = Object.hasOwn(this.#generators, pool.generator) && this.#generators[pool.generator];
+        check(typeof generator === 'function', 'MISSING_CODE_GENERATOR', 'Code generator unavailable', 503);
+        check(!types.isAsyncFunction(generator) && !types.isGeneratorFunction(generator) && !['[object AsyncFunction]', '[object GeneratorFunction]', '[object AsyncGeneratorFunction]'].includes(Object.prototype.toString.call(generator)), 'INVALID_PROVIDER', 'Code generator must return synchronously');
+        generatedCodes += count;
+        continue;
+      }
+      const available = Object.values(s.codes ?? {}).filter(row => row.poolId === poolId && row.status === 'available' && !expired(row, at));
+      check(available.length >= count, 'CODE_STOCK_EXHAUSTED', 'Code pool is exhausted', 409);
+      // Every eligible row can become the next draw after another committed allocation.
+      for (const row of available) {
+        check(row.providerId === pool.providerId, 'CODE_INTEGRITY', 'Code provider does not match its pool', 500);
+        const value = vault.open(row.secret, context(row));
+        check(row.fingerprint === vault.fingerprint({ providerId: row.providerId, code: value }), 'CODE_INTEGRITY', 'Code lookup fingerprint does not match its encrypted value', 500);
+      }
+    }
+    if (generatedCodes) this.assertGeneratedCapacity(s, generatedCodes);
+    return { requiredCodes, generatedCodes };
+  }
+
+  assertGeneratedCapacity(s, count) {
+    integer(count, 'generated code count', 0);
+    check(Object.keys(s.codes ?? {}).length + count <= this.#maxCodes, 'INSTALLATION_CAPACITY', 'Code capacity reached', 507);
   }
 
   allocateGenerated(s, pool, copy, at) {
@@ -138,7 +184,8 @@ export class CodeService {
       reportedUsed:false,redeemedAt:null,revokedAt:null,history:[]};
     row.secret=vault.seal(code,context(row));s.codes[row.id]=row;return row;
   }
-  allocate(s,copy,specs,at) { return allocateCodes(s,copy,specs,at,(pool)=>this.allocateGenerated(s,pool,copy,at)); }
+  allocate(s,copy,specs,at) { return allocateCodes(s,copy,specs,at,(pool)=>this.allocateGenerated(s,pool,copy,at),this.#emit); }
+  transfer(s,copy,from,to,tradeId,at) { return transferCodes(s,copy,from,to,tradeId,at,this.#emit); }
   registrationMaterial(actor,codeId) {
     operator(actor,'codes.manage'); identifier(codeId,'code ID');
     return this.#store.read(s=>{
@@ -169,7 +216,7 @@ export class CodeService {
       check(!old || old.providerId === clean.providerId && old.normalization === clean.normalization && old.generator === clean.generator, 'POOL_IDENTITY', 'Provider, normalization and generator are immutable', 409);
       check(old || Object.keys(s.codePools).length < 1000, 'INSTALLATION_CAPACITY', 'Too many code pools', 507);
       s.codePools[clean.id] = { ...clean, createdAt: old?.createdAt ?? this.#clock() };
-      event(s, 'code.pool-configured', { poolId: clean.id, actorId: actor.userId ?? null }, this.#clock());
+      this.#emit(s, 'code.pool-configured', { poolId: clean.id, actorId: actor.userId ?? null }, this.#clock());
       return s.codePools[clean.id];
     }));
   }
@@ -201,7 +248,7 @@ export class CodeService {
           revealedAt: null, revealedBy: null, reportedUsed: false, redeemedAt: null, revokedAt: null, history: [] };
         row.secret = this.#vault.seal(value, context(row)); s.codes[row.id] = row; ids.push(row.id);
       }
-      event(s, 'code.batch-imported', { batchId, poolId, count: ids.length, actorId: actor.userId ?? null, metadata: jsonObject(metadata) }, at);
+      this.#emit(s, 'code.batch-imported', { batchId, poolId, count: ids.length, actorId: actor.userId ?? null, metadata: jsonObject(metadata) }, at);
       return { batchId, poolId, count: ids.length, ids, importedAt: at };
     }));
   }
@@ -242,7 +289,7 @@ export class CodeService {
       if (!row.revealedAt) check(!expired(row, this.#clock()) && !terminal.has(row.status), 'CODE_UNAVAILABLE', 'Code has expired or is no longer available', 410);
       const code = this.#keys().open(row.secret, context(row));
       this.#once(s, actor.userId, key, 'reveal', { codeId }, () => {
-        if (!row.revealedAt) { row.revealedAt = this.#clock(); row.revealedBy = actor.userId; touch(s, row, row.revealedAt, 'code.revealed', actor.userId); }
+        if (!row.revealedAt) { row.revealedAt = this.#clock(); row.revealedBy = actor.userId; touch(s, row, row.revealedAt, 'code.revealed', actor.userId, {}, this.#emit); }
         return { codeId };
       });
       return { ...codeSummary(s, row, actor.userId, this.#clock()), code };
@@ -254,7 +301,7 @@ export class CodeService {
       const row = held(s, actor, codeId); unlocked(s, row);
       check(row.revealedAt, 'CODE_NOT_REVEALED', 'Reveal the code before reporting usage', 409);
       return this.#once(s, actor.userId, key, 'report', { codeId, used }, () => {
-        row.reportedUsed = used; touch(s, row, this.#clock(), 'code.usage-reported', actor.userId, { used });
+        row.reportedUsed = used; touch(s, row, this.#clock(), 'code.usage-reported', actor.userId, { used }, this.#emit);
         return codeSummary(s, row, actor.userId, this.#clock());
       });
     });
@@ -273,7 +320,7 @@ export class CodeService {
       check(!terminal.has(row.status) || row.status === status, 'CODE_STATE_CONFLICT', 'Conflicting terminal code status requires operator investigation', 409);
       if (row.status !== status) {
         row.status = status; row[status === 'redeemed' ? 'redeemedAt' : 'revokedAt'] = occurredAt;
-        touch(s, row, this.#clock(), 'code.' + status, actor.userId ?? null, { providerId, eventId, occurredAt });
+        touch(s, row, this.#clock(), 'code.' + status, actor.userId ?? null, { providerId, eventId, occurredAt }, this.#emit);
       }
       s.codeConfirmations[token] = { hash, codeId, providerId, eventId, status, occurredAt };
       return { codeId, status: row.status };
@@ -293,7 +340,7 @@ export class CodeService {
       const vault=this.#checkVault(s);
       let count = 0;
       for (const row of Object.values(s.codes ?? {})) { row.secret = vault.seal(vault.open(row.secret, context(row)), context(row)); count++; }
-      event(s, 'code.keys-rotated', { count, actorId: actor.userId ?? null }, this.#clock());
+      this.#emit(s, 'code.keys-rotated', { count, actorId: actor.userId ?? null }, this.#clock());
       return { count };
     });
   }

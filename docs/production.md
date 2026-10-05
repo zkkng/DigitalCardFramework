@@ -42,11 +42,19 @@ The reference app serves an explicit file allowlist with restrictive CSP, no fra
 
 ## Supported capacity
 
-The default production limits are 500 users, 5,000 lifetime allocated copies (including consumed and sealed copies), 2,000 packs, 20,000 durable commands, 2,000 albums and 2,000 trades. A collector can have at most 1,000 non-consumed copies and 500 lifetime packs. The encoded state has a 64 MiB hard cap. Large metadata, snapshots, events and receipts can hit the byte cap earlier. Capacity failures return 507 and roll back the whole transaction. Limits are trusted server configuration, validated as positive integers, and may be changed through `HOST_MODULE` after capacity planning.
+The default production limits are 500 users, 5,000 lifetime allocated copies (including consumed and sealed copies), 2,000 packs, 20,000 durable commands, 2,000 albums and 2,000 trades. A collector can have at most 1,000 non-consumed copies and 500 lifetime packs. Encoded record payloads plus admitted external-purchase completion space have a 64 MiB budget. SQLite pages, indexes, sessions and WAL files need additional disk space. Large metadata, snapshots, events and receipts can hit the payload budget earlier. Capacity failures return 507 and roll back the whole transaction. Limits are trusted server configuration, validated as positive integers, and may be changed through `HOST_MODULE` after capacity planning.
 
-This adapter decodes and rewrites a whole-state document. It preserves correctness across local SQLite writers but does not provide horizontal scaling or high throughput. Use one app instance for the supported deployment, monitor state size, latency, disk space and failures, and plan migration before reaching limits. Durable receipts and event history are preserved; there is no automatic destructive retention or hidden idempotency cutoff. A larger installation needs a normalized storage implementation and a tested migration/recovery process.
+Storage schema 2 persists encrypted entity records and indexed identity, collection, pack and payment queries. Compatibility command callbacks still synchronously materialize the logical state; commits write changed records. Unchanged reads and exact command replays do not rewrite framework state. Use one app instance for this deployment profile, monitor state size, latency, disk space and failures, and plan migration before reaching limits. Durable receipts and event history are preserved; there is no automatic destructive retention or hidden idempotency cutoff. Larger installations need measured asynchronous command and storage contracts before increasing this profile.
 
-`node tools/benchmark.js` creates isolated temporary encrypted state, seeds 5 users/5,000 copies and exercises read/write/trade paths. On 1 October 2026, Node 24.19 on an AMD Ryzen 7 9800X3D Windows machine produced 18,009,896 plaintext state bytes: inventory p95 95.65 ms, 200-card trade page p95 106.72 ms, preferences write p95 294.33 ms, trade proposal p95 253.98 ms, cancellation p95 253.97 ms. These serial measurements describe this fixture and machine; they are not a concurrency guarantee or service SLA. The final integrity audit passed.
+`node tools/benchmark.js` creates isolated temporary encrypted state, seeds 5 users/5,000 copies and exercises read/write/trade paths. Measure on your deployment hardware and include concurrent traffic and provider delays. Serial fixture timings do not establish a service SLA.
+
+## Upgrade the state schema
+
+Stop writers and take a verified backup with its matching encryption keys using the current application's tools. Opening a supported schema-1 framework database with writable `SQLiteStore` migrates it atomically to schema 2, preserving the logical records and co-located authentication sessions. The migration does not change card, pack, code or receipt identities. Read-only opens cannot migrate. An unsupported newer schema or incorrect encryption key is refused before framework schema changes.
+
+Startup inspects a protected temporary copy of the database and its recovery files before opening the authoritative source. Provide temporary disk space for those copies. Successful SQLite readers may update shared-memory coordination files. Identity and private map lookup keys are blinded; operational card/pack/code IDs and the names and states needed by indexed collection queries remain visible in indexes. Encryption protects record contents; restrict access to the entire database directory and its sidecars.
+
+Retain the old database and application revision for rollback. Older applications cannot open schema 2. Roll back only before the upgraded service accepts new activity; otherwise preserve its current state and repair or migrate forward. Verify integrity, an existing collector's cards, administrator access and any pending external purchases before resuming traffic. A state schema upgrade does not reconcile a host's payment journal or external wallet; follow that adapter's recovery procedure too.
 
 ## Backup, restore and encryption rotation
 
@@ -56,7 +64,13 @@ Take online backups using the SQLite backup API, with the same key configuration
 node --env-file=.env tools/backup.js data/production.sqlite backups/cards-2026-10-01.sqlite
 ```
 
-The destination must be new. The tool verifies SQLite integrity and framework supply, ownership, escrow, album and ledger invariants in both source and restored backup. It includes durable authentication sessions. Store backups and encryption keys separately, restrict access and exercise restores on isolated paths. Avoid copying a live database file without its WAL protocol.
+For a stopped-writer backup before an upgrade, stop the service and append `--stopped`. This preserves the source files and storage schema in the backup artifact, including a schema-1 database needed by an older application:
+
+```sh
+node --env-file=.env tools/backup.js data/production.sqlite backups/cards-before-upgrade.sqlite --stopped
+```
+
+The destination must be new. The tool captures a consistent SQLite snapshot and verifies its integrity and framework supply, ownership, escrow, album and ledger invariants in a separate validation copy. It includes durable authentication sessions. Store backups and encryption keys separately, restrict access and exercise restores on isolated paths. Avoid copying a live database file without its WAL protocol.
 
 To restore, stop the service, preserve the damaged/current database and its SQLite sidecars, place the verified backup at a new configured `DATABASE_PATH`, provide its matching key, then start. Startup performs integrity checks. Restore the service and run a collector sign-in and a synthetic transaction before accepting normal traffic. Recovery rolls state back to the backup; reconcile any external systems separately.
 
@@ -94,6 +108,6 @@ Minute-based maintenance expires listings and draws due raffles, in addition to 
 
 ## Idle maintenance and transaction results
 
-When preflight finds no due work, action dispatch and listing-expiry cycles return without committing framework-state transactions. A competing worker can consume work between preflight and the transaction; that serialized recheck remains safe but can still commit an empty transaction in the current adapter. Due work is rechecked inside the serialized transaction before it is claimed or expired. This reduces idle document rewrites; reads still decode the current whole-state representation, and relational storage remains necessary for larger lifetime datasets.
+When preflight finds no due work, action dispatch and listing-expiry cycles return without committing framework-state changes. A competing worker can consume work between preflight and the transaction; the serialized recheck remains safe. Due work is checked again before it is claimed or expired. The adapter suppresses unchanged record writes. Legacy command callbacks and unconverted reads still materialize their logical state; indexed queries serve the converted collection and identity paths.
 
 Store callbacks must return a structured-cloneable synchronous value. Return-value validation occurs before commit; unsupported results and asynchronous callbacks leave state unchanged. Keep callbacks free of external effects.

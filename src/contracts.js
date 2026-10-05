@@ -1,5 +1,6 @@
 import {policyDefinitions} from "./card-policy-schema.js";
 import {adminDefinitions} from './admin-schema.js';
+import {externalPurchaseDefinitions} from './external-purchase-contracts.js';
 // Source for the generated HTTP contract.
 export const openapi = {
   "openapi": "3.1.0",
@@ -1658,6 +1659,7 @@ Object.assign(openapi.paths,{
  "/operator/copy-stats":route("post","updateCopyStats",{type:"object",properties:{copyId:str,version:{type:"integer"}}},{requestSchema:ref("CardCopyStats"),description:"Requires card-stats.provide; admin-source fields additionally require card-policies.manage. Uses the copy's pinned schema and preserves issuedStats."})
 });
 Object.assign(schemas,adminDefinitions);
+Object.assign(schemas,externalPurchaseDefinitions('#/components/schemas/'));
 schemas.Purchase.properties.adminRevision={type:'integer',minimum:0,default:0,description:'Administration revision from the reviewed quote. Stale prices or odds require a new quote.'};
 schemas.Quote.properties.adminRevision={type:'integer',minimum:0};
 Object.assign(openapi.paths,{
