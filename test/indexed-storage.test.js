@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {randomBytes,createHash} from 'node:crypto';
+import {randomBytes,createHash,createHmac} from 'node:crypto';
 import {mkdtempSync,rmSync,readFileSync,readdirSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -13,6 +13,7 @@ import {createStateCodec} from '../src/encryption.js';
 import {SessionStore} from '../src/auth.js';
 import {fixture,admin} from './helpers.js';
 import {page} from '../src/data.js';
+import {codesFixture} from './codes-fixtures.mjs';
 
 const moduleUrl=new URL('../src/sqlite.js',import.meta.url).href;
 function directory(t,cleanup=()=>{}){const dir=mkdtempSync(join(tmpdir(),'digital-card-indexed-'));t.after(()=>{cleanup();assert(dir.startsWith(join(tmpdir(),'digital-card-indexed-')));rmSync(dir,{recursive:true,force:true});});return dir;}
@@ -22,11 +23,48 @@ const durableFiles=dir=>Object.fromEntries(Object.entries(files(dir)).filter(([n
 function legacy(path,state,key){const db=new DatabaseSync(path);try{db.exec('CREATE TABLE framework_state(id INTEGER PRIMARY KEY CHECK(id=1),schema_version INTEGER NOT NULL,body TEXT NOT NULL);');db.prepare('INSERT INTO framework_state VALUES(1,1,?)').run(createStateCodec(key).encode(state));}finally{db.close();}}
 function populated(){const state=initialState();state.revision=17;state.users.u1={id:'u1',provider:'private-provider',subject:'private-subject',displayName:'private-display',email:'private-email',name:'private-alias'};state.balances.u1={points:42};state.codes={c1:{id:'c1',holderId:'u1',status:'assigned',encrypted:{keyId:'stable-key',material:'private-code'}}};state.requests.r1={result:{codeId:'c1'},requestHash:'stable-request'};state.events=[{id:'e1',type:'retained',at:'2026-01-01',data:{private:'private-event'}}];state.adminControls={users:{u1:{roles:['operator']}}};return state;}
 
+test('schema 2 holder migration preserves ciphertext, state and history through failure and restart',t=>{
+  const dir=directory(t),path=join(dir,'schema2.sqlite'),key=randomBytes(32),codec=createStateCodec(key);
+  const x=codesFixture({store:new SQLiteStore(path,{encryptionKey:key}),transfer:'follow-unrevealed'});
+  const copy=x.openCode(),offer=x.core.proposeTrade(x.alice,{key:'transfer',toUserId:x.bob.userId,give:{copyIds:[copy.id],currencies:[]},receive:{copyIds:[],currencies:[]}});
+  x.core.acceptTrade(x.bob,{key:'accept',tradeId:offer.id});
+  const logical=x.store.read(s=>s),expected=x.core.codeHistory(x.alice);x.core.close();
+  const old=new DatabaseSync(path);
+  old.exec('DROP TABLE framework_code_holders; PRAGMA user_version=2; CREATE TABLE authentication_sentinel(id TEXT PRIMARY KEY,value TEXT);');
+  old.prepare('INSERT INTO authentication_sentinel VALUES(?,?)').run('session','retained');
+  old.prepare('UPDATE framework_meta SET schema_version=2,codec_check=?').run(codec.encode({format:'digital-card.indexed-state',version:2,recordKeys:'blind-v1'}));
+  const payloads=old.prepare('SELECT collection,entity_key,payload FROM framework_entities ORDER BY collection,entity_key').all();old.close();
+  const before=files(dir);assert.throws(()=>new SQLiteStore(path,{encryptionKey:randomBytes(32)}));assert.deepEqual(files(dir),before);
+  assert.throws(()=>new SQLiteStore(path,{encryptionKey:key,readOnly:true}),/migration requires writable/);
+  for(const stage of ['before-schema','after-records','before-commit']){
+    assert.throws(()=>new SQLiteStore(path,{encryptionKey:key,onMigration:event=>{assert.equal(event.from,2);assert.equal(event.to,3);if(event.stage===stage)throw Error('interrupted projection migration');}}),/interrupted projection migration/);
+    const stopped=new DatabaseSync(path,{readOnly:true});
+    assert.equal(stopped.prepare('PRAGMA user_version').get().user_version,2);
+    assert.equal(stopped.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='framework_code_holders'").get().n,0);
+    assert.deepEqual(stopped.prepare('SELECT collection,entity_key,payload FROM framework_entities ORDER BY collection,entity_key').all(),payloads);stopped.close();
+  }
+  const current=new SQLiteStore(path,{encryptionKey:key});assert.deepEqual(current.read(s=>s),logical);
+  assert.equal(current.query(q=>q.codeHistoryEntries(x.alice.userId)).length,expected.total);current.close();
+  const raw=new DatabaseSync(path,{readOnly:true});
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version,3);
+  assert.deepEqual(raw.prepare('SELECT collection,entity_key,payload FROM framework_entities ORDER BY collection,entity_key').all(),payloads);
+  assert.equal(raw.prepare('SELECT value FROM authentication_sentinel').get().value,'retained');
+  const hashes=raw.prepare('SELECT holder_hash FROM framework_code_holders').all();assert(hashes.length===2&&hashes.every(row=>/^[a-f0-9]{64}$/.test(row.holder_hash)));
+  const plan=raw.prepare("EXPLAIN QUERY PLAN SELECT code_id FROM framework_code_holders WHERE holder_hash=?").all(hashes[0].holder_hash);
+  assert(plan.some(row=>/SEARCH.*holder_hash/.test(row.detail)));raw.close();
+  const reopened=new SQLiteStore(path,{encryptionKey:key,readOnly:true});assert.deepEqual(reopened.read(s=>s),logical);reopened.close();
+  const tamper=new DatabaseSync(path);
+  const forged=createHmac('sha256',key).update(JSON.stringify(['digital-card.record-key.v1','code-holder','unrelated'])).digest('hex');
+  tamper.prepare('UPDATE framework_code_holders SET holder_hash=? WHERE holder_hash=?').run(forged,hashes[0].holder_hash);tamper.close();
+  const damaged=new SQLiteStore(path,{encryptionKey:key});
+  assert.throws(()=>damaged.query(q=>q.codeHistoryEntries('unrelated')),error=>error.code==='INVALID_STATE');damaged.close();
+});
+
 test('ordered legacy migration preserves logical state, encrypted material and stable identifiers',t=>{
   const dir=directory(t),path=join(dir,'legacy.sqlite'),key=randomBytes(32),state=populated(),stages=[];legacy(path,state,key);
   const store=new SQLiteStore(path,{encryptionKey:key,onMigration:event=>stages.push(event.stage)});
   assert.deepEqual(store.read(s=>s),state);assert.deepEqual(stages,['before-schema','after-records','before-commit']);assert.equal(store.query(q=>q.userByIdentity('private-provider','private-subject')).id,'u1');store.close();
-  const db=new DatabaseSync(path,{readOnly:true});assert.equal(db.prepare('PRAGMA user_version').get().user_version,2);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='framework_state'").get().n,0);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM framework_entities WHERE collection='codes'").get().n,1);db.close();
+  const db=new DatabaseSync(path,{readOnly:true});assert.equal(db.prepare('PRAGMA user_version').get().user_version,3);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='framework_state'").get().n,0);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM framework_entities WHERE collection='codes'").get().n,1);db.close();
   const bytes=Buffer.concat(Object.keys(files(dir)).map(name=>readFileSync(join(dir,name))));for(const secret of ['private-provider','private-subject','private-display','private-email','private-alias','private-code','private-event'])assert(!bytes.includes(Buffer.from(secret)),secret+' must remain encrypted');
   const reopened=new SQLiteStore(path,{encryptionKey:key,readOnly:true});assert.deepEqual(reopened.read(s=>s),state);assert.throws(()=>reopened.transact(()=>{}),/read-only/);reopened.close();
 });

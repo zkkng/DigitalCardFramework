@@ -88,6 +88,13 @@ export function memoryQueries(state) {
   };
   return {
     get,
+    codeHistoryEntries(holderId) {
+      check(typeof holderId==='string','INVALID_INPUT','Invalid holder identifier');
+      return Object.values(state.codes??{}).filter(row=>row.holderId===holderId||(row.holderHistory??[]).includes(holderId)).flatMap(code=>{
+        const copy=state.copies[code.copyId];
+        return copy&&copy.state!=='sealed'?structuredClone([{code,copy}]):[];
+      });
+    },
     value: field => structuredClone(state[field]),
     records(field, {ids}) {
       check(Array.isArray(ids) && ids.length <= 2000 && ids.every(id => typeof id === 'string'), 'INVALID_INPUT', 'Invalid record identifiers');

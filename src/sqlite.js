@@ -8,25 +8,25 @@ import {createStateCodec} from './encryption.js';
 import {FrameworkError} from './catalog.js';
 import {initialState} from './store.js';
 import {cloneResult,completionBytes,querySnapshot} from './storage-query.js';
-import {STORAGE_SCHEMA,schemaSql,encodeState,readState,writeDifference,sqliteQueries} from './indexed-storage.js';
+import {STORAGE_SCHEMA,schemaSql,schemaSqlV2,codeHolderSchemaSql,migrateCodeHolders,encodeState,readState,writeDifference,sqliteQueries} from './indexed-storage.js';
 
 const emptyRecords=()=>({fields:new Map(),entities:new Map(),usedBytes:0});
 const marker={format:'digital-card.indexed-state',version:STORAGE_SCHEMA,recordKeys:'blind-v1'};
-let expectedSchema;
+const expectedSchemas=new Map();
 const schemaEntries=db=>db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().filter(row=>row.name.startsWith('framework_')||row.tbl_name.startsWith('framework_')).map(row=>({...row,sql:row.sql?.replace(/\s+/g,' ').trim()}));
-function validateSchema(db) {
-  if(!expectedSchema){const model=new DatabaseSync(':memory:');try{model.exec(schemaSql);expectedSchema=schemaEntries(model);}finally{model.close();}}
-  if(!isDeepStrictEqual(schemaEntries(db),expectedSchema))throw new Error('Database schema does not match its declared version');
+function validateSchema(db,storageVersion) {
+  if(!expectedSchemas.has(storageVersion)){const model=new DatabaseSync(':memory:');try{model.exec(storageVersion===2?schemaSqlV2:schemaSql);expectedSchemas.set(storageVersion,schemaEntries(model));}finally{model.close();}}
+  if(!isDeepStrictEqual(schemaEntries(db),expectedSchemas.get(storageVersion)))throw new Error('Database schema does not match its declared version');
 }
 function version(db) {
   const pragma=db.prepare('PRAGMA user_version').get().user_version;
   if(pragma>STORAGE_SCHEMA)throw new Error('Unsupported database schema version');
   const tables=new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name));
   if(tables.has('framework_meta')){
-    validateSchema(db);
     const row=db.prepare('SELECT schema_version,codec_check FROM framework_meta WHERE id=1').get();
-    if(!row||row.schema_version!==STORAGE_SCHEMA||pragma!==STORAGE_SCHEMA||tables.has('framework_state'))throw new Error('Unsupported database schema version');
-    return {version:STORAGE_SCHEMA,check:row.codec_check};
+    if(!row||![2,STORAGE_SCHEMA].includes(row.schema_version)||pragma!==row.schema_version||tables.has('framework_state'))throw new Error('Unsupported database schema version');
+    validateSchema(db,row.schema_version);
+    return {version:row.schema_version,check:row.codec_check};
   }
   if(tables.has('framework_state')){
     const fields=db.prepare('PRAGMA table_info(framework_state)').all().map(({name,type,pk})=>({name,type,pk}));
@@ -86,14 +86,21 @@ export class SQLiteStore {
       try {
         const found=version(this.#db);this.#authenticate(found);
         if(found.version!==STORAGE_SCHEMA){
-          const state=found.version===1?this.#codec.decode(found.body):initialState();
+          const state=found.version===2?readState(this.#db,this.#codec,this.#recordKey):found.version===1?this.#codec.decode(found.body):initialState();
           if(onMigration)cloneResult(onMigration({from:found.version,to:STORAGE_SCHEMA,stage:'before-schema'}));
-          this.#db.exec(schemaSql);
-          this.#db.prepare('INSERT INTO framework_meta VALUES(1,?,?)').run(STORAGE_SCHEMA,this.#codec.encode(marker));
-          writeDifference(this.#db,emptyRecords(),encodeState(state,this.#codec,this.#identity,this.#recordKey));
+          const encoded=encodeState(state,this.#codec,this.#identity,this.#recordKey);
+          if(found.version===2){
+            this.#db.exec(codeHolderSchemaSql);
+            migrateCodeHolders(this.#db,encoded);
+            this.#db.prepare('UPDATE framework_meta SET schema_version=?,codec_check=? WHERE id=1').run(STORAGE_SCHEMA,this.#codec.encode(marker));
+          }else{
+            this.#db.exec(schemaSql);
+            this.#db.prepare('INSERT INTO framework_meta VALUES(1,?,?)').run(STORAGE_SCHEMA,this.#codec.encode(marker));
+            writeDifference(this.#db,emptyRecords(),encoded);
+          }
           if(onMigration)cloneResult(onMigration({from:found.version,to:STORAGE_SCHEMA,stage:'after-records'}));
           if(found.version===1)this.#db.exec('DROP TABLE framework_state');
-          this.#db.exec('PRAGMA user_version=2');
+          this.#db.exec(`PRAGMA user_version=${STORAGE_SCHEMA}`);
           if(onMigration)cloneResult(onMigration({from:found.version,to:STORAGE_SCHEMA,stage:'before-commit'}));
         }
         this.#db.exec('COMMIT');
@@ -103,7 +110,7 @@ export class SQLiteStore {
   }
   #authenticate(found) {
     if(found.version===1){const state=this.#codec.decode(found.body);if(state?.schemaVersion!==1)throw new Error('Unsupported logical state schema');}
-    if(found.version===STORAGE_SCHEMA&&!isDeepStrictEqual(this.#codec.decode(found.check),marker))throw new Error('Invalid database encryption marker');
+    if(found.version>=2&&!isDeepStrictEqual(this.#codec.decode(found.check),{...marker,version:found.version}))throw new Error('Invalid database encryption marker');
   }
   #snapshot(fn) {
     if(this.#active)throw new Error('Nested storage operations are unsupported');
