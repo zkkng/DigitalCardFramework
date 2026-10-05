@@ -133,7 +133,9 @@ export function sqliteQueries(db,codec,identityHash,keyHash,onDecode=()=>{}) {
     if(options.search){where.push('instr(search_text,?)>0');args.push(options.search);}
     const predicate=where.join(' AND '),total=db.prepare('SELECT COUNT(*) AS count FROM framework_entities WHERE '+predicate).get(...args).count;
     const order=options.sort==='newest'?'created_at DESC,entity_key':options.sort==='name'?'name_sort,entity_key':options.sort==='ordinal'?'ordinal,entity_key':'entity_key';
-    if(options.after){
+    if(options.after&&collection==='externalPurchases'&&options.sort==='id'){
+      where.push('entity_key>?');args.push(options.after);
+    }else if(options.after){
       const cursor=db.prepare('SELECT entity_key,created_at,name_sort,ordinal FROM framework_entities WHERE '+predicate+' AND entity_key=?').get(...args,options.after);
       check(cursor,'INVALID_CURSOR','Cursor no longer exists; restart this view',409);
       if(options.sort==='id'){where.push('entity_key>?');args.push(cursor.entity_key);}
