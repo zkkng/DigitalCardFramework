@@ -1662,6 +1662,28 @@ Object.assign(schemas,adminDefinitions);
 Object.assign(schemas,externalPurchaseDefinitions('#/components/schemas/'));
 schemas.Purchase.properties.adminRevision={type:'integer',minimum:0,default:0,description:'Administration revision from the reviewed quote. Stale prices or odds require a new quote.'};
 schemas.Quote.properties.adminRevision={type:'integer',minimum:0};
+
+// Acquisition responses expose public pack views, never their sealed copy IDs.
+const safeInteger={type:'integer',minimum:0,maximum:Number.MAX_SAFE_INTEGER};
+schemas.Money={type:'object',additionalProperties:false,required:['currencyId','amount'],properties:{currencyId:str,amount:{...safeInteger,minimum:1}}};
+schemas.PackView={type:'object',required:['id','ownerId','productId','productRevision','lineId','catalogVersion','product','purchaseId','batchIndex','metadata','createdAt','openedAt','cardCount'],properties:{id:str,ownerId:str,productId:str,productRevision:{...safeInteger,minimum:1},lineId:str,catalogVersion:{...safeInteger,minimum:1},product:{type:'object'},purchaseId:{type:['string','null']},batchIndex:safeInteger,metadata:{type:'object'},createdAt:{type:'string',format:'date-time'},openedAt:{type:['string','null'],format:'date-time'},cardCount:safeInteger},not:{anyOf:[{required:['copyIds']},{required:['receipt']}]}};
+schemas.PurchaseResult={type:'object',additionalProperties:false,required:['id','packs','paid'],properties:{id:str,packs:{type:'array',items:ref('PackView'),minItems:1,maxItems:100},paid:ref('Money')}};
+schemas.Quote.additionalProperties=false;
+schemas.Quote.required.push('adminRevision');
+schemas.Quote.properties.quantity.maximum=100;
+schemas.Quote.properties.adminRevision.maximum=Number.MAX_SAFE_INTEGER;
+schemas.Quote.properties.price=ref('Money');
+schemas.QuoteRequest.additionalProperties=false;
+schemas.Open.additionalProperties=false;
+schemas.Purchase.additionalProperties=false;
+schemas.Purchase.properties.price=ref('Money');
+schemas.Purchase.properties.adminRevision.maximum=Number.MAX_SAFE_INTEGER;
+schemas.Error.additionalProperties=false;
+schemas.ReviewedTradeCommand={...schemas.TradeCommand,additionalProperties:false,required:['key','tradeId','expectedDigest'],properties:{...schemas.TradeCommand.properties,expectedDigest:{type:'string',pattern:'^[a-f0-9]{64}$'}}};
+schemas.CounterTrade.required.push('expectedDigest');
+schemas.CounterTrade.properties.expectedDigest={type:'string',pattern:'^[a-f0-9]{64}$'};
+openapi.paths['/trades/accept'].post.requestBody.content['application/json'].schema=ref('ReviewedTradeCommand');
+openapi.paths['/purchase'].post.responses['200'].content['application/json'].schema=ref('PurchaseResult');
 Object.assign(openapi.paths,{
   '/operator/admin':route('get','adminOverview',ref('AdminOverview'),{description:'Requires admin.read. Effective administration overview with existing host and catalog constraints.'}),
   '/operator/admin/users':route('get','adminUsers',ref('Page'),{parameters:pageParameters,description:'Requires admin.read. Bounded search without identity-provider subjects or credentials.'}),
@@ -1670,3 +1692,7 @@ Object.assign(openapi.paths,{
   '/operator/admin/settings':route('post','configureAdmin',ref('AdminMutation'),{requestSchema:ref('AdminSettingsCommand'),description:'Requires admin.manage. Partial settings update, with a current admin revision, durable retry identity and recorded reason.'}),
   '/operator/admin/cards':route('post','administerCards',ref('AdminMutation'),{requestSchema:ref('AdminCardsCommand'),description:'Requires admin.cards. Grant finite-supply copies or remove available owned copies; reserved and sealed copies cannot be removed. History is retained.'})
 });
+// All documented failure statuses use the same JSON envelope.
+for(const item of Object.values(openapi.paths))for(const operation of Object.values(item)){
+  for(const [status,response]of Object.entries(operation.responses??{}))if(Number(status)>=400)response.content={'application/json':{schema:ref('Error')}};
+}

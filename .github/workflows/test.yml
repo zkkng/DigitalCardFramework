@@ -17,7 +17,11 @@ jobs:
           version: '11.19.0'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir src/presentation install --frozen-lockfile
+      - run: pnpm test:sdk
       - run: node --test test/*.test.js
+        env:
+          DC_TEST_PYTHON_PLUGIN: '1'
+          PYTHON: python3
       - run: node docs/complex-cards/check-examples.mjs
       - run: pnpm audit --prod
       - run: pnpm --dir src/presentation audit --prod

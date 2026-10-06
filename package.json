@@ -13,6 +13,17 @@
     "./sqlite": "./src/sqlite.js",
     "./ui": "./src/ui.js",
     "./client": "./src/client.js",
+    "./wire-client": {
+      "types": "./src/wire-client.d.ts",
+      "default": "./src/wire-client.js"
+    },
+    "./wire-contracts": {
+      "types": "./src/wire-contracts.d.ts",
+      "default": "./src/wire-contracts.js"
+    },
+    "./wire-types": {
+      "types": "./src/wire-types.d.ts"
+    },
     "./admin-client": "./src/admin-client.js",
     "./admin-ui": "./src/admin-ui.js",
     "./http": "./src/http.js",
@@ -72,7 +83,8 @@
     "test": "node --test test/*.test.js",
     "start": "node examples/server.js",
     "production": "node --env-file=.env host/server.js",
-    "contract": "node tools/generate-openapi.js",
+    "contract": "node tools/generate-openapi.js && node tools/generate-wire-types.mjs && node tools/generate-wire-validators.mjs",
+    "test:sdk": "node tools/check-sdk-types.mjs",
     "test:browser": "node test/presentation-audit-browser.mjs",
     "test:spec": "node docs/complex-cards/check-examples.mjs",
     "test:coverage": "node --experimental-test-coverage --test test/*.test.js",
@@ -90,6 +102,7 @@
   "packageManager": "pnpm@11.19.0",
   "devDependencies": {
     "happy-dom": "20.14.5",
-    "playwright": "1.62.1"
+    "playwright": "1.62.1",
+    "typescript": "7.0.2"
   }
 }
