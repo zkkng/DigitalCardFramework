@@ -5,9 +5,37 @@ import {
   imagePackage,
 } from "../src/presentation/authoring.js";
 import { importPackage } from "../src/presentation/package.js";
-import { pngRGBA } from "./presentation-fixtures.mjs";
+import { pngRGBA, fixture as presentationFixture, build } from "./presentation-fixtures.mjs";
 import { fixture, admin } from "./helpers.js";
 import { validateCatalog } from "../src/index.js";
+import { createProject } from "../src/presentation/project.js";
+import { addStatBlock, configureAuthoring, setStat } from "../src/presentation/authoring-tools.js";
+import { textValue } from "../src/presentation/text.js";
+
+test("stat blocks resolve explicit scopes and reject ambiguous or private fields before editing", async () => {
+  const project = createProject(await build(presentationFixture()));
+  configureAuthoring(project, { policy: { defaults: {}, fields: [
+    { key: "score", label: "Card score", type: "integer", scope: "card" },
+    { key: "score", label: "Variant score", type: "integer", scope: "variant" },
+    { key: "secret", label: "Private score", type: "integer", visibility: "owner" },
+  ] } });
+  setStat(project, "score", 0, "card");
+  setStat(project, "score", 57, "variant");
+  const original = project.serialize();
+  assert.throws(() => addStatBlock(project, "front", ["score"]), /one scope/);
+  assert.throws(() => addStatBlock(project, "front", [null]), (error) => error.code === "STAT");
+  assert.throws(() => addStatBlock(project, "front", [{ key: "score", scope: "variant" }, "secret"]), /public snapshot/);
+  assert.deepEqual(project.serialize(), original);
+  const ids = addStatBlock(project, "front", [
+    { key: "score", scope: "card" }, { key: "score", scope: "variant" },
+  ]);
+  const scene = project.scenes.get(project.manifest.faces.front.scene);
+  const nodes = ids.map((id) => scene.nodes.find((node) => node.id === id));
+  assert.equal(textValue(nodes[0], project.manifest), "Card score 0");
+  assert.equal(textValue(nodes[1], project.manifest), "Variant score 57");
+  const decoded = await importPackage((await project.export()).archive);
+  assert.deepEqual(decoded.scenes.get(project.manifest.faces.front.scene).nodes.slice(-2).map((n) => n.stat.scope), ["card", "variant"]);
+});
 
 const source = () => ({
   format: "image",

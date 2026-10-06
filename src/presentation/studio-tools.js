@@ -165,7 +165,7 @@ export function mountAuthoringTools({
           getProject().scenes.get(getProject().manifest.faces[getSide()].scene)
             .nodes,
         ).find((n) => n.id === getSelected());
-        if (n?.type === "text")
+        if (n?.type === "text" && !n.locked)
           getProject().edit(() => {
             n.typography ??= {};
             n.typography.fontAsset = a.id;
@@ -239,9 +239,12 @@ export function mountAuthoringTools({
       box.append(el("legend", "Typography"));
       root.append(box);
       const disabled = !!n.locked;
+      const editText = (fn) => edit(() => {
+        if (n.locked) throw new Error("Unlock this layer to edit it");
+        fn();
+      });
       const change = (key, value) =>
-        edit(() => {
-          if (n.locked) throw new Error("Unlock this layer to edit it");
+        editText(() => {
           n.typography ??= {};
           n.typography[key] = value;
         });
@@ -250,7 +253,7 @@ export function mountAuthoringTools({
         "Text content",
         n.text,
         (v) =>
-          edit(() => {
+          editText(() => {
             n.text = v;
             delete n.runs;
           }),
@@ -261,7 +264,7 @@ export function mountAuthoringTools({
         "Font face",
         n.typography?.fontAsset ?? "",
         (v) =>
-          edit(() => {
+          editText(() => {
             n.typography ??= {};
             if (v) n.typography.fontAsset = v;
             else delete n.typography.fontAsset;
@@ -283,7 +286,7 @@ export function mountAuthoringTools({
         box,
         "System font family",
         n.font ?? "Georgia",
-        (v) => edit(() => (n.font = v)),
+        (v) => editText(() => (n.font = v)),
         { disabled },
       );
       for (const [key, label, defaultValue] of [
@@ -350,7 +353,7 @@ export function mountAuthoringTools({
         box,
         "Accessible reading order",
         n.readingOrder ?? 0,
-        (v) => edit(() => (n.readingOrder = Number(v))),
+        (v) => editText(() => (n.readingOrder = Number(v))),
         { type: "number", disabled },
       );
       const asset = p.manifest.assets.find(
@@ -370,7 +373,7 @@ export function mountAuthoringTools({
       });
       button(box, "Paste text style", () => {
         if (!clipboard) throw new Error("Copy a style first");
-        return edit(() => (n.typography = structuredClone(clipboard)));
+        return editText(() => (n.typography = structuredClone(clipboard)));
       });
       button(box, "Save reusable text style", async () => {
         await saveTextStyle(p, n, library, { name: n.name ?? "Text style" });
@@ -384,7 +387,7 @@ export function mountAuthoringTools({
         rich,
         "Text spans (JSON)",
         JSON.stringify(n.runs ?? [{ text: n.text }], null, 2),
-        (v) => edit(() => (n.runs = JSON.parse(v))),
+        (v) => editText(() => (n.runs = JSON.parse(v))),
         { type: "textarea", disabled },
       );
       rich.append(
@@ -393,14 +396,40 @@ export function mountAuthoringTools({
           "Each span can include text, color, weight, style and an image asset ID as icon.",
         ),
       );
-      if (n.stat)
+      if (n.stat) {
         input(
           box,
           "Stat appearance",
           n.stat.view ?? "text",
-          (v) => edit(() => (n.stat.view = v)),
+          (v) => editText(() => (n.stat.view = v)),
           { choices: ["text", "badge", "bar"], disabled },
         );
+        const publicFields = (p.manifest.authoring?.fields ?? []).filter(
+          (f) => (f.visibility ?? "public") === "public" && (f.scope ?? "card") !== "copy",
+        );
+        input(box, "Bound field", JSON.stringify([n.stat.scope ?? "card", n.stat.key]), (v) => {
+          const [scope, key] = JSON.parse(v),
+            field = publicFields.find((f) => f.key === key && (f.scope ?? "card") === scope);
+          if (!field) throw new Error("Choose a public snapshot field");
+          return editText(() => {
+            n.stat.key = key;
+            n.stat.scope = scope;
+          });
+        }, {
+          choices: publicFields.map((f) => ({ id: JSON.stringify([f.scope ?? "card", f.key]), name: f.label + " · " + (f.scope ?? "card") + " / " + f.key })),
+          disabled,
+        });
+        for (const [key, label, fallback] of [
+          ["label", "Stat label", ""],
+          ["unit", "Stat unit", ""],
+          ["missing", "Missing stat text", "—"],
+          ["locale", "Stat number locale", "en"],
+          ["precision", "Stat decimal places", 8],
+          ...(n.stat.view === "bar" ? [["minimum", "Bar minimum", 0], ["maximum", "Bar maximum", 100]] : []),
+        ]) input(box, label, n.stat[key] ?? fallback, (v) => editText(() => {
+          n.stat[key] = typeof fallback === "number" ? Number(v) : v;
+        }), { type: typeof fallback === "number" ? "number" : "text", disabled });
+      }
     }
     const stats = el("details");
     stats.open = true;
@@ -436,10 +465,10 @@ export function mountAuthoringTools({
             : value,
         (v) => {
           let parsed;
-          if (choices) parsed = JSON.parse(v);
+          if ((choices || f.type === "boolean") && v === "") parsed = undefined;
+          else if (choices || f.type === "boolean") parsed = JSON.parse(v);
           else if (["number", "integer"].includes(f.type))
             parsed = v === "" ? undefined : Number(v);
-          else if (f.type === "boolean") parsed = v === "true";
           else if (["object", "array"].includes(f.type)) parsed = JSON.parse(v);
           else parsed = v;
           setStat(p, f.key, parsed, scope);
@@ -452,11 +481,21 @@ export function mountAuthoringTools({
               ? "textarea"
               : "text",
           choices:
-            choices ?? (f.type === "boolean" ? ["false", "true"] : undefined),
+            choices || f.type === "boolean"
+              ? [{ id: "", name: "No value" },
+                  ...(f.nullable && !f.enum?.includes(null) ? [{ id: "null", name: "Null" }] : []),
+                  ...(choices ?? ["false", "true"])]
+              : undefined,
           disabled,
         },
       );
       if (error) stats.append(el("p", f.label + ": " + error));
+      if (value === null) stats.append(el("p", f.label + ": null"));
+      if (!disabled && f.nullable)
+        button(stats, "Set " + f.label + " to null", async () => {
+          setStat(p, f.key, null, scope);
+          await rebuild();
+        });
       if (!disabled)
         button(stats, "Clear " + f.label, async () => {
           setStat(p, f.key, undefined, scope);
@@ -464,7 +503,7 @@ export function mountAuthoringTools({
         });
       if ((f.visibility ?? "public") === "public")
         button(stats, "Add " + f.label + " to card", async () => {
-          const ids = addStatBlock(p, getSide(), [f.key]);
+          const ids = addStatBlock(p, getSide(), [{ key: f.key, scope }]);
           select(ids[0]);
           await rebuild();
         });
@@ -486,7 +525,7 @@ export function mountAuthoringTools({
               (f.visibility ?? "public") === "public" &&
               (f.scope ?? "card") !== "copy",
           )
-          .map((f) => f.key),
+          .map((f) => ({ key: f.key, scope: f.scope ?? "card" })),
         { columns: 2 },
       );
       await rebuild();

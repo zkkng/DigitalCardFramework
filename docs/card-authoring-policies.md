@@ -14,6 +14,8 @@ Overflow choices are wrap, shrink down to a minimum, ellipsis, clip, or grow ver
 
 In **Card stats**, enter policy-defined values or define a custom field. Add an individual stat or use **Add all public stats as a table**. Select a bound layer to choose text, badge or bar presentation. Zero, null and absence are distinct. CSV uses `scope,key,value` columns and JSON-encoded value cells; an empty value cell removes the field. Imports validate the whole change before applying it.
 
+Boolean and enumeration controls start with **No value** for an absent field. Nullable fields offer **Set … to null**; clearing a field removes it. Select a bound layer to change its public card/variant source, label, unit, missing-value text, number locale and decimal places. Bar layers also expose minimum and maximum. These properties format the value without changing its authoritative source. Locked layers require unlocking before text or style edits.
+
 Save `.dcproject` for editable source and local draft data. Exported `.dcard` files omit declared private fields/values and unused source assets. Public art supports card/variant snapshots; private and per-copy data belong in an authorized host view. Capture posters after editing so the fallback depicts the same revision.
 
 ## Reuse a design
@@ -48,6 +50,8 @@ Impact previews identify existing variants needing changes before their next pub
 Run `node examples/card-policies.mjs` for museum-postcard metadata, activation, rejected values and stale-review handling. `python examples/card-policy-document.py` emits a language-neutral policy. The [JSON Schema](card-policy.schema.json) and [OpenAPI contract](openapi.json) describe wire inputs; runtime validators also enforce references and authority.
 
 Public exports include `./card-policy`, `./card-policy-schema`, `./presentation/authoring-tools`, `./presentation/text`, `./presentation/stats-csv` and `./card-policy-ui`. `mountStudio` accepts an asynchronous replacement library, destination `policyProvider` and custom panels. Libraries implement `list/get/put`; `share` is optional. Panels receive the project, selection, side, transactional edit and rebuild callbacks. Return `{element, dispose}` for a panel needing cleanup; disposal runs before rerender and unmount.
+
+`addStatBlock(project, side, [{key: "score", scope: "variant"}])` creates an explicit snapshot binding. String keys remain supported when they identify exactly one field; keys shared by multiple scopes require an explicit reference. All requested fields are checked for scope and public visibility before adding layers.
 
 The backend resolves trusted catalog destinations. Preview, import commit and direct publication share validation. Commit carries the returned `policyRevision`; a changed registry/catalog needs another review. Retry keys are bound to the authenticated principal. Content imports cannot install policies. CLI apply also requires `--policy-revision` from the reviewed preview once policies have changed.
 

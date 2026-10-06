@@ -163,6 +163,41 @@ try {
   checks.push(
     "custom font upload, editable text, bound stat redraw and accessible text on both faces",
   );
+  await page.evaluate(async () => {
+    const p = window.studio.getProject();
+    p.edit(() => {
+      p.manifest.authoring.fields.push(
+        { key: "score", label: "Variant score", type: "integer", scope: "variant" },
+        { key: "enabled", label: "Enabled", type: "boolean", nullable: true },
+        { key: "category", label: "Category", type: "string", enum: ["print", "photo"] },
+      );
+      p.manifest.authoring.values.variant.score = 99;
+    });
+    await window.studio.refreshPolicy();
+  });
+  assert.equal(await page.getByLabel("Enabled", { exact: true }).inputValue(), "");
+  assert.equal(await page.getByLabel("Category", { exact: true }).inputValue(), "");
+  await page.getByLabel("Enabled", { exact: true }).selectOption("false");
+  await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.card.enabled === false);
+  await page.getByLabel("Enabled", { exact: true }).selectOption("null");
+  await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.card.enabled === null);
+  await page.getByLabel("Enabled", { exact: true }).selectOption("");
+  await page.waitForFunction(() => !Object.hasOwn(window.studio.getProject().manifest.authoring.values.card, "enabled"));
+  await page.getByRole("button", { name: "Add Variant score to card", exact: true }).click();
+  await page.getByLabel("Stat label", { exact: true }).fill("Edition");
+  await page.getByLabel("Stat label", { exact: true }).press("Tab");
+  await page.waitForFunction(() => document.querySelector('[role="img"]')?.getAttribute("aria-label")?.includes("Edition 99"));
+  assert.equal(await page.getByLabel("Bound field", { exact: true }).inputValue(), '["variant","score"]');
+  await page.getByLabel("Stat appearance", { exact: true }).selectOption("bar");
+  await page.getByLabel("Bar maximum", { exact: true }).fill("200");
+  await page.getByLabel("Bar maximum", { exact: true }).press("Tab");
+  await page.waitForFunction(() => window.studio.getProject().scenes.get("scenes/back.json").nodes.some(n => n.stat?.maximum === 200));
+  await page.getByRole("button", { name: "Copy text style", exact: true }).click();
+  await page.getByText("Arrange layers", { exact: true }).click();
+  await page.getByRole("button", { name: "Lock selected", exact: true }).click();
+  await page.getByRole("button", { name: "Paste text style", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".dcard-studio").textContent.includes("Unlock this layer to edit it"));
+  checks.push("unset/false/null stat forms, scoped bindings, artist bar controls and locked-style protection");
   await page
     .getByRole("button", { name: "Save card as template", exact: true })
     .click();

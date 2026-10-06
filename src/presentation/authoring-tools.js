@@ -100,15 +100,29 @@ export function addStatBlock(
   } = {},
 ) {
   const ids = [];
-  for (const [index, key] of keys.entries()) {
-    const field = project.manifest.authoring?.fields?.find(
-      (f) => f.key === key && (f.visibility ?? "public") === "public",
-    );
+  ensure(Array.isArray(keys), "STAT", "Stat fields must be an array");
+  const fields = keys.map((reference) => {
     ensure(
-      field && (field.scope ?? "card") !== "copy",
+      typeof reference === "string" ||
+        (reference && typeof reference === "object" && !Array.isArray(reference) &&
+          typeof reference.key === "string" && ["card", "variant", "copy"].includes(reference.scope)),
+      "STAT", "Invalid scoped stat reference",
+    );
+    const key = typeof reference === "string" ? reference : reference.key,
+      scope = typeof reference === "string" ? undefined : reference.scope,
+      matches = (project.manifest.authoring?.fields ?? []).filter(
+        (f) => f.key === key && (scope === undefined || (f.scope ?? "card") === scope),
+      );
+    ensure(matches.length === 1, "STAT", "Stat field must resolve to one scope");
+    const field = matches[0];
+    ensure(
+      (field.visibility ?? "public") === "public" && (field.scope ?? "card") !== "copy",
       "STAT",
       "Only public snapshot fields can be placed in card art",
     );
+    return field;
+  });
+  for (const [index, field] of fields.entries()) {
     ids.push(
       addText(project, side, {
         name: field.label,
@@ -124,7 +138,7 @@ export function addStatBlock(
           minSize: 12,
         },
         stat: {
-          key,
+          key: field.key,
           scope: field.scope ?? "card",
           label: field.label,
           unit: field.unit ?? "",
