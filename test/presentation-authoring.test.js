@@ -12,6 +12,44 @@ import { createProject } from "../src/presentation/project.js";
 import { addStatBlock, configureAuthoring, setStat } from "../src/presentation/authoring-tools.js";
 import { textValue, inspectFont } from "../src/presentation/text.js";
 import { testFont } from "./font-fixture.mjs";
+import { maskLayout } from "../src/presentation/webgl.js";
+import { saveMask, applyMask } from "../src/presentation/authoring-tools.js";
+
+test("mask layout requires negotiated capability and preserves crop and transform in reusable effects", async () => {
+  const project = createProject(await build(presentationFixture())), side = "front",
+    getNode = () => project.scenes.get(project.manifest.faces[side].scene).nodes[0],
+    mask = {asset:"art",rect:[1,0,1,2],transform:{x:0.2,scaleX:-0.5,rotation:90},invert:true};
+  assert.throws(()=>project.edit(()=>{getNode().mask=mask;}), /dc.mask-layout/);
+  project.edit(()=>{project.manifest.capabilities.required.push("dc.mask-layout@0.2"); getNode().mask=structuredClone(mask);});
+  for (const invalid of [null,{...mask,rect:[1,0,2,2]},{...mask,transform:{scaleY:0}},{...mask,transform:{x:Infinity}},{polygon:[[0,0],[1,0],[1,1]],rect:[0,0,1,1]},{asset:"",polygon:[[0,0],[1,0],[1,1]]}]) {
+    const before = project.serialize();
+    assert.throws(()=>project.edit(()=>{getNode().mask=invalid;}));
+    assert.deepEqual(project.serialize(),before);
+  }
+  project.edit(()=>{getNode().material={kind:"foil",mask:structuredClone(mask)};});
+  assert.throws(()=>project.edit(()=>{getNode().material.maskAsset="art";}),/one effect mask/);
+  let saved;
+  await saveMask(project,side,getNode().id,{put:async item=>{saved=item;}},{id:"atlas",use:"effect"});
+  project.edit(()=>{delete getNode().material.mask;});
+  await applyMask(project,side,getNode().id,saved);
+  assert.deepEqual({...getNode().material.mask,asset:"art"},mask);
+  const restored = await importPackage((await project.export()).archive);
+  assert.equal(restored.manifest.assets.some(a=>a.id===getNode().material.mask.asset),true);
+  assert.deepEqual(JSON.parse(JSON.stringify(restored.scenes.get(restored.manifest.faces.front.scene).nodes[0].material.mask)),getNode().material.mask);
+  assert.deepEqual(saved.document.mask,mask);
+});
+
+test("mask inverse transforms preserve identity, pixel rotations and atlas sample boundaries", () => {
+  const point = (layout,x,y) => {const m=layout.matrix;return [m[0]*x+m[3]*y+m[6],m[1]*x+m[4]*y+m[7]];};
+  assert.deepEqual(point(maskLayout(),0.25,0.75),[0.25,0.75]);
+  const moved=maskLayout({transform:{x:0.25,scaleX:0.5,pivotX:0,pivotY:0}});
+  assert.deepEqual(point(moved,0.5,0.75),[0.5,0.75]);
+  const rotated=point(maskLayout({transform:{rotation:90}},{},{width:200,height:100}),0.5,1);
+  assert.ok(Math.abs(rotated[0]-0.75)<0.000001 && Math.abs(rotated[1]-0.5)<0.000001);
+  const crop=maskLayout({rect:[2,0,2,2]},{width:4,height:2});
+  assert.deepEqual([...crop.rect],[0.5,0,0.5,1]);
+  assert.deepEqual([...crop.limits],[0.625,0.25,0.875,0.75]);
+});
 
 test("font inspection reports decoded face metrics and declared terms survive export", async () => {
   const plain = inspectFont(testFont(),"font/ttf").info;

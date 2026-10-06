@@ -124,7 +124,7 @@ export function createProject(pkg) {
         if (manifest.authoring) {
           const a=manifest.authoring;
           for(const [scope,values] of Object.entries(a.values??{}))for(const key of Object.keys(values))if(a.fields?.some(f=>f.key===key&&(f.scope??"card")===scope&&(f.visibility??"public")!=="public"))delete values[key];
-          a.fields=a.fields?.filter(f=>(f.visibility??"public")==="public"&&(f.scope??"card")!=="copy");
+          if (a.fields) a.fields=a.fields.filter(f=>(f.visibility??"public")==="public"&&(f.scope??"card")!=="copy");
         }
         const used = new Set(
           Object.values(manifest.faces).map((f) => f.poster),
@@ -137,6 +137,7 @@ export function createProject(pkg) {
               ...(n.runs ?? []).map(r => r.icon),
               n.mask?.asset,
               n.material?.maskAsset,
+              n.material?.mask?.asset,
               n.material?.flakeAsset,
               n.video?.poster,
               n.data?.asset,

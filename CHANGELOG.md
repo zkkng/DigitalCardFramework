@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added independent clipping and effect-mask crops, transforms and inversion, with saved-library round trips and explicit player capability negotiation.
 - Added opt-in incremental acquisition storage with bounded record transactions and revision-bound capacity accounting. Supported acquisitions avoid materializing unrelated installation records; other workflows retain their existing storage paths.
 - Added embedded-font asset diagnostics, editable declared usage terms and sample glyph-coverage checks. Font uploads preserve locked text-layer assignments.
 - Added versioned capability profiles with independent pack acquisition, direct sales, trading and resale controls, plus account-specific availability and recovery hints.

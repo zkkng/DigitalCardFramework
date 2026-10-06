@@ -629,9 +629,9 @@ export async function saveMask(
   const mask =
     use === "clip"
       ? node?.mask
-      : node?.material?.maskAsset
+      : node?.material?.mask ?? (node?.material?.maskAsset
         ? { asset: node.material.maskAsset }
-        : null;
+        : null);
   ensure(mask, "MASK", "The selected layer has no " + use + " mask");
   const pkg = await project.export(),
     entry = {
@@ -689,12 +689,16 @@ export async function applyMask(project, side, nodeId, entry) {
     }
     if (entry.document.use === "effect") {
       ensure(
-        mask.asset && node.material,
+        node.material,
         "MASK",
-        "An effect mask needs a material and image mask",
+        "An effect mask needs a material",
       );
-      node.material.maskAsset = mask.asset;
+      node.material.mask = mask;
+      delete node.material.maskAsset;
     } else node.mask = mask;
+    if (entry.document.use === "effect" || mask.rect || mask.transform) {
+      if (!p.manifest.capabilities.required.includes("dc.mask-layout@0.2")) p.manifest.capabilities.required.push("dc.mask-layout@0.2");
+    }
     p.manifest.authoring ??= { values: { card: {}, variant: {} } };
     p.manifest.authoring.masks ??= {};
     p.manifest.authoring.masks[side + ":" + nodeId] = entry.key;

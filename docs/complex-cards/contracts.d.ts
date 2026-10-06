@@ -9,7 +9,26 @@ export interface Typography {
 }
 export interface TextSpan {text:string;color?:string;weight?:number;style?:'normal'|'italic'|'oblique';icon?:string}
 export interface StatBinding {key:string;scope?:'card'|'variant';label?:string;unit?:string;precision?:number;missing?:string;view?:'text'|'badge'|'bar';minimum?:number;maximum?:number;locale?:string}
-export interface TextLayer {id:string;type:'text';text:string;width:number;height:number;x?:number;y?:number;typography?:Typography;runs?:TextSpan[];stat?:StatBinding;locked?:boolean;readingOrder?:number}
+/** Layer-local normalized layout. Scales must have absolute value 0.001–100. */
+export interface MaskTransform {
+  x?:number;y?:number;scaleX?:number;scaleY?:number;rotation?:number;pivotX?:number;pivotY?:number;
+}
+/** Image crops use pixel coordinates. Layout fields require dc.mask-layout@0.2. */
+export type PersistedMask=(
+  {asset:string;polygon?:never;rect?:[number,number,number,number]}
+  |{polygon:[number,number][];asset?:never;rect?:never}
+)&{invert?:boolean;transform?:MaskTransform};
+export interface MaterialParameters {
+  kind:'bloom'|'water'|'glitter'|'spot'|'foil';
+  progress?:number;angle?:number;intensity?:number;radius?:number;feather?:number;
+  center?:[number,number];sweep?:number;size?:number;density?:number;seed?:number;
+  shape?:'circle'|'hexagon'|'shard'|'star';color?:string;flakeAsset?:string;
+  flakeColor?:'holo'|'texture';mode?:'surface'|'overlay';roughness?:number;variation?:number;
+}
+/** Structured effect masks require dc.mask-layout@0.2 and exclude legacy maskAsset. */
+export type Material=MaterialParameters&({mask?:PersistedMask;maskAsset?:never}|{mask?:never;maskAsset?:string});
+export interface MaskLayerFields {mask?:PersistedMask;material?:Material}
+export interface TextLayer extends MaskLayerFields {id:string;type:'text';text:string;width:number;height:number;x?:number;y?:number;typography?:Typography;runs?:TextSpan[];stat?:StatBinding;locked?:boolean;readingOrder?:number}
 export interface LibraryEntry {key:string;kind:'template'|'mask'|'style'|'template-set';document:Record<string,Json>;archive?:Uint8Array;shared?:boolean}
 export interface AuthoringLibrary {list():Promise<LibraryEntry[]>;get(key:string,shared?:boolean):Promise<LibraryEntry|undefined>;put(entry:LibraryEntry):Promise<unknown>;share?(entry:LibraryEntry):Promise<unknown>}
 

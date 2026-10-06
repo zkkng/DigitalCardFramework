@@ -1,4 +1,18 @@
 import { ensure } from "./data.js";
+export function maskLayout(mask = {}, asset = {}, node = {}) {
+  const t=mask.transform ?? {}, sx=t.scaleX ?? 1, sy=t.scaleY ?? 1,
+    r=((t.rotation ?? 0)%360)*Math.PI/180, c=Math.cos(r), s=Math.sin(r),
+    aspect=(node.width ?? 1)/(node.height ?? 1), a=c*sx,b=s*sx*aspect,d=c*sy,e=-s*sy/aspect,
+    px=t.pivotX ?? 0.5,py=t.pivotY ?? 0.5,
+    x=(t.x ?? 0)+px-a*px-e*py,y=(t.y ?? 0)+py-b*px-d*py,det=a*d-b*e,
+    width=asset.width ?? 1,height=asset.height ?? 1,rect=mask.rect ?? [0,0,width,height],
+    uv=[rect[0]/width,rect[1]/height,rect[2]/width,rect[3]/height],
+    halfX=Math.min(uv[2]/2,0.5/(asset.textureWidth ?? width)),halfY=Math.min(uv[3]/2,0.5/(asset.textureHeight ?? height));
+  return {
+    matrix:new Float32Array([d/det,-b/det,0,-e/det,a/det,0,(e*y-d*x)/det,(b*x-a*y)/det,1]),
+    rect:new Float32Array(uv),limits:new Float32Array([uv[0]+halfX,uv[1]+halfY,uv[0]+uv[2]-halfX,uv[1]+uv[3]-halfY]),
+  };
+}
 const vertex = `#version 300 es
 in vec2 position; in vec2 uv; in vec2 local;
 uniform vec2 resolution;
@@ -13,18 +27,24 @@ uniform vec4 fillColor; uniform int hasFill;
 uniform int effect; uniform vec4 params; uniform vec4 details;
 uniform vec2 center; uniform vec2 nodeSize; uniform vec4 clip; uniform vec2 resolution;
 uniform int maskMode; uniform int polygonCount; uniform vec2 polygon[64]; uniform int hasMask; uniform int hasFlake;
+uniform mat3 maskMatrix; uniform vec4 maskRect; uniform vec4 maskLimits;
+uniform mat3 effectMaskMatrix; uniform vec4 effectMaskRect; uniform vec4 effectMaskLimits;
+uniform int effectPolygonCount; uniform vec2 effectPolygon[64]; uniform int effectMaskMode; uniform int effectMaskLayout;
 uniform int flakeColor; uniform int hasEffectMask; uniform int surface; uniform int flakeShape; uniform vec3 tint; uniform int hasTint;
 in vec2 tex; in vec2 point; out vec4 color;
 float hash(vec2 p){uvec2 q=uvec2(ivec2(floor(p)));uint n=q.x*1597334677u+q.y*3812015801u;n=(n^(n>>16u))*2246822519u;n=(n^(n>>13u))*3266489917u;return float((n^(n>>16u))&16777215u)/16777216.;}
+float polygonCoverage(vec2 p,int count,vec2 points[64]){bool inside=false;int j=count-1;for(int i=0;i<64;i++){if(i>=count)break;vec2 a=points[i],b=points[j];if(((a.y>p.y)!=(b.y>p.y))&&(p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x))inside=!inside;j=i;}return inside?1.:0.;}
+bool withinMask(vec2 p){return all(greaterThanEqual(p,vec2(0.)))&&all(lessThanEqual(p,vec2(1.)));}
 void main(){
  vec2 screen=vec2(gl_FragCoord.x,resolution.y-gl_FragCoord.y);
  vec2 q=abs(screen-(clip.xy+clip.zw*.5))-(clip.zw*.5-vec2(9.));
  float edge=1.-smoothstep(8.,9.,length(max(q,0.)));
  vec4 c=hasFill==1?fillColor:texture(art,tex); c.rgb=mix(vec3(dot(c.rgb,vec3(.2126,.7152,.0722))),c.rgb,saturation)*brightness;
- if(polygonCount>0){bool inside=false;int j=polygonCount-1;for(int i=0;i<64;i++){if(i>=polygonCount)break;vec2 a=polygon[i],b=polygon[j];if(((a.y>point.y)!=(b.y>point.y))&&(point.x<(b.x-a.x)*(point.y-a.y)/(b.y-a.y)+a.x))inside=!inside;j=i;}c.a*=maskMode==1?(inside?0.:1.):(inside?1.:0.);}
- if(hasMask==1){float coverage=texture(maskArt,point).a;c.a*=maskMode==1?1.-coverage:coverage;}
- float weight=hasEffectMask==1?texture(effectMaskArt,point).a:1.;
- if(effect==1){float d=length((point-center)*vec2(1.,nodeSize.y/nodeSize.x));float radius=params.x*1.3;c.a*=1.-smoothstep(max(0.,radius-details.x),radius+.001,d);}
+ vec2 maskPoint=(maskMatrix*vec3(point,1.)).xy;
+ if(polygonCount>0||hasMask==1){float coverage=polygonCount>0?polygonCoverage(maskPoint,polygonCount,polygon):1.;if(hasMask==1)coverage*=withinMask(maskPoint)?texture(maskArt,clamp(maskRect.xy+maskPoint*maskRect.zw,maskLimits.xy,maskLimits.zw)).a:0.;c.a*=maskMode==1?1.-coverage:coverage;}
+ vec2 effectPoint=(effectMaskMatrix*vec3(point,1.)).xy;
+ float weight=effectPolygonCount>0?polygonCoverage(effectPoint,effectPolygonCount,effectPolygon):1.;if(hasEffectMask==1)weight*=withinMask(effectPoint)?texture(effectMaskArt,clamp(effectMaskRect.xy+effectPoint*effectMaskRect.zw,effectMaskLimits.xy,effectMaskLimits.zw)).a:0.;if(effectMaskMode==1)weight=1.-weight;
+ if(effect==1){float d=length((point-center)*vec2(1.,nodeSize.y/nodeSize.x));float radius=params.x*1.3;float fade=1.-smoothstep(max(0.,radius-details.x),radius+.001,d);c.a*=effectMaskLayout==1?mix(1.,fade,weight):fade;}
  if(effect==2){vec2 direction=vec2(.927,.375);float line=dot(point*nodeSize,direction)/dot(nodeSize,direction);float distance=abs(line-params.x)/max(.01,details.x);float band=max(0.,1.-distance)*weight;float ripple=.65+.35*sin(point.y*420.+sin(point.x*29.)*2.);if(surface==1)c.rgb+=vec3(.7,.85,1.)*band*ripple*params.z;else{c.a*=band;c.rgb*=1.+ripple*params.z;}}
  if(effect==3){vec2 grid=point*nodeSize/max(.5,details.x);vec2 cell=floor(grid);float r=hash(cell+details.z);vec2 f=(fract(grid)-.5)/max(.1,1.-details.w*hash(cell+13.));float catchLight=pow(max(0.,cos(params.y*6.283185+hash(cell+7.)*6.283185)),mix(64.,3.,clamp(params.w,0.,1.)));float d=length(f);if(flakeShape==1)d=max(abs(f.y),dot(abs(f),vec2(.866,.5)));if(flakeShape==2)d=max(abs(f.x)*1.7,abs(f.y)*.8);if(flakeShape==3)d=length(f)/(.7+.3*cos(atan(f.y,f.x)*5.));float facet=step(r,details.y)*(1.-smoothstep(.3,.43,d));if(hasFlake==1)facet=step(r,details.y)*texture(flakeArt,fract(grid)).a;vec3 holo=hasTint==1?tint:.55+.45*cos(vec3(0.,2.,4.)+r*5.+params.y*5.);if(hasFlake==1&&flakeColor==1)holo=texture(flakeArt,fract(grid)).rgb;c.rgb+=mix(holo,vec3(1.),catchLight*.6)*facet*catchLight*params.z*weight;}
  if(effect==4){float d=length((point-center)*vec2(1.,nodeSize.y/nodeSize.x));float spot=(1.-smoothstep(0.,max(.001,details.x),d))*weight;if(surface==1)c.rgb+=c.rgb*spot*params.z;else{c.a*=spot;c.rgb*=1.+params.z;}}
@@ -96,6 +116,8 @@ export function createWebGLRenderer(canvas) {
     "maskMode",
     "polygonCount",
     "polygon[0]",
+    "maskMatrix", "maskRect", "maskLimits", "effectMaskMatrix", "effectMaskRect", "effectMaskLimits",
+    "effectPolygonCount", "effectPolygon[0]", "effectMaskMode", "effectMaskLayout",
     "hasMask",
     "hasFlake",
     "hasEffectMask",
@@ -271,6 +293,11 @@ export function createWebGLRenderer(canvas) {
           : [1, 1, 1],
       );
       gl.uniform1i(u.hasMask, mask ? 1 : 0);
+      const clipping=maskLayout(node.mask,mask,node),effectLayout=maskLayout(material.mask,effectMask,node),effectPolygon=material.mask?.polygon ?? [];
+      gl.uniformMatrix3fv(u.maskMatrix,false,clipping.matrix);gl.uniform4fv(u.maskRect,clipping.rect);gl.uniform4fv(u.maskLimits,clipping.limits);
+      gl.uniformMatrix3fv(u.effectMaskMatrix,false,effectLayout.matrix);gl.uniform4fv(u.effectMaskRect,effectLayout.rect);gl.uniform4fv(u.effectMaskLimits,effectLayout.limits);
+      gl.uniform1i(u.effectPolygonCount,effectPolygon.length);if(effectPolygon.length)gl.uniform2fv(u["effectPolygon[0]"],new Float32Array(effectPolygon.flat()));
+      gl.uniform1i(u.effectMaskMode,material.mask?.invert?1:0);gl.uniform1i(u.effectMaskLayout,material.mask?1:0);
       gl.uniform1i(u.flakeColor, material.flakeColor === "texture" ? 1 : 0);
       gl.uniform1i(u.hasFlake, flake ? 1 : 0);
       const polygon = node.mask?.polygon ?? [];

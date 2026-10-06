@@ -676,7 +676,7 @@ export function mountStudio(
         () =>
           upload("image/png,image/webp", async (f) => {
             const a = await project.addImage(f, { role: "mask" });
-            project.edit(() => (n.material.maskAsset = a.id));
+            project.edit(() => { delete n.material.mask; n.material.maskAsset = a.id; });
             await rebuild();
           }),
         properties,
@@ -745,6 +745,7 @@ export function mountStudio(
           if (name) {
             const saved = structuredClone(m);
             delete saved.maskAsset;
+            delete saved.mask;
             delete saved.flakeAsset;
             localStorage.setItem("dcard-finish:" + name, JSON.stringify(saved));
             presets[name] = saved;
@@ -936,8 +937,8 @@ export function mountStudio(
     ctx.lineWidth = 38;
     ctx.lineCap = "round";
     let last;
-    if (node.material.maskAsset) {
-      const mask = await resolver.asset(node.material.maskAsset),
+    if (node.material.maskAsset || node.material.mask?.asset) {
+      const mask = await resolver.asset(node.material.mask?.asset ?? node.material.maskAsset),
         image = new Image();
       image.src = mask.url;
       await image.decode();
@@ -991,7 +992,7 @@ export function mountStudio(
             paintCanvas.toBlob(resolve, "image/png"),
           ),
           a = await project.addImage(blob, { role: "mask" });
-        project.edit(() => (node.material.maskAsset = a.id));
+        project.edit(() => { delete node.material.mask; node.material.maskAsset = a.id; });
         paintDialog.close();
         paintDialog.remove();
         paintCanvas = null;

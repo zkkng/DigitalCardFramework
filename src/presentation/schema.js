@@ -171,12 +171,14 @@ const material = object(
     flakeAsset: id,
     flakeColor: { enum: ["holo", "texture"] },
     maskAsset: id,
+    mask: { $ref: "#/$defs/mask" },
     mode: { enum: ["surface", "overlay"] },
     roughness: number,
     variation: number,
   },
   ["kind"],
 );
+material.not = {properties:{mask:{},maskAsset:{}},required:["mask","maskAsset"]};
 const frame = object(
   {
     asset: id,
@@ -215,7 +217,7 @@ const node = object(
     brightness: number,
     saturation: number,
     blend: { enum: ["normal", "screen", "add", "multiply"] },
-    mask: object({ asset: id, polygon: array(pair, 3, 64), invert: boolean }),
+    mask: { $ref: "#/$defs/mask" },
     material,
     bindings: { type: "object", additionalProperties: expr },
     animation: object(
@@ -287,5 +289,21 @@ export const sceneSchema = {
     },
     ["dialect", "nodes"],
   ),
-  $defs: { node },
+  $defs: { node, mask: {
+    ...object({asset:id,polygon:array(pair,3,64),invert:boolean,rect,
+      transform:object({
+        x:{type:"number",minimum:-100,maximum:100},y:{type:"number",minimum:-100,maximum:100},
+        scaleX:{type:"number",anyOf:[{minimum:-100,maximum:-0.001},{minimum:0.001,maximum:100}]},
+        scaleY:{type:"number",anyOf:[{minimum:-100,maximum:-0.001},{minimum:0.001,maximum:100}]},
+        rotation:{type:"number",minimum:-360000,maximum:360000},
+        pivotX:{type:"number",minimum:-100,maximum:100},pivotY:{type:"number",minimum:-100,maximum:100},
+      }),
+    }),
+    oneOf:[
+      {properties:{asset:{}},required:["asset"],not:{properties:{polygon:{}},required:["polygon"]}},
+      {properties:{polygon:{}},required:["polygon"],not:{anyOf:[
+        {properties:{asset:{}},required:["asset"]},{properties:{rect:{}},required:["rect"]},
+      ]}},
+    ],
+  } },
 };

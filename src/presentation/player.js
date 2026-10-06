@@ -49,7 +49,7 @@ const resourceSignature = (scene,manifest) =>
       asset: n.asset,
       mask: n.mask?.asset,
       flake: n.material?.flakeAsset,
-      effectMask: n.material?.maskAsset,
+      effectMask: n.material?.mask?.asset ?? n.material?.maskAsset,
       frames: n.animation?.frames?.map((f) => f.asset),
       text:
         n.type === "text"
@@ -185,7 +185,7 @@ export function createPlayerStage({
             "Asset no longer referenced",
           );
           entry.texture = gpu.texture(bitmap);
-          entry.value = { ...asset, texture: entry.texture };
+          entry.value = { ...asset, texture: entry.texture,textureWidth:bitmap.width,textureHeight:bitmap.height };
           return entry.value;
         } catch (error) {
           bytes -= entry.bytes;
@@ -323,6 +323,7 @@ export function createPlayerStage({
         if (node.mask?.asset) assetIds.add(node.mask.asset);
         if (node.material?.flakeAsset) assetIds.add(node.material.flakeAsset);
         if (node.material?.maskAsset) assetIds.add(node.material.maskAsset);
+        if (node.material?.mask?.asset) assetIds.add(node.material.mask.asset);
         for (const frame of node.animation?.frames ?? [])
           assetIds.add(frame.asset);
       }
@@ -676,6 +677,9 @@ export function createPlayerStage({
                 },
                 parent,
                 viewport,
+                view.assets.get(node.mask?.asset),
+                view.assets.get(node.material?.flakeAsset),
+                view.assets.get(node.material?.mask?.asset ?? node.material?.maskAsset),
               );
               if (result?.needsTime && !staticMotion()) {
                 viewNeedsTime = true;
@@ -750,7 +754,7 @@ export function createPlayerStage({
               viewport,
               view.assets.get(node.mask?.asset),
               view.assets.get(node.material?.flakeAsset),
-              view.assets.get(node.material?.maskAsset),
+              view.assets.get(node.material?.mask?.asset ?? node.material?.maskAsset),
             );
         }
       }
@@ -1115,6 +1119,7 @@ export function createPlayerStage({
               n.type === "image" ? n.asset : null,
               n.mask?.asset,
               n.material?.maskAsset,
+              n.material?.mask?.asset,
               n.material?.flakeAsset,
               ...(n.animation?.frames ?? []).map((f) => f.asset),
             ]

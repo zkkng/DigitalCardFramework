@@ -11,6 +11,7 @@ export const CAPABILITIES = [
   "dc.video@0.1",
   "dc.text@0.1",
   "dc.text@0.2",
+  "dc.mask-layout@0.2",
   "dc.audio@0.1",
 ];
 const id = (value) =>
@@ -431,6 +432,31 @@ export function validateScene(scene, manifest) {
       "Crop exceeds asset bounds",
     );
   };
+  const validateMask = (mask, advanced = false) => {
+    keys(mask,["asset","polygon","invert","rect","transform"]);
+    if (mask.invert !== undefined) ensure(typeof mask.invert === "boolean","MASK","Mask inversion must be boolean");
+    ensure((mask.asset !== undefined) !== (mask.polygon !== undefined),"MASK","Choose one mask source");
+    if (mask.asset !== undefined) ensure(assets.get(mask.asset)?.mediaType.startsWith("image/"),"MASK","Unknown mask image");
+    if (mask.rect !== undefined) {
+      ensure(mask.asset,"MASK","Mask crop requires an image source");
+      rect(mask.rect,assets.get(mask.asset));
+    }
+    if (mask.polygon !== undefined) {
+      ensure(Array.isArray(mask.polygon) && mask.polygon.length >= 3 && mask.polygon.length <= 64,"MASK","Invalid polygon");
+      for (const point of mask.polygon) {
+        ensure(Array.isArray(point) && point.length === 2,"MASK","Invalid point");
+        point.forEach(v=>number(v,0,1));
+      }
+    }
+    if (mask.transform !== undefined) {
+      keys(mask.transform,["x","y","scaleX","scaleY","rotation","pivotX","pivotY"]);
+      for (const [key,value] of Object.entries(mask.transform)) {
+        number(value,key === "rotation" ? -360000 : -100,key === "rotation" ? 360000 : 100);
+        if (key === "scaleX" || key === "scaleY") ensure(Math.abs(value)>=0.001,"MASK","Mask scale must be nonzero and at least 0.001");
+      }
+    }
+    if (advanced || mask.rect || mask.transform) ensure(manifest.capabilities.required.includes("dc.mask-layout@0.2"),"CAPABILITY","Mask layout requires dc.mask-layout@0.2");
+  };
   function visit(n, depth) {
     ensure(depth <= 16 && ++count <= 512, "LIMIT", "Scene complexity limit");
     keys(n, nodeFields);
@@ -490,36 +516,7 @@ export function validateScene(scene, manifest) {
         "BLEND",
         "Unsupported blend",
       );
-    if (n.mask) {
-      keys(n.mask, ["asset", "polygon", "invert"]);
-      if (n.mask.invert !== undefined)
-        ensure(typeof n.mask.invert === "boolean", "MASK", "Mask inversion must be boolean");
-      ensure(
-        !(n.mask.asset && n.mask.polygon),
-        "MASK",
-        "Choose one mask source per node",
-      );
-      ensure(n.mask.asset || n.mask.polygon, "MASK", "Missing mask");
-      if (n.mask.asset)
-        ensure(
-          assets.get(n.mask.asset)?.mediaType.startsWith("image/"),
-          "MASK",
-          "Unknown mask image",
-        );
-      if (n.mask.polygon) {
-        ensure(
-          Array.isArray(n.mask.polygon) &&
-            n.mask.polygon.length >= 3 &&
-            n.mask.polygon.length <= 64,
-          "MASK",
-          "Invalid polygon",
-        );
-        for (const point of n.mask.polygon) {
-          ensure(point.length === 2, "MASK", "Invalid point");
-          point.forEach((v) => number(v, 0, 1));
-        }
-      }
-    }
+    if (n.mask !== undefined) validateMask(n.mask);
     if (n.material) {
       keys(n.material, [
         "kind",
@@ -538,6 +535,7 @@ export function validateScene(scene, manifest) {
         "flakeAsset",
         "flakeColor",
         "maskAsset",
+        "mask",
         "mode",
         "roughness",
         "variation",
@@ -562,6 +560,7 @@ export function validateScene(scene, manifest) {
             "flakeAsset",
             "flakeColor",
             "maskAsset",
+            "mask",
             "mode",
           ].includes(k)
         )
@@ -577,6 +576,8 @@ export function validateScene(scene, manifest) {
             "MATERIAL",
             "Unknown material image",
           );
+      ensure(!(n.material.mask !== undefined && n.material.maskAsset !== undefined),"MASK","Choose one effect mask source");
+      if (n.material.mask !== undefined) validateMask(n.material.mask,true);
       if (n.material.flakeColor !== undefined)
         ensure(
           ["holo", "texture"].includes(n.material.flakeColor),

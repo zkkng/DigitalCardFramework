@@ -84,6 +84,31 @@ try {
   const idle = () => page.waitForFunction(() => document.querySelector(".dcard-studio")?.getAttribute("aria-busy") !== "true");
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(origin + "/harness");
+  const coverage = await page.evaluate(async () => {
+    const {createWebGLRenderer} = await import("/src/presentation/webgl.js"), canvas=document.createElement("canvas"), gpu=createWebGLRenderer(canvas),
+      source=document.createElement("canvas"), maskCanvas=document.createElement("canvas");
+    source.width=4;source.height=2;source.getContext("2d").fillStyle="white";source.getContext("2d").fillRect(0,0,4,2);
+    maskCanvas.width=4;maskCanvas.height=2;
+    const ctx=maskCanvas.getContext("2d");ctx.fillStyle="rgba(255,255,255,0.5)";ctx.fillRect(2,0,2,2);
+    const art={texture:gpu.texture(source),width:4,height:2}, mask={texture:gpu.texture(maskCanvas),width:4,height:2},
+      draw=(clipping,material)=>{
+        gpu.begin(100,100);gpu.draw({width:100,height:100,mask:clipping,material},art,[1,0,0,1,0,0],[0,0,100,100],clipping?.asset ? mask : undefined,undefined,material?.mask?.asset || material?.maskAsset ? mask : undefined);
+        const p=new Uint8Array(4);gpu.gl.readPixels(50,50,1,1,gpu.gl.RGBA,gpu.gl.UNSIGNED_BYTE,p);return [...p];
+      }, full=draw({asset:"mask"}),cropped=draw({asset:"mask",rect:[2,0,2,2]}),shifted=draw({asset:"mask",rect:[2,0,2,2],transform:{x:1}}),
+      inverted=draw({asset:"mask",rect:[2,0,2,2],transform:{x:1},invert:true}),
+      polygon=draw({polygon:[[0,0],[1,0],[1,1],[0,1]],transform:{x:1}}),
+      effect=draw(undefined,{kind:"bloom",radius:0,mask:{polygon:[[0,0],[1,0],[1,1],[0,1]],transform:{x:1}}}),
+      legacy=draw(undefined,{kind:"spot",radius:0.8,intensity:0.7,mode:"overlay",maskAsset:"mask"}),
+      identity=draw(undefined,{kind:"spot",radius:0.8,intensity:0.7,mode:"overlay",mask:{asset:"mask"}});
+    gpu.dispose();return {full,cropped,shifted,inverted,polygon,effect,legacy,identity};
+  });
+  assert(coverage.cropped[3]>=126 && coverage.cropped[3]<=129);
+  assert(coverage.full[3]<coverage.cropped[3]);
+  assert.equal(coverage.shifted[3],0);assert.equal(coverage.polygon[3],0);
+  assert.equal(coverage.inverted[3],255);assert.equal(coverage.effect[3],255);
+  assert.deepEqual(coverage.legacy,coverage.identity);
+  assert(coverage.legacy[3]>0 && coverage.legacy[3]<126);
+  checks.push("GPU atlas alpha crop, independent image/polygon transforms, inversion and structured effect coverage");
   await page.evaluate(async () => {
     const { mountStudio } = await import("/src/presentation/studio.js"),
       { importPackage } = await import("/src/presentation/package.js"),
@@ -349,6 +374,14 @@ try {
   await page.getByLabel("Mask vertex 3 y", {exact:true}).press("Tab");
   await idle();
   assert(await page.getByRole("button", { name: "Remove mask vertex 1", exact: true }).isDisabled());
+  await page.getByLabel("Clipping mask scaleX", {exact:true}).fill("0");
+  await page.getByLabel("Clipping mask scaleX", {exact:true}).press("Tab");await idle();
+  assert.equal(await page.getByLabel("Clipping mask scaleX", {exact:true}).inputValue(),"1");
+  await page.getByLabel("Clipping mask x", {exact:true}).fill("0.2");
+  await page.getByLabel("Clipping mask x", {exact:true}).press("Tab");await idle();
+  assert(await page.evaluate(()=>window.studio.getProject().manifest.capabilities.required.includes("dc.mask-layout@0.2")));
+  await page.getByRole("button",{name:"Reset clipping mask transform",exact:true}).click();await idle();
+  assert.equal(await page.getByLabel("Clipping mask x",{exact:true}).inputValue(),"0");
   await page.getByLabel("Library item name", { exact: true }).fill("Triangle window");
   await page.getByLabel("Library item name", { exact: true }).press("Tab");
   await idle();

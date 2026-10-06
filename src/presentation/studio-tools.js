@@ -802,6 +802,9 @@ export function mountAuthoringTools({
           const project = getProject(), target = flattenNodes(project.scenes.get(project.manifest.faces[maskSide].scene).nodes).find(node=>node.id===n.id);
           if (!target || target.locked) throw new Error("Choose an unlocked layer to edit its mask");
           fn(target);
+          if (target.mask?.rect || target.mask?.transform || target.material?.mask) {
+            if (!project.manifest.capabilities.required.includes("dc.mask-layout@0.2")) project.manifest.capabilities.required.push("dc.mask-layout@0.2");
+          }
           if (project.manifest.authoring?.masks) delete project.manifest.authoring.masks[panelKey];
         });
       masks.append(el("summary", "Clipping mask properties"));
@@ -817,6 +820,69 @@ export function mountAuthoringTools({
       if (n.mask) {
         input(masks, "Invert clipping mask", n.mask.invert ? "yes" : "no", (v)=>editMask(target=>{target.mask.invert = v === "yes";}), {choices:["no","yes"],disabled});
         button(masks, "Remove clipping mask", ()=>editMask(target=>{delete target.mask;})).disabled = disabled;
+      }
+      const layoutControls = (container, mask, use) => {
+        if (!mask) return;
+        const label = use === "clip" ? "Clipping" : "Effect",
+          update = fn => editMask(target => {
+            if (use === "effect" && !target.material.mask) {
+              target.material.mask = {asset:target.material.maskAsset};
+              delete target.material.maskAsset;
+            }
+            fn(use === "clip" ? target.mask : target.material.mask);
+          });
+        container.append(el("p", "Mask translations and pivots use layer fractions; rotation uses degrees and preserves the layer's pixel aspect ratio. Negative scales mirror coverage."));
+        for (const [key, fallback] of [["x",0],["y",0],["scaleX",1],["scaleY",1],["rotation",0],["pivotX",0.5],["pivotY",0.5]]) {
+          const control = input(container,label + " mask " + key,mask.transform?.[key] ?? fallback,v=>update(current=>{
+            current.transform ??= {}; current.transform[key] = Number(v);
+          }),{type:"number",disabled});
+          control.min = key === "rotation" ? "-360000" : "-100";
+          control.max = key === "rotation" ? "360000" : "100"; control.step = "any";
+        }
+        button(container,"Reset " + label.toLowerCase() + " mask transform",()=>update(current=>{delete current.transform;})).disabled = disabled;
+        if (mask.asset) {
+          const asset = p.manifest.assets.find(a=>a.id===mask.asset), crop = mask.rect ?? [0,0,asset.width,asset.height];
+          for (const [index,key] of ["x","y","width","height"].entries()) {
+            const control = input(container,label + " mask crop " + key,crop[index],v=>update(current=>{
+              current.rect ??= [...crop]; current.rect[index] = Number(v);
+            }),{type:"number",disabled});
+            control.min = index < 2 ? "0" : "0.001"; control.max = String(index%2 ? asset.height : asset.width); control.step = "any";
+          }
+          button(container,"Reset " + label.toLowerCase() + " mask crop",()=>update(current=>{delete current.rect;})).disabled = disabled;
+        }
+      };
+      layoutControls(masks,n.mask,"clip");
+      if (n.material) {
+        const effects = el("fieldset"), effectMask = n.material.mask ?? (n.material.maskAsset ? {asset:n.material.maskAsset} : undefined);
+        effects.append(el("legend","Effect mask properties")); masks.append(effects);
+        input(effects,"Effect mask source",effectMask?.asset ? "image:"+effectMask.asset : effectMask?.polygon ? "polygon" : "none",v=>editMask(target=>{
+          delete target.material.maskAsset;
+          if (v === "none") delete target.material.mask;
+          else target.material.mask = v === "polygon" ? {polygon:[[0,0],[1,0],[1,1],[0,1]]} : {asset:v.slice(6)};
+        }),{choices:[{id:"none",name:"No effect mask"},{id:"polygon",name:"Polygon"},...p.manifest.assets.filter(a=>a.mediaType.startsWith("image/")).map(a=>({id:"image:"+a.id,name:"Image alpha: "+a.id}))],disabled});
+        if (effectMask) {
+          input(effects,"Invert effect mask",effectMask.invert ? "yes" : "no",v=>editMask(target=>{
+            target.material.mask ??= {asset:target.material.maskAsset}; delete target.material.maskAsset;
+            target.material.mask.invert = v === "yes";
+          }),{choices:["no","yes"],disabled});
+          layoutControls(effects,effectMask,"effect");
+          for (const [index,point] of (effectMask.polygon ?? []).entries()) {
+            const row=el("fieldset");row.append(el("legend","Effect mask vertex "+(index+1)));effects.append(row);
+            for (const [component,axis] of ["x","y"].entries()) {
+              const control=input(row,"Effect mask vertex "+(index+1)+" "+axis,point[component],v=>editMask(target=>{target.material.mask.polygon[index][component]=Number(v);}),{type:"number",disabled});
+              control.min="0";control.max="1";control.step="any";
+            }
+            button(row,"Insert effect mask vertex after "+(index+1),()=>editMask(target=>{
+              const points=target.material.mask.polygon;
+              if(points.length>=64)throw new Error("A mask supports at most 64 vertices");
+              const next=points[(index+1)%points.length];points.splice(index+1,0,[(point[0]+next[0])/2,(point[1]+next[1])/2]);
+            })).disabled=disabled || effectMask.polygon.length>=64;
+            button(row,"Remove effect mask vertex "+(index+1),()=>editMask(target=>{
+              if(target.material.mask.polygon.length<=3)throw new Error("A mask needs at least 3 vertices");
+              target.material.mask.polygon.splice(index,1);
+            })).disabled=disabled || effectMask.polygon.length<=3;
+          }
+        }
       }
       if (n.mask?.polygon) {
         masks.append(el("p", "A polygon has 3 to 64 vertices. Add inserts a midpoint after the selected vertex; remove preserves the minimum vertex count."));

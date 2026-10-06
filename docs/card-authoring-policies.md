@@ -38,7 +38,11 @@ Save `.dcproject` for editable source and local draft data. Exported `.dcard` fi
 
 Select an unlocked layer and open **Clipping mask properties** to choose an embedded image's alpha coverage or a polygon. Upload PNG, JPEG or WebP masks up to 32 MiB; opaque images cover the whole layer. Polygon coordinates range from 0 to 1 and support 3–64 vertices. Edit coordinates, insert a midpoint, remove a vertex, invert coverage or remove the mask. These controls clip the layer; effect masks remain separate. Groups require a prebaked image or host adapter for isolated masking.
 
-Name the item under **Reusable library**, then **Save clipping mask** and apply that saved version to another layer or card. Editing an applied mask detaches its library reference and keeps the saved revision intact. Reapply the saved item to restore it. Polygon masks follow existing layer transforms; independent mask crop/transform properties are not supported. Authoring changes and toolbar undo share an action queue; queued changes are skipped after the editor is disposed.
+Name the item under **Reusable library**, then **Save clipping mask** and apply that saved version to another layer or card. Editing an applied mask detaches its library reference and keeps the saved revision intact. Reapply the saved item to restore it. Authoring changes and toolbar undo share an action queue; queued changes are skipped after the editor is disposed.
+
+Clipping and effect masks have independent translation, scale, rotation and pivot controls. Translations and pivots use fractions of the layer dimensions; rotation uses degrees in the layer's pixel space. Negative scales mirror coverage; zero scales are rejected. Image mask crop controls select a source rectangle in asset pixels, including an atlas region, and preserve soft alpha coverage. Reset buttons restore the full source image or identity transform. Effect masks can use either image alpha or editable polygon coverage, with optional inversion; they limit material effects without clipping the underlying artwork. Saved masks retain their crop and transform.
+
+Packages using these layouts declare required capability `dc.mask-layout@0.2`; players without it use the package posters. Existing masks keep their default full-image or polygon layout. Group isolation is not yet available.
 
 Personal items live in this browser's IndexedDB. Export/import library JSON to move them between browsers. Administrators can **Share** immutable library revisions. Shared packages pass content validation before registration.
 

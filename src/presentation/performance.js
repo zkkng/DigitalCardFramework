@@ -115,6 +115,7 @@ export function analyzePerformance({ manifest, scenes }, overrides = {}) {
               n.mask?.asset,
               n.video?.poster,
               n.material?.maskAsset,
+              n.material?.mask?.asset,
               n.material?.flakeAsset,
               ...(n.animation?.frames ?? []).map((f) => f.asset),
             ].filter(Boolean),
