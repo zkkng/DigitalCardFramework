@@ -10,6 +10,8 @@ Once accounting is prepared, intent registration, finalization and acknowledgeme
 
 Pack quotes read the requesting account, catalog and administrator controls in one query snapshot. They do not materialize inventory, receipts or installation history, and do not prepare accounting or write records. Quote rules are unchanged: they bind effective pricing and catalog/admin revisions; actual stock and allocation are checked during purchase. Selected catalog and administrator configuration size still affects quote cost. This does not make every read model incremental.
 
+`setPreferences` uses record transactions for the account, explicitly referenced favorites and blocked accounts, the receipt and event deliveries. Wishlist validation reads the catalog. It preserves account identity fields and uses ordinary admission capacity; it cannot spend completion reservations. Replay returns the original result without changing preferences or enqueueing another event. The first new preferences command prepares accounting when needed, while existing receipt replay does not require preparation.
+
 ## Supported products
 
 The incremental path supports products whose variants do not allocate codes or invoke binding factories, and whose duplicate policy does not inspect the owner's whole inventory. Other products and installations with legacy externally managed purchase keys use the established acquisition path. That fallback materializes installation state and can block for substantial time on larger databases. Opening, trade, commerce and action delivery transactions also retain their existing storage paths.
@@ -18,7 +20,7 @@ SQLite reads the selected catalog/configuration, account, balance, receipt, supp
 
 ## Preparation and mixed writers
 
-Call `store.prepareRecordTransactions()` during planned writable maintenance to establish revision-bound capacity accounting. The first incremental purchase, including a production API purchase, also prepares it when absent or stale. Preparation scans installation state and consumes ordinary storage capacity; insufficient capacity fails atomically. Read-only inspection does not prepare or modify a database. Applications using only the synchronous core methods do not activate its accounting refresh cost.
+Call `store.prepareRecordTransactions()` during planned writable maintenance to establish revision-bound capacity accounting. The first incremental purchase or new preferences command also prepares it when absent or stale. Preparation scans installation state and consumes ordinary storage capacity; insufficient capacity fails atomically. Read-only inspection does not prepare or modify a database. Preparation is a separate metadata migration; it can remain committed even if subsequent command validation fails, without committing that command's domain changes.
 
 Once activated, compatibility transactions refresh accounting in their own transaction. They still scan state; accounting stabilization updates only its scalar and reservation payload sizes after the initial measurement. An older writer that changes the revision without refreshing accounting causes the next incremental admission to prepare again. Existing receipt recovery can use the compatibility path without allocating this metadata first.
 

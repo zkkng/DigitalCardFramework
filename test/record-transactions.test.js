@@ -11,6 +11,16 @@ import {randomBytes} from 'node:crypto';
 import {summarizeRecords} from '../src/record-accounting.js';
 
 for(const Store of [MemoryStore,SQLiteStore]){
+ test(Store.name+' bounded preferences preserve identity, replay and one delivery',async()=>{
+  let deliveries=0;const store=new Store(),x=fixture({store,eventSubscriptions:[{id:'preferences',events:['preferences.updated'],handler:'preferences'}],actionHandlers:{preferences:async()=>{deliveries++;}}});try{
+   const owned=x.open()[0];store.prepareRecordTransactions();const identity=store.query(q=>q.get('users',x.alice.userId)),before=store.diagnostics?.(),request={key:'preferences',inventoryVisibility:'public',favoriteCopyIds:[owned.id],wishlistCardIds:['dawn'],blockedUserIds:[x.bob.userId]};
+   const result=x.core.setPreferences(x.alice,request);assert.deepEqual(x.core.setPreferences(x.alice,request),result);assert.equal(result.inventoryVisibility,'public');assert.deepEqual(result.favoriteCopyIds,[owned.id]);
+   if(before){const after=store.diagnostics();assert.equal(after.compatibilityMaterializations,before.compatibilityMaterializations);assert(after.decodedQueryRecords-before.decodedQueryRecords<40);assert(after.recordWrites-before.recordWrites<15);}
+   const current=store.query(q=>q.get('users',x.alice.userId));delete current.preferences;delete identity.preferences;assert.deepEqual(current,identity);
+   const snapshot=store.read(s=>s);assert.throws(()=>x.core.setPreferences(x.alice,{key:'prototype',blockedUserIds:['__proto__']}),code('INVALID_INPUT'));assert.throws(()=>store.transactRecords(tx=>{const row=tx.get('users',x.alice.userId);row.provider='changed';tx.put('users',row.id,row);},{preferences:true}),code('INVALID_STATE'));assert.deepEqual(store.read(s=>s),snapshot);
+   await x.core.dispatchActions(admin);await x.core.dispatchActions(admin);assert.equal(deliveries,1);assert.equal(x.core.audit(admin).ok,true);
+  }finally{x.core.close();}
+ });
  test(Store.name+' quote reads selected configuration without installation materialization',()=>{
   const store=new Store(),x=fixture({store});try{
    x.core.configureAdmin(admin,{key:'discount',expectedRevision:0,reason:'Reviewed pricing',scope:'product',targetId:'common',changes:{discountPercent:20}});
@@ -82,7 +92,7 @@ test('bounded acquisition rolls back at storage capacity without losing accepted
   const store=new SQLiteStore(path),x=fixture({store});core=x.core;store.prepareRecordTransactions();
   const request={...core.quote(x.alice,{productId:'common',quantity:1}),key:'accepted'},receipt=await core.purchaseAsync(x.alice,request),cap=store.read(s=>store.measure(s).totalBytes);core.close();
   const bounded=new SQLiteStore(path,{maxStateBytes:cap});core=new CardFramework({store:bounded,clock:()=> '2026-09-30T12:00:00.000Z'});const before=bounded.read(s=>s);
-  await assert.rejects(core.purchaseAsync(x.alice,{...request,key:'rejected'}),code('STORAGE_CAPACITY'));assert.deepEqual(bounded.read(s=>s),before);
+  await assert.rejects(core.purchaseAsync(x.alice,{...request,key:'rejected'}),code('STORAGE_CAPACITY'));assert.throws(()=>core.setPreferences(x.alice,{key:'capacity',inventoryVisibility:'public'}),code('STORAGE_CAPACITY'));assert.deepEqual(bounded.read(s=>s),before);
   assert.deepEqual(await core.purchaseAsync(x.alice,request),receipt);core.openPack(x.alice,{packId:receipt.packs[0].id,key:'open'});assert.equal(core.audit(admin).ok,true);
  }finally{core?.close();rmSync(dir,{recursive:true,force:true});}
 });

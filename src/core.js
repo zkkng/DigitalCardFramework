@@ -263,12 +263,26 @@ export class CardFramework {
   #inventoryViews(s,copies,userId){return copies.map(copy=>{check(copy.ownerId===userId&&copy.state==='owned','INVALID_STATE','Indexed card ownership differs',500);const reason=this.#tradeReason(copy,userId,s);return {...this.#copyView(s,copy,userId),tradable:!reason,untradableReason:reason};});}
   me(actor){return this.#query(q=>{const u=this.#queryUser(q,actor),s={adminControls:q.value('adminControls')};return {userId:u.id,displayName:u.displayName,preferences:this.#preferences(u),adminStatus:{site:adminSite(s),restrictions:adminRestrictions(s,u.id)}};});}
   setPreferences(actor,{key,inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds}){
-    return this.#command(actor,key,'preferences.updated',{inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds},(s,u)=>{
+    const input={inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds};text(key,'idempotency key',128);
+    if(!this.#store.transactRecords)return this.#command(actor,key,'preferences.updated',input,(s,u)=>this.#preferencesBody(s,u,input));
+    const execute=()=>this.#store.transactRecords(tx=>{
+      const user=this.#queryUser(tx,actor),token=user.id+':'+key,hash=fingerprint({type:'preferences.updated',input}),previous=tx.get('requests',token);
+      if(previous){check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409);return previous.result;}
+      let accounting;try{accounting=JSON.parse(tx.value(recordAccountingField));}catch{}check(validRecordAccounting(accounting,tx.value('revision')),'RECORD_MIGRATION_REQUIRED','Prepare revision-bound record accounting',503);
+      const state={users:{[user.id]:user},copies:Object.create(null),packs:{},requests:{},events:[],catalog:wishlistCardIds===undefined?undefined:tx.value('catalog')};
+      for(const [field,ids]of [['copies',favoriteCopyIds],['users',blockedUserIds]])if(Array.isArray(ids)&&ids.length<=1000&&ids.every(id=>typeof id==='string'))for(const id of ids){const row=tx.get(field,id);if(row)Object.defineProperty(state[field],id,{value:row,enumerable:true,writable:true,configurable:true});}
+      recordContexts.set(state,{accounting});
+      try{const result=this.#preferencesBody(state,user,input);state.copies={};state.requests[token]={hash,result:clone(result)};this.#event(state,'preferences.updated',{userId:user.id});this.#capacity(state,true);
+        tx.put('users',user.id,user);for(const field of ['requests','actionJobs','completionObligations'])for(const [id,value]of Object.entries(state[field]??{}))tx.put(field,id,value);for(const event of state.events)tx.append('events',event);return result;
+      }finally{recordContexts.delete(state);}
+    },{preferences:true});
+    try{return execute();}catch(error){if(error.code!=='RECORD_MIGRATION_REQUIRED')throw error;this.#store.prepareRecordTransactions();return execute();}
+  }
+  #preferencesBody(s,u,{inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds}){
       const next=this.#preferences(u);
       if(inventoryVisibility!==undefined){check(['private','traders','public'].includes(inventoryVisibility),'INVALID_INPUT','Invalid inventory visibility');next.inventoryVisibility=inventoryVisibility;}
-      for(const [field,value]of Object.entries({favoriteCopyIds,wishlistCardIds,blockedUserIds}))if(value!==undefined){check(Array.isArray(value)&&value.length<=1000&&new Set(value).size===value.length&&value.every(id=>typeof id==='string'),'INVALID_INPUT','Invalid '+field);for(const id of value){if(field==='favoriteCopyIds')check(s.copies[id]?.ownerId===u.id&&s.copies[id]?.state==='owned','NOT_OWNED','Favorite must be owned',403);if(field==='wishlistCardIds')check(lookup(this.#catalog(s).cards,id),'INVALID_INPUT','Wishlist card not found');if(field==='blockedUserIds')check(s.users[id]&&id!==u.id,'INVALID_INPUT','Block requires another user');}next[field]=value;}
+      for(const [field,value]of Object.entries({favoriteCopyIds,wishlistCardIds,blockedUserIds}))if(value!==undefined){check(Array.isArray(value)&&value.length<=1000&&new Set(value).size===value.length&&value.every(id=>typeof id==='string'),'INVALID_INPUT','Invalid '+field);for(const id of value){if(field==='favoriteCopyIds')check(s.copies[id]?.ownerId===u.id&&s.copies[id]?.state==='owned','NOT_OWNED','Favorite must be owned',403);if(field==='wishlistCardIds')check(lookup(this.#catalog(s).cards,id),'INVALID_INPUT','Wishlist card not found');if(field==='blockedUserIds')check(Object.hasOwn(s.users,id)&&s.users[id]&&id!==u.id,'INVALID_INPUT','Block requires another user');}next[field]=value;}
       u.preferences=next;return next;
-    });
   }
   #blocked(s,a,b){return this.#preferences(s.users[a]).blockedUserIds.includes(b)||this.#preferences(s.users[b]).blockedUserIds.includes(a);}
   directory(actor,options={}){return this.#store.read(s=>{const viewer=this.#user(s,actor);return page(Object.values(s.users).filter(u=>u.id!==viewer.id&&!this.#blocked(s,viewer.id,u.id)).map(u=>({id:u.id,name:u.displayName,createdAt:u.createdAt,inventoryVisible:this.#catalog(s).features.inventoryBrowsing&&this.#preferences(u).inventoryVisibility!=='private'})),{...options,sort:'name'});});}

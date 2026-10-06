@@ -17,7 +17,13 @@ export function validateAcquisitionChanges(changes){
     if(row.collection==='actionJobs')check(additions.completionObligations?.[row.value.deliveryCompletionId],'RECORD_TRANSACTION_UNSUPPORTED','New deliveries require a new reservation',409);
   }
 }
-export function validateRecordPlan(plan,{intent=false}={}){
+export function validateRecordPlan(plan,{intent=false,preferences=false}={}){
+  if(preferences){
+    check(!intent&&!plan.scalars.length&&!plan.completion,'RECORD_TRANSACTION_UNSUPPORTED','Preferences require ordinary admission',409);
+    check(plan.changes.every(row=>['users','requests','events','actionJobs','completionObligations'].includes(row.collection)),'RECORD_TRANSACTION_UNSUPPORTED','Collection is outside preferences transaction scope',409);
+    for(const row of plan.changes.filter(row=>row.collection==='users')){check(row.old,'RECORD_TRANSACTION_UNSUPPORTED','Preferences cannot create accounts',409);const {preferences:oldPreferences,...old}=row.old.value,{preferences:newPreferences,...next}=row.value;check(isDeepStrictEqual(old,next),'INVALID_STATE','Account identity is immutable in preferences transactions',500);}
+    return validateAcquisitionChanges(plan.changes.filter(row=>row.collection!=='users'));
+  }
   if(!intent){check(!plan.scalars.length&&!plan.completion,'RECORD_TRANSACTION_UNSUPPORTED','Acquisition cannot mutate scalars or settle reservations',409);return validateAcquisitionChanges(plan.changes);}
   for(const row of plan.scalars)check(row.name==='commandIntentCount'&&Number.isSafeInteger(row.value)&&row.value===(row.old??0)+1,'RECORD_TRANSACTION_UNSUPPORTED','Invalid intent count change',409);
   for(const row of plan.changes){

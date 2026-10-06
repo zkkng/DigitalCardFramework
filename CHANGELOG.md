@@ -26,6 +26,7 @@
 
 ### Changed
 
+- Preference updates now use bounded account and referenced-record transactions with atomic receipt and event delivery, preserving original replay and account identity.
 - Pack quotes now read only the requesting account and selected configuration, avoiding inventory and receipt-history materialization while retaining reviewed pricing rules.
 - Prepared SQLite installations now register, finalize and acknowledge recovery intents with bounded record transactions, preserving reserved completion at ordinary storage capacity.
 - Production HTTP purchases now await incremental acquisition and durable command execution while preserving original receipt recovery after interrupted finalization.
