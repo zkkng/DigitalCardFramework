@@ -22,6 +22,7 @@
 
 ### Changed
 
+- Converted the browser client, code-reveal controller and durable command runner to strict TypeScript with generated declarations and checked build parity.
 - New catalogs default to collection-only. The reference frontend loads optional views and data according to enabled workflows and retained recovery needs; the example catalog explicitly selects the demo profile.
 - Resale no longer requires enabling user-to-user trade offers. Disabling admission preserves accepted work and original receipt replay.
 - Encrypted storage schema 3 adds indexed current/former code-holder history alongside identity and collection queries. Migration preserves existing encrypted records and authentication sessions.
@@ -30,6 +31,7 @@
 
 ### Fixed
 
+- Validate recovered command results and their original intent before confirming success. Malformed recovery replies preserve the original key for safe retry.
 - Serialized Studio authoring and undo actions, and prevented queued edits from running after disposal. Mask inversion now requires a boolean value.
 - Preserved original purchase inputs and retry keys across remounts and later authentication/rate-limit failures. Admin saves stop before dispatch when their recovery journal cannot be stored safely.
 - Reserved refundable balance headroom so later credits cannot prevent escrow refunds, and fenced disposed controllers against obsolete requests and callbacks.

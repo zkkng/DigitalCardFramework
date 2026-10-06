@@ -26,6 +26,7 @@ jobs:
       - run: pnpm audit --prod
       - run: pnpm --dir src/presentation audit --prod
       - run: node examples/card-policies.mjs
+      - run: node examples/capabilities.mjs
       - run: node examples/admin-headless.mjs
       - run: node examples/external-currency-provider.mjs
       - run: node examples/code-cards.mjs
