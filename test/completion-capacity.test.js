@@ -8,8 +8,34 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomBytes} from 'node:crypto';
 import {completionCapacity,completionDefaults,completionPool} from '../src/completion.js';
+import {codesFixture,vault} from './codes-fixtures.mjs';
 const clock=()=> '2026-09-30T12:00:00.000Z';
 const subscriptions=[{id:'all',handler:'events',events:['*']}];
+test('opening reserves repeated large code metadata, provenance and maximum action attachments',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'completion-projection-')),path=join(dir,'state.sqlite'),encryptionKey=randomBytes(32);let core;
+ try{
+  const store=new SQLiteStore(path,{encryptionKey}),metadata={text:'x'.repeat(32000)},x=codesFixture({store,stock:0,change(c){const variant=c.variants.find(row=>row.id==='reward.standard'),product=c.products.find(row=>row.id==='bundle');variant.codes=Array.from({length:8},(_,i)=>({id:'code-'+i,poolId:'rewards'}));variant.onOpen=Array.from({length:16},(_,i)=>({id:'action-'+i,handler:'deliver',params:{text:'a'.repeat(12000)}}));product.metadata=metadata;product.slots[1].metadata=metadata;}});core=x.core;
+  core.importCodes(admin,{key:'stock',poolId:'rewards',codes:Array.from({length:8},(_,i)=>({code:'QUALIFICATION-'+i,metadata}))});const pack=x.buy('bundle').packs[0];
+  const codeId=store.read(s=>Object.values(s.codes)[0].id);assert.throws(()=>core.confirmCodeStatus(admin,{providerId:'example.game',eventId:'oversize-date',codeId,status:'revoked',occurredAt:'2026-10-01'+ ' '.repeat(100)}),code('INVALID_INPUT'));
+  core.confirmCodeStatus(admin,{providerId:'example.game',eventId:'revoked',codeId,status:'revoked',occurredAt:'2026-10-01T00:00:00Z'});
+  const cap=store.read(s=>store.measure(s).totalBytes);core.close();const bounded=new SQLiteStore(path,{encryptionKey,maxStateBytes:cap});core=new CardFramework({store:bounded,clock,codeVault:vault()});
+  const receipt=core.openPack(x.alice,{key:'open',packId:pack.id});assert.equal(receipt.cards.find(card=>card.cardId==='reward').codes.length,8);assert.deepEqual(core.openPack(x.alice,{key:'open',packId:pack.id}),receipt);assert.equal(core.audit(admin).ok,true);
+  const reservation=bounded.read(s=>s.completionObligations['pack:'+pack.id]);assert(reservation.usedBytes<reservation.bytes);assert.equal(bounded.read(s=>Object.values(s.actionJobs).filter(job=>job.completionId===reservation.id).length),16);
+ }finally{core?.close();rmSync(dir,{recursive:true,force:true});}
+});
+for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' legacy migration fences admission and backfills atomically',()=>{
+ const store=new Store(),x=fixture({store,eventSubscriptions:subscriptions});try{
+  const pack=x.buy().packs[0],trade=x.core.proposeTrade(x.alice,{key:'offer',toUserId:x.bob.userId,give:{copyIds:[],currencies:[{currencyId:'credits',amount:10}]},receive:{copyIds:[],currencies:[]}});
+  store.transact(s=>{delete s.completionObligations;for(const job of Object.values(s.actionJobs))delete job.deliveryCompletionId;});
+  const before=store.read(s=>s),limited=new CardFramework({store,clock,eventSubscriptions:subscriptions,limits:{completionObligations:1}});
+  assert.throws(()=>limited.backfillCompletionReservations(admin),code('COMPLETION_CAPACITY'));assert.deepEqual(store.read(s=>s),before);
+  const core=new CardFramework({store,clock,eventSubscriptions:subscriptions});
+  for(const command of [()=>core.setPreferences(x.alice,{key:'new',inventoryVisibility:'public'}),()=>core.grantCurrency(admin,{userId:x.alice.userId,currencyId:'credits',amount:1,key:'new',reason:'Funding'}),()=>core.settleExternalCredit(admin,{providerId:'fixture',transactionId:'new',userId:x.alice.userId,currencyId:'credits',amount:1,externalCurrency:'credits',externalUnits:'1'})]){assert.throws(command,code('COMPLETION_MIGRATION_REQUIRED'));assert.deepEqual(store.read(s=>s),before);}
+  assert.equal(core.wallet(x.alice).credits,9980);assert(core.backfillCompletionReservations(admin).count>=3);assert.deepEqual(core.backfillCompletionReservations(admin),{count:0});
+  assert.deepEqual(store.read(s=>s.requests),before.requests);assert.deepEqual(store.read(s=>s.balances),before.balances);assert.deepEqual(store.read(s=>s.trades),before.trades);
+  core.cancelTrade(x.alice,{key:'cancel',tradeId:trade.id});core.openPack(x.alice,{key:'open',packId:pack.id});assert.equal(core.audit(admin).ok,true);
+ }finally{x.core.close();}
+});
 test('completion records cannot spend another obligation reservation',()=>{
  const row={id:'trade:a',status:'completed',bytes:1000,usedBytes:0,jobs:1,events:1};
  const state={completionObligations:{a:row,b:{...row,id:'trade:b',status:'reserved',jobs:10,events:10}},actionJobs:{a:{completionId:row.id},b:{completionId:row.id}}};
@@ -18,7 +44,7 @@ test('completion records cannot spend another obligation reservation',()=>{
  state.events=[];state.requests={a:{completionId:row.id},b:{completionId:row.id}};assert.throws(()=>completionCapacity(state,completionDefaults),code('COMPLETION_INVARIANT'));
 });
 test('completion byte accounting rejects invalid status and excess credit',()=>{
- for(const patch of [{status:'unknown'},{usedBytes:101},{status:'reserved',usedBytes:1}])assert.throws(()=>completionPool({completionObligations:{a:{status:'completed',bytes:100,usedBytes:0,...patch}}}),code('INVALID_STATE'));
+ for(const patch of [{status:'unknown'},{usedBytes:101},{usedBytes:-1}])assert.throws(()=>completionPool({completionObligations:{a:{status:'completed',bytes:100,usedBytes:0,...patch}}}),code('INVALID_STATE'));
 });
 test('retained completion credit cannot fund ordinary writes after a receipt is removed',()=>{
  const dir=mkdtempSync(join(tmpdir(),'completion-retained-')),path=join(dir,'state.sqlite');let core;
@@ -109,7 +135,9 @@ for(const legacy of [false,true])for(const kind of ['trade','listing','paid-pack
   else if(kind==='listing'){actor={...x.alice,role:'admin'};const shop=core.createShop(actor,{key:'shop',name:'Stock',kind:'admin'});target=core.createListing(actor,{key:'listing',shopId:shop.id,title:'Stock',price:{currencyId:'credits',amount:20},items:{kind:'mint-card',variantId:'dawn.standard',quantity:2}});command='cancelListing';input={key:'complete',listingId:target.id};}
   else{target=x.buy().packs[0];command='openPack';input={key:'complete',packId:target.id};}
   if(legacy)store.transact(s=>{delete s.completionObligations;for(const job of Object.values(s.actionJobs??{}))delete job.deliveryCompletionId;});
+  else store.transact(s=>{s.revision=8;});
   const cap=store.read(s=>store.measure(s).totalBytes);core.close();const bounded=new SQLiteStore(path,{encryptionKey,maxStateBytes:cap});core=new CardFramework({store:bounded,clock,eventSubscriptions:subscriptions});
+  if(legacy){assert(core.backfillCompletionReservations(admin).count>0);assert.deepEqual(core.backfillCompletionReservations(admin),{count:0});}
   const receipt=core[command](actor,input);assert.deepEqual(core[command](actor,input),receipt);assert(bounded.read(s=>bounded.measure(s).totalBytes===bounded.measure(s).usedBytes));assert(bounded.read(s=>bounded.measure(s).usedBytes>cap));assert.equal(core.audit(admin).ok,true);
   const before=bounded.read(s=>s);assert.throws(()=>core.setPreferences(x.alice,{key:'new-work',inventoryVisibility:'public'}),code('STORAGE_CAPACITY'));assert.deepEqual(bounded.read(s=>s),before);
   core.close();core=new CardFramework({store:new SQLiteStore(path,{encryptionKey,maxStateBytes:cap}),clock,eventSubscriptions:subscriptions});assert.deepEqual(core[command](actor,input),receipt);assert.equal(core.audit(admin).ok,true);

@@ -318,7 +318,7 @@ export class CodeService {
     operator(actor, 'codes.confirm'); identifier(providerId, 'provider ID'); identifier(codeId, 'code ID'); text(eventId, 'provider event ID', 300);
     check(!actor.codeProviderIds||actor.codeProviderIds.includes(providerId),'FORBIDDEN','Provider confirmation scope does not match',403);
     check(terminal.has(status), 'INVALID_INPUT', 'Provider status must be redeemed or revoked');
-    check(typeof occurredAt === 'string' && Number.isFinite(Date.parse(occurredAt)), 'INVALID_INPUT', 'Provider event time is required');
+    check(typeof occurredAt === 'string' && occurredAt.length<=100 && Number.isFinite(Date.parse(occurredAt)), 'INVALID_INPUT', 'Provider event time must be a valid date of at most 100 characters');
     return this.#store.transact(s => {
       initialize(s); const row = s.codes[codeId];
       check(row?.providerId === providerId, 'NOT_FOUND', 'Provider code not found', 404);

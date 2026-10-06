@@ -1,5 +1,5 @@
 import {hasPermission} from './access.js';
-import {completionContext,completionDefaults,completionCapacity,ordinaryRequestCount,reserveCompletion,withCompletion} from './completion.js';
+import {completionContext,completionDefaults,completionCapacity,ordinaryRequestCount,reserveCompletion,withCompletion,missingCompletions,reserveDelivery,accountReservationMetadata} from './completion.js';
 import {ExternalPurchaseService} from './external-purchases.js';
 import {deriveStats,inspectCardPolicy} from './card-policy.js';
 import {CardPolicyService,validateGovernedCatalog,redactGovernedCard} from './card-policy-service.js';
@@ -133,6 +133,7 @@ export class CardFramework {
     return this.#store.transact(s=>{s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,hash=fingerprint({type,input}),previous=s.operatorRequests[token];if(previous){check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Operator key already used',409);return previous.result;}const result=fn(s);this.#capacity(s);this.#event(s,type,{userId:actor.userId??null});s.operatorRequests[token]={hash,result:clone(result)};return result;});
   }
   #capacity(s,completion=false){
+    this.#admission(s);
     completionCapacity(s,this.#limits);
     for(const field of ['copies','packs','requests','albums','trades','actionJobs','shops','listings','orders'])if(this.#limits[field]!==undefined)
       check(field==='requests'?ordinaryRequestCount(s)+(completion?0:1)<=this.#limits.requests:Object.values(s[field]??{}).filter(row=>field!=='actionJobs'||!row.completionId).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
@@ -179,6 +180,7 @@ export class CardFramework {
   #catalog(s) {check(s.catalog,'NO_CATALOG','Publish a catalog first',409); return s.catalog;}
   #feature(s,name) {check(this.#catalog(s).features[name],'FEATURE_DISABLED',name+' is disabled',403);}
   #event(s,type,data,at=this.#clock()) {
+    this.#admission(s);
     const completion=completionContext(s),event={id:id(),sequence:s.events.length+1,type,data,at,...(completion?{completionId:completion.id}:{})};s.events.push(event);
     for(const subscription of completion?completion.subscriptions.filter(original=>this.#subscriptions.some(current=>current.id===original.id&&current.handler===original.handler&&(current.events.includes(type)||current.events.includes('*')))):this.#subscriptions)if(subscription.events.includes(type)||subscription.events.includes('*'))enqueueAction(s,{handler:subscription.handler,userId:data.userId??data.ownerId??null,params:{event:clone(event)},source:{type:'event',eventId:event.id,subscriptionId:subscription.id}},event.at);
     check(Object.values(s.actionJobs??{}).filter(row=>!row.completionId).length<=this.#limits.actionJobs,'INSTALLATION_CAPACITY','Action queue capacity reached',507);
@@ -188,9 +190,20 @@ export class CardFramework {
   #reserve(s,kind,entityId){
     const entity=(kind==='trade'?s.trades:kind==='listing'?s.listings:s.packs)?.[entityId];check(entity,'NOT_FOUND','Completion obligation not found',404);
     const copyIds=kind==='trade'?[...entity.give.copyIds,...entity.receive.copyIds]:kind==='pack'?entity.copyIds:(entity.units??[]).flatMap(unit=>unit.kind==='copy'?[unit.copyId]:s.packs[unit.packId]?.copyIds??[]);
-    return reserveCompletion(s,{kind,entity,copyIds},this.#subscriptions,this.#limits);
+    const projections=kind==='pack'?copyIds.map(id=>this.#copyView(s,s.copies[id],entity.ownerId)):[];
+    return reserveCompletion(s,{kind,entity,copyIds,projections},this.#subscriptions,this.#limits);
   }
   #complete(s,kind,entityId,fn){const measure=state=>this.#store.measure?.(state)??{usedBytes:Buffer.byteLength(JSON.stringify(state))};const before=measure(s).usedBytes;return withCompletion(s,this.#reserve(s,kind,entityId),fn,measure,before);}
+  #admission(s){if(!completionContext(s))check(missingCompletions(s).length===0,'COMPLETION_MIGRATION_REQUIRED','Reserve existing completion obligations before admitting new work',503);}
+  backfillCompletionReservations(actor){
+    this.#admin(actor,'maintenance.run');
+    return this.#store.transact(s=>{
+      const missing=missingCompletions(s);if(!missing.length)return {count:0};
+      const measure=state=>this.#store.measure?.(state)??{usedBytes:Buffer.byteLength(JSON.stringify(state))},before=measure(s).usedBytes,rows=[];
+      for(const item of missing){if(item.kind==='action'){const job=s.actionJobs[item.id];reserveDelivery(s,job);rows.push(s.completionObligations[job.deliveryCompletionId]);}else rows.push(this.#reserve(s,item.kind,item.id));}
+      accountReservationMetadata(s,rows,measure,before);completionCapacity(s,this.#limits);return {count:rows.length};
+    });
+  }
 
   #notify(s,userId,type,data){s.notifications??=[];s.notifications.push({id:id(),userId,type,data,at:this.#clock(),read:false});const own=s.notifications.filter(n=>n.userId===userId);if(own.length>2000){const remove=new Set(own.slice(0,own.length-2000).map(n=>n.id));s.notifications=s.notifications.filter(n=>!remove.has(n.id));}}
   #preferences(user){return {inventoryVisibility:'traders',favoriteCopyIds:[],wishlistCardIds:[],blockedUserIds:[],...user.preferences};}

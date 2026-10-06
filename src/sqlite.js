@@ -131,9 +131,10 @@ export class SQLiteStore {
     if(measured.completionStoredBytes+measured.completionReservedBytes>this.#maxCompletionBytes)throw new FrameworkError('COMPLETION_CAPACITY','Completion storage capacity reached',507);
     const prior=previous===undefined?null:this.measure(previous);
     const completionGrowth=prior?Math.max(0,measured.completionStoredBytes-prior.completionStoredBytes):0;
+    const revisionGrowth=completionGrowth>0?Math.max(0,measured.usedBytes-this.measure({...state,revision:previous.revision}).usedBytes):0;
     // Completion allowance is consumed only by this transaction. Retained receipts
     // never provide a reusable discount for later ordinary writes.
-    if(measured.totalBytes>this.#maxBytes&&(prior===null||measured.totalBytes>prior.totalBytes+completionGrowth))throw new FrameworkError('STORAGE_CAPACITY','Installation capacity reached; existing completion reservations are retained',507);
+    if(measured.totalBytes>this.#maxBytes&&(prior===null||measured.totalBytes>prior.totalBytes+completionGrowth+revisionGrowth))throw new FrameworkError('STORAGE_CAPACITY','Installation capacity reached; existing completion reservations are retained',507);
     if(measured.totalBytes+measured.completionReservedBytes>this.#maxBytes+this.#maxCompletionBytes)throw new FrameworkError('COMPLETION_CAPACITY','Combined storage capacity reached',507);
     return measured;
   }

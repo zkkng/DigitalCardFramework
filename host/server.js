@@ -27,13 +27,14 @@ const dbPath=resolve(process.env.DATABASE_PATH??'data/production.sqlite');await 
 const extension=process.env.HOST_MODULE?await import(pathToFileURL(resolve(process.env.HOST_MODULE)).href):{};
 const codeKeyConfig=await secret('CODE_VAULT_KEYS'),codeIndex=await secret('CODE_INDEX_KEY');
 const codeVault=codeKeyConfig?createCodeVault({activeKeyId:process.env.CODE_ACTIVE_KEY_ID,keys:Object.fromEntries(Object.entries(JSON.parse(codeKeyConfig)).map(([id,hex])=>[id,keyFromHex(hex)])),indexKey:keyFromHex(codeIndex)}):undefined;
-const store=new SQLiteStore(dbPath,{encryptionKey}),framework=new CardFramework({store,actionHandlers:extension.actionHandlers,actionOptions:extension.actionOptions,eventSubscriptions:extension.eventSubscriptions,raffleRandom:extension.raffleRandom,codeVault,codeLimits:extension.codeLimits,bindings:extension.bindings,policies:extension.policies,
+const store=new SQLiteStore(dbPath,{encryptionKey,maxCompletionBytes:extension.limits?.completionBytes}),framework=new CardFramework({store,actionHandlers:extension.actionHandlers,actionOptions:extension.actionOptions,eventSubscriptions:extension.eventSubscriptions,raffleRandom:extension.raffleRandom,codeVault,codeLimits:extension.codeLimits,bindings:extension.bindings,policies:extension.policies,
   limits:{users:500,copies:5000,packs:2000,requests:20000,albums:2000,trades:2000,copiesPerUser:1000,packsPerUser:500,...extension.limits}});
 try{framework.catalog();}catch(error){if(error.code!=='NO_CATALOG')throw error;if(!process.env.CATALOG_FILE)throw new Error('CATALOG_FILE is required for first initialization');framework.publishCatalog({role:'admin'},parseContent(await readFile(process.env.CATALOG_FILE,'utf8'),{format:/\.ya?ml$/i.test(process.env.CATALOG_FILE)?'yaml':'json'}));}
 const raw=framework.operatorCatalog({role:'admin'});
 for(const variant of raw.variants)for(const binding of Object.values(variant.bindings))if(binding.factory&&!extension.bindings?.[binding.factory])throw new Error('Configure binding factory '+binding.factory+' in HOST_MODULE');
 if(raw.variants.some(v=>v.codes?.length)&&!codeVault)throw new Error('Configure CODE_VAULT_KEYS, CODE_ACTIVE_KEY_ID and CODE_INDEX_KEY before serving code cards');
 framework.verifyCodeVault({role:'admin'});
+framework.backfillCompletionReservations({role:'admin'});
 framework.backfillProvenance({role:'admin'});
 const codeGateway=extension.codeProviders?createCodeGateway({framework,providers:extension.codeProviders}):undefined;
 const audit=framework.audit({role:'admin'});if(!audit.ok||!store.integrity())throw new Error('Database verification failed; restore a verified backup');
