@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added TypeScript declarations for the trade draft component, with validated inventory responses and persisted draft inputs.
 - Added server-owned command recovery with account-scoped discovery, immutable reviewed inputs and explicit acknowledgement. A fresh browser or admin panel can recover an unconfirmed action after local storage is erased without repeating its debit or issuance.
 - Added typed existing client/admin-controller APIs and checked inventory, trade, administration and command-recovery responses.
 - Added a checked browser HTTP transport with generated TypeScript declarations, request/response validation and strict consumer checks. Acquisition contracts include reviewed revisions, public pack views and consistent error envelopes.

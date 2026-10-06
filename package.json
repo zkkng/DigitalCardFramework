@@ -34,7 +34,10 @@
     "./admin-ui": "./src/admin-ui.js",
     "./http": "./src/http.js",
     "./importer": "./src/importer.js",
-    "./trade-client": "./src/trade-client.js",
+    "./trade-client": {
+      "types": "./src/trade-client.d.ts",
+      "default": "./src/trade-client.js"
+    },
     "./trading-ui": "./src/trading-ui.js",
     "./collection-ui": "./src/collection-ui.js",
     "./inspector-ui": "./src/inspector-ui.js",

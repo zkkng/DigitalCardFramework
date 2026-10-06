@@ -4,7 +4,7 @@ import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 const compiler=process.env.DC_TYPESCRIPT_COMPILER??fileURLToPath(new URL('./lib/tsc.js',import.meta.resolve('typescript/package.json')));
-const result=spawnSync(process.execPath,[compiler,'--strict','--noUncheckedIndexedAccess','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','--lib','ES2022,DOM','--noEmit','src/wire-client.ts','test/sdk-consumer.ts','test/client-consumer.ts'],{stdio:'inherit',cwd:fileURLToPath(new URL('../',import.meta.url))});
+const result=spawnSync(process.execPath,[compiler,'--strict','--noUncheckedIndexedAccess','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','--lib','ES2022,DOM','--noEmit','src/wire-client.ts','src/trade-client.ts','test/sdk-consumer.ts','test/client-consumer.ts','test/trade-client-consumer.ts'],{stdio:'inherit',cwd:fileURLToPath(new URL('../',import.meta.url))});
 if(result.error)throw result.error;
 if(result.status!==0)process.exitCode=result.status??1;
 else{
@@ -14,8 +14,8 @@ else{
   }
   const directory=mkdtempSync(join(tmpdir(),'digital-card-sdk-'));
   try{
-    const emitted=spawnSync(process.execPath,[compiler,'--strict','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','--lib','ES2022,DOM','--declaration','--rootDir','src','--outDir',directory,'src/wire-client.ts'],{stdio:'inherit',cwd:fileURLToPath(new URL('../',import.meta.url))});
+    const emitted=spawnSync(process.execPath,[compiler,'--strict','--noUncheckedIndexedAccess','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','--lib','ES2022,DOM','--declaration','--rootDir','src','--outDir',directory,'src/wire-client.ts','src/trade-client.ts'],{stdio:'inherit',cwd:fileURLToPath(new URL('../',import.meta.url))});
     if(emitted.status!==0)throw new Error('SDK compilation failed');
-    for(const filename of ['wire-client.js','wire-client.d.ts'])if(readFileSync(join(directory,filename),'utf8')!==readFileSync(new URL('../src/'+filename,import.meta.url),'utf8'))throw new Error('Generated SDK drift: '+filename);
+    for(const filename of ['wire-client.js','wire-client.d.ts','trade-client.js','trade-client.d.ts'])if(readFileSync(join(directory,filename),'utf8')!==readFileSync(new URL('../src/'+filename,import.meta.url),'utf8'))throw new Error('Generated SDK drift: '+filename);
   }finally{rmSync(directory,{recursive:true,force:true});}
 }
