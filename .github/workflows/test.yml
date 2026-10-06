@@ -61,6 +61,9 @@ jobs:
       - run: node test/codes-browser.mjs test-results/codes
         env:
           BROWSER_ENGINE: ${{ matrix.engine }}
+      - run: node test/command-recovery-browser.mjs
+        env:
+          BROWSER_ENGINE: ${{ matrix.engine }}
       - run: node test/commerce-browser.mjs test-results/commerce
         env:
           BROWSER_ENGINE: ${{ matrix.engine }}
