@@ -7,7 +7,8 @@ export function maskLayout(mask = {}, asset = {}, node = {}) {
     x=(t.x ?? 0)+px-a*px-e*py,y=(t.y ?? 0)+py-b*px-d*py,det=a*d-b*e,
     width=asset.width ?? 1,height=asset.height ?? 1,rect=mask.rect ?? [0,0,width,height],
     uv=[rect[0]/width,rect[1]/height,rect[2]/width,rect[3]/height],
-    halfX=Math.min(uv[2]/2,0.5/(asset.textureWidth ?? width)),halfY=Math.min(uv[3]/2,0.5/(asset.textureHeight ?? height));
+    halfX=asset.width?Math.min(uv[2]/2,0.5/(asset.textureWidth ?? width)):0,
+    halfY=asset.height?Math.min(uv[3]/2,0.5/(asset.textureHeight ?? height)):0;
   return {
     matrix:new Float32Array([d/det,-b/det,0,-e/det,a/det,0,(e*y-d*x)/det,(b*x-a*y)/det,1]),
     rect:new Float32Array(uv),limits:new Float32Array([uv[0]+halfX,uv[1]+halfY,uv[0]+uv[2]-halfX,uv[1]+uv[3]-halfY]),

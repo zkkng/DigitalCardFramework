@@ -118,31 +118,7 @@
           ]
         },
         "mask": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "asset": {
-              "type": "string",
-              "pattern": "^[a-zA-Z][\\w.-]{0,99}$"
-            },
-            "polygon": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "number"
-                },
-                "minItems": 2,
-                "maxItems": 2
-              },
-              "minItems": 3,
-              "maxItems": 64
-            },
-            "invert": {
-              "type": "boolean"
-            }
-          },
-          "required": []
+          "$ref": "#/$defs/mask"
         },
         "material": {
           "type": "object",
@@ -217,6 +193,9 @@
               "type": "string",
               "pattern": "^[a-zA-Z][\\w.-]{0,99}$"
             },
+            "mask": {
+              "$ref": "#/$defs/mask"
+            },
             "mode": {
               "enum": [
                 "surface",
@@ -232,7 +211,17 @@
           },
           "required": [
             "kind"
-          ]
+          ],
+          "not": {
+            "properties": {
+              "mask": {},
+              "maskAsset": {}
+            },
+            "required": [
+              "mask",
+              "maskAsset"
+            ]
+          }
         },
         "bindings": {
           "type": "object",
@@ -587,6 +576,145 @@
       "required": [
         "id",
         "type"
+      ]
+    },
+    "mask": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asset": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][\\w.-]{0,99}$"
+        },
+        "polygon": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "minItems": 3,
+          "maxItems": 64
+        },
+        "invert": {
+          "type": "boolean"
+        },
+        "rect": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "transform": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 100
+            },
+            "y": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 100
+            },
+            "scaleX": {
+              "type": "number",
+              "anyOf": [
+                {
+                  "minimum": -100,
+                  "maximum": -0.001
+                },
+                {
+                  "minimum": 0.001,
+                  "maximum": 100
+                }
+              ]
+            },
+            "scaleY": {
+              "type": "number",
+              "anyOf": [
+                {
+                  "minimum": -100,
+                  "maximum": -0.001
+                },
+                {
+                  "minimum": 0.001,
+                  "maximum": 100
+                }
+              ]
+            },
+            "rotation": {
+              "type": "number",
+              "minimum": -360000,
+              "maximum": 360000
+            },
+            "pivotX": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 100
+            },
+            "pivotY": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 100
+            }
+          },
+          "required": []
+        }
+      },
+      "required": [],
+      "oneOf": [
+        {
+          "properties": {
+            "asset": {}
+          },
+          "required": [
+            "asset"
+          ],
+          "not": {
+            "properties": {
+              "polygon": {}
+            },
+            "required": [
+              "polygon"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "polygon": {}
+          },
+          "required": [
+            "polygon"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "properties": {
+                  "asset": {}
+                },
+                "required": [
+                  "asset"
+                ]
+              },
+              {
+                "properties": {
+                  "rect": {}
+                },
+                "required": [
+                  "rect"
+                ]
+              }
+            ]
+          }
+        }
       ]
     }
   }

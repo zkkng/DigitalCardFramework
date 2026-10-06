@@ -49,6 +49,7 @@ test("mask inverse transforms preserve identity, pixel rotations and atlas sampl
   const crop=maskLayout({rect:[2,0,2,2]},{width:4,height:2});
   assert.deepEqual([...crop.rect],[0.5,0,0.5,1]);
   assert.deepEqual([...crop.limits],[0.625,0.25,0.875,0.75]);
+  assert.deepEqual([...maskLayout({},{texture:{}}).limits],[0,0,1,1]);
 });
 
 test("font inspection reports decoded face metrics and declared terms survive export", async () => {
