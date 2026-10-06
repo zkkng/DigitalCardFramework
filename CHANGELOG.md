@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added bounded trade acceptance and counteroffers, including code-holder history, favorites and album cleanup with atomic escrow and recovery.
+- Added plugin deployment manifests, configuration/dependency validation, cascading revocation, draining and credential-safe replacement that retains purchase recovery.
+
 - Reject disabled trade workflows before preparing storage accounting, preserving unchanged state on rejected admission.
 
 - Added bounded trade proposals, cancellation and decline with encrypted sender escrow accounting, atomic refunds and retained receipt replay. Stale accounting can fall back to completion recovery at full capacity.

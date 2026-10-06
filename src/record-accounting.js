@@ -4,7 +4,7 @@ import {check} from './catalog.js';
 export const recordAccountingField='_recordAccounting';
 export function validRecordAccounting(summary,revision){
   const count=value=>Number.isSafeInteger(value)&&value>=0;
-  return summary?.version===2&&summary.revision===revision&&count(summary.usedBytes)
+  return summary?.version===3&&summary.revision===revision&&count(summary.usedBytes)
     &&summary.counts!==null&&typeof summary.counts==='object'&&!Array.isArray(summary.counts)&&Object.values(summary.counts).every(count)
     &&['ordinaryRequests','ordinaryJobs','ordinaryEvents','missingCompletions','legacyPurchases','externalReservedBytes'].every(key=>count(summary[key]))
     &&['actions','trades','listings'].every(key=>count(summary.workers?.[key]))
@@ -13,7 +13,7 @@ export function validRecordAccounting(summary,revision){
 export function summarizeRecords(state){
   const obligations=Object.values(state.completionObligations??{}),pending=obligations.filter(row=>row.status==='reserved');
   const pool=completionPool(state),requests=Object.values(state.requests??{}).concat(Object.values(state.operatorRequests??{}));
-  return {version:2,revision:state.revision,usedBytes:0,
+  return {version:3,revision:state.revision,usedBytes:0,
     counts:Object.fromEntries(Object.entries(state).filter(([name,value])=>name!==recordAccountingField&&value&&typeof value==='object').map(([name,value])=>[name,Object.keys(value).length])),
     ordinaryRequests:ordinaryRequestCount(state),ordinaryJobs:Object.values(state.actionJobs??{}).filter(row=>!row.completionId).length,
     ordinaryEvents:(state.events??[]).filter(row=>!row.completionId).length,missingCompletions:missingCompletions(state).length,
@@ -55,7 +55,7 @@ export function finalizeRecordAccounting(state,previous,measure){
   check(false,'COMPLETION_INVARIANT','Completion record accounting did not stabilize',500);
 }
 
-/** Rebuild encrypted sender escrow projections for compatibility writers. */
+/** Rebuild encrypted escrow and copy-reference projections for compatibility writers. */
 export function updateTradeEscrow(state){
  const rows=Object.create(null);for(const owner of Object.keys(state._tradeEscrow??{}))rows[owner]=Object.create(null);
  for(const trade of Object.values(state.trades??{}))if(trade.status==='pending')for(const money of trade.give.currencies){
@@ -63,12 +63,16 @@ export function updateTradeEscrow(state){
   const row=rows[trade.fromUserId]??=Object.create(null),sum=BigInt(row[money.currencyId]??0)+BigInt(money.amount);check(sum<=BigInt(Number.MAX_SAFE_INTEGER),'INVALID_STATE','Refundable escrow exceeds integer range',500);row[money.currencyId]=Number(sum);
  }
  state._tradeEscrow=rows;
+ const references=Object.create(null);for(const id of Object.keys(state.copies??{}))references[id]={users:[],albums:[]};
+ for(const user of Object.values(state.users??{}))for(const id of user.preferences?.favoriteCopyIds??[])if(references[id])references[id].users.push(user.id);
+ for(const album of Object.values(state.albums??{}))for(const placement of album.placements??[])if(references[placement.copyId])references[placement.copyId].albums.push(album.id);
+ state._copyReferences=references;
 }
 
-export const recordPreparationMarker='prepare-accounting-v2';
+export const recordPreparationMarker='prepare-accounting-v3';
 /** Existing completions may drop stale caches without allocating a migration. */
 export function refreshTradeAccounting(state){
  let version;try{version=JSON.parse(state[recordAccountingField]).version;}catch{}
- if(version!==2&&state[recordAccountingField]!==recordPreparationMarker){delete state[recordAccountingField];delete state._tradeEscrow;return false;}
+ if(version!==3&&state[recordAccountingField]!==recordPreparationMarker){delete state[recordAccountingField];delete state._tradeEscrow;delete state._copyReferences;return false;}
  updateTradeEscrow(state);return true;
 }

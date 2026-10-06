@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contract": {
+      "const": "digital-card-plugin-manifest@1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]{1,8}\\.[0-9]{1,8}\\.[0-9]{1,8}$"
+    },
+    "protocol": {
+      "const": "digital-card-plugin@1"
+    },
+    "commands": {
+      "type": "array",
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "inventory.read",
+          "catalog.read",
+          "purchase.quote",
+          "purchase.register",
+          "purchase.pending",
+          "purchase.execute",
+          "purchase.acknowledge"
+        ]
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]{1,8}\\.[0-9]{1,8}\\.[0-9]{1,8}$"
+          }
+        },
+        "required": [
+          "id",
+          "version"
+        ]
+      }
+    },
+    "configurationSchema": {
+      "type": "object"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "external-http"
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "prerequisites": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "migration": {
+          "enum": [
+            "none",
+            "operator-required"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "language",
+        "prerequisites",
+        "migration"
+      ]
+    }
+  },
+  "required": [
+    "contract",
+    "id",
+    "version",
+    "protocol",
+    "commands",
+    "dependencies",
+    "configurationSchema",
+    "runtime"
+  ]
+}

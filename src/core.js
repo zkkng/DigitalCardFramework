@@ -277,8 +277,9 @@ export class CardFramework {
       let accounting;try{accounting=JSON.parse(tx.value(recordAccountingField));}catch{}check(validRecordAccounting(accounting,tx.value('revision')),'RECORD_MIGRATION_REQUIRED','Prepare revision-bound record accounting',503);
       const state={users:{[user.id]:user},copies:Object.create(null),packs:{},requests:{},events:[],catalog:wishlistCardIds===undefined?undefined:tx.value('catalog')};
       for(const [field,ids]of [['copies',favoriteCopyIds],['users',blockedUserIds]])if(Array.isArray(ids)&&ids.length<=1000&&ids.every(id=>typeof id==='string'))for(const id of ids){const row=tx.get(field,id);if(row)Object.defineProperty(state[field],id,{value:row,enumerable:true,writable:true,configurable:true});}
-      recordContexts.set(state,{accounting});
+      const previousFavorites=clone(user.preferences?.favoriteCopyIds??[]);recordContexts.set(state,{accounting});
       try{const result=this.#preferencesBody(state,user,input);state.copies={};state.requests[token]={hash,result:clone(result)};this.#event(state,'preferences.updated',{userId:user.id});this.#capacity(state,true);
+        if(favoriteCopyIds!==undefined)for(const id of new Set([...previousFavorites,...user.preferences.favoriteCopyIds])){const refs=tx.get('_copyReferences',id);check(refs,'INVALID_STATE','Copy reference projection is missing; rebuild accounting',500);refs.users=refs.users.filter(id=>id!==user.id);if(user.preferences.favoriteCopyIds.includes(id))refs.users.push(user.id);tx.put('_copyReferences',id,refs);}
         tx.put('users',user.id,user);for(const field of ['requests','actionJobs','completionObligations'])for(const [id,value]of Object.entries(state[field]??{}))tx.put(field,id,value);for(const event of state.events)tx.append('events',event);return result;
       }finally{recordContexts.delete(state);}
     },{preferences:true});
@@ -870,45 +871,47 @@ export class CardFramework {
       return trade;
   }
   #tradeRecords(actor,key,type,input,fallback){
-    if(!this.#store.transactRecords)return fallback();text(key,'idempotency key',128);const proposal=type==='trade.proposed';
+    if(!this.#store.transactRecords)return fallback();text(key,'idempotency key',128);const proposal=type==='trade.proposed',counter=type==='trade.countered',accepting=type==='trade.accepted',admission=proposal||counter;
     const execute=()=>this.#store.transactRecords(tx=>{
       const user=this.#queryUser(tx,actor),token=user.id+':'+key,hash=fingerprint({type,input}),previous=tx.get('requests',token);if(previous){check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409);return previous.result;}
-      let accounting;try{accounting=JSON.parse(tx.value(recordAccountingField));}catch{}check(validRecordAccounting(accounting,tx.value('revision')),proposal?'RECORD_MIGRATION_REQUIRED':'RECORD_PATH_UNAVAILABLE','Prepare revision-bound record accounting',503);
-      let trade;if(!proposal){trade=typeof input.tradeId==='string'?tx.get('trades',input.tradeId):undefined;check(trade&&[trade.fromUserId,trade.toUserId].includes(user.id),'NOT_FOUND','Trade not found',404);check(trade.status==='pending','TRADE_CLOSED','Trade already closed',409);}
+      let accounting;try{accounting=JSON.parse(tx.value(recordAccountingField));}catch{}check(validRecordAccounting(accounting,tx.value('revision')),admission?'RECORD_MIGRATION_REQUIRED':'RECORD_PATH_UNAVAILABLE','Prepare revision-bound record accounting',503);
+      let trade;if(!proposal){trade=typeof input.tradeId==='string'?tx.get('trades',input.tradeId):undefined;check(trade&&(counter||accepting?trade.toUserId===user.id:[trade.fromUserId,trade.toUserId].includes(user.id)),'NOT_FOUND','Trade not found',404);check(trade.status==='pending','TRADE_CLOSED','Trade already closed',409);}
       const sender=trade?.fromUserId??user.id,recipient=trade?.toUserId??input.toUserId,users=Object.create(null);users[user.id]=user;
-      for(const id of [sender,recipient])if(typeof id==='string'&&!Object.hasOwn(users,id)){const row=tx.get('users',id);if(row)users[id]=row;}
-      const offered=trade?[trade.give]:[input.give,input.receive],copies=Object.create(null);
-      for(const offer of offered){check(offer&&Array.isArray(offer.copyIds)&&Array.isArray(offer.currencies),'INVALID_INPUT','Trade offers need copyIds and currencies arrays');check(offer.copyIds.length<=1000&&offer.currencies.length<=100,'INVALID_INPUT','Trade offer too large');for(const id of offer.copyIds){if(typeof id!=='string')continue;const copy=tx.get('copies',id);if(copy){check(!proposal||!copy.codeIds?.length,'RECORD_PATH_UNAVAILABLE','Code-bearing proposals require compatibility validation',409);copies[id]=copy;if(copy.openedBy&&!Object.hasOwn(users,copy.openedBy)){const openedBy=tx.get('users',copy.openedBy);if(openedBy)users[openedBy.id]=openedBy;}}}}
-      const balances=Object.create(null);for(const id of [sender,recipient])if(typeof id==='string'&&Object.hasOwn(users,id))balances[id]=tx.get('balances',id)??{};
-      const escrow=tx.get('_tradeEscrow',sender)??{};for(const amount of Object.values(escrow))check(Number.isSafeInteger(amount)&&amount>=0,'INVALID_STATE','Invalid sender escrow projection',500);
-      const refundable=clone(escrow);if(trade)for(const money of trade.give.currencies){check((refundable[money.currencyId]??0)>=money.amount,'INVALID_STATE','Sender escrow projection is incomplete',500);refundable[money.currencyId]-=money.amount;}
-      const state={schemaVersion:1,revision:accounting.revision,catalog:tx.value('catalog'),adminControls:tx.value('adminControls'),cardAuthoring:tx.value('cardAuthoring'),tradingPolicy:tx.value('tradingPolicy'),users,balances,copies,packs:{},trades:trade?{[trade.id]:trade}:{},requests:{},ledger:[],events:[],notifications:[],completionObligations:{}};
-      accounting.counts.copies=(accounting.counts.copies??0)-Object.keys(copies).length;
+      const loadUser=id=>{if(typeof id==='string'&&!Object.hasOwn(users,id)){const row=tx.get('users',id);if(row)users[id]=row;}};for(const id of [sender,recipient])loadUser(id);
+      const offered=proposal?[input.give,input.receive]:counter?[trade.give,trade.receive,input.give,input.receive]:accepting?[trade.give,trade.receive]:[trade.give],copies=Object.create(null),codes=Object.create(null);
+      for(const offer of offered){check(offer&&Array.isArray(offer.copyIds)&&Array.isArray(offer.currencies),'INVALID_INPUT','Trade offers need copyIds and currencies arrays');check(offer.copyIds.length<=1000&&offer.currencies.length<=100,'INVALID_INPUT','Trade offer too large');for(const id of offer.copyIds){if(typeof id!=='string')continue;const copy=tx.get('copies',id);if(copy){copies[id]=copy;loadUser(copy.openedBy);for(const codeId of copy.codeIds??[]){const code=tx.get('codes',codeId);check(code,'INVALID_STATE','Attached code is missing',500);codes[codeId]=code;}}}}
+      const albums=Object.create(null),references=Object.create(null);if(accepting)for(const id of Object.keys(copies)){const refs=tx.get('_copyReferences',id);check(refs&&Array.isArray(refs.users)&&Array.isArray(refs.albums),'INVALID_STATE','Copy reference projection is missing; rebuild accounting',500);references[id]=refs;for(const userId of refs.users)loadUser(userId);for(const albumId of refs.albums){const album=tx.get('albums',albumId);check(album,'INVALID_STATE','Referenced album is missing',500);albums[albumId]=album;}}
+      const balances=Object.create(null),escrows=Object.create(null),refundableEscrow=Object.create(null);for(const id of new Set([sender,recipient]))if(typeof id==='string'&&Object.hasOwn(users,id)){balances[id]=tx.get('balances',id)??{};const escrow=tx.get('_tradeEscrow',id)??{};for(const amount of Object.values(escrow))check(Number.isSafeInteger(amount)&&amount>=0,'INVALID_STATE','Invalid sender escrow projection',500);escrows[id]=escrow;refundableEscrow[id]=clone(escrow);}
+      if(trade)for(const money of trade.give.currencies){check((refundableEscrow[sender][money.currencyId]??0)>=money.amount,'INVALID_STATE','Sender escrow projection is incomplete',500);refundableEscrow[sender][money.currencyId]-=money.amount;}
+      const state={schemaVersion:1,revision:accounting.revision,catalog:tx.value('catalog'),adminControls:tx.value('adminControls'),cardAuthoring:tx.value('cardAuthoring'),tradingPolicy:tx.value('tradingPolicy'),users,balances,copies,codes,albums,packs:{},trades:trade?{[trade.id]:trade}:{},requests:{},ledger:[],events:[],notifications:[],completionObligations:{}};
+      accounting.counts.copies=(accounting.counts.copies??0)-Object.keys(copies).length;accounting.counts.albums=(accounting.counts.albums??0)-Object.keys(albums).length;
       if(trade){const obligation=tx.get('completionObligations','trade:'+trade.id);check(obligation?.status==='reserved','RECORD_PATH_UNAVAILABLE','Trade requires compatibility reservation recovery',409);state.completionObligations[obligation.id]=obligation;accounting.counts.trades--;const part=summarizeRecords({schemaVersion:1,revision:0,trades:state.trades,completionObligations:state.completionObligations});for(const field of Object.keys(accounting.completion))accounting.completion[field]-=part.completion[field];}
-      const ownerCountsById=Object.create(null);for(const copy of Object.values(copies)){const counts=ownerCountsById[copy.ownerId]??=tx.ownerCounts(copy.ownerId);if(copy.state==='owned')counts.ownedCopies--;if(copy.state==='sealed')counts.sealedCopies--;}
-      recordContexts.set(state,{accounting,ownerCountsById,refundableEscrow:{[sender]:refundable}});
+      const ownerCountsById=Object.create(null);for(const id of [sender,recipient])if(typeof id==='string'&&users[id])ownerCountsById[id]=tx.ownerCounts(id);for(const copy of Object.values(copies)){const counts=ownerCountsById[copy.ownerId]??=tx.ownerCounts(copy.ownerId);if(copy.state==='owned')counts.ownedCopies--;if(copy.state==='sealed')counts.sealedCopies--;}
+      recordContexts.set(state,{accounting,ownerCountsById,refundableEscrow});
       try{
-        const apply=()=>{const result=proposal?this.#createTrade(state,user,input):(this.#release(state,trade,user.id===sender?'cancelled':'declined'),trade);if(proposal)this.#reserve(state,'trade',result.id);state.requests[token]={hash,result:clone(result),...(!proposal?{completionId:'trade:'+result.id}:{})};this.#event(state,type,{userId:user.id});this.#capacity(state,true);return result;};
-        const result=proposal?apply():this.#complete(state,'trade',trade.id,apply),nextEscrow=clone(escrow);
-        for(const money of result.give.currencies){const value=(nextEscrow[money.currencyId]??0)+(proposal?1:-1)*money.amount;check(Number.isSafeInteger(value)&&value>=0,'INVALID_STATE','Invalid sender escrow projection',500);if(value)nextEscrow[money.currencyId]=value;else delete nextEscrow[money.currencyId];}
-        if(result.give.currencies.length)tx.put('_tradeEscrow',sender,nextEscrow);
-        for(const field of ['balances','copies','trades','requests','actionJobs','completionObligations'])for(const [id,row]of Object.entries(state[field]??{}))tx.put(field,id,row);
+        const apply=()=>{const result=proposal?this.#createTrade(state,user,input):counter?this.#counterTradeBody(state,user,input):accepting?this.#acceptTradeBody(state,user,input):(this.#release(state,trade,user.id===sender?'cancelled':'declined'),trade);if(admission)this.#reserve(state,'trade',result.id);state.requests[token]={hash,result:clone(result),...(!admission?{completionId:'trade:'+result.id}:{})};this.#event(state,type,{userId:user.id});this.#capacity(state,true);return result;};
+        const result=admission?apply():this.#complete(state,'trade',trade.id,apply);
+        const adjustEscrow=(owner,monies,sign)=>{for(const money of monies){const value=(escrows[owner][money.currencyId]??0)+sign*money.amount;check(Number.isSafeInteger(value)&&value>=0,'INVALID_STATE','Invalid sender escrow projection',500);if(value)escrows[owner][money.currencyId]=value;else delete escrows[owner][money.currencyId];}if(monies.length)tx.put('_tradeEscrow',owner,escrows[owner]);};
+        if(trade)adjustEscrow(sender,trade.give.currencies,-1);if(admission)adjustEscrow(result.fromUserId,result.give.currencies,1);
+        if(accepting&&trade.status==='accepted')for(const [id,refs]of Object.entries(references))tx.put('_copyReferences',id,{users:refs.users.filter(userId=>users[userId]?.preferences?.favoriteCopyIds?.includes(id)),albums:refs.albums.filter(albumId=>albums[albumId].placements.some(row=>row.copyId===id))});
+        for(const field of ['users','albums','balances','copies','codes','trades','requests','actionJobs','completionObligations'])for(const [id,row]of Object.entries(state[field]??{}))tx.put(field,id,row);
         for(const field of ['ledger','events','notifications'])for(const row of state[field])tx.append(field,row);
         for(const id of new Set(state.notifications.map(row=>row.userId)))tx.trimNotifications(id);
-        if(!proposal)tx.reserveTradeCompletion('trade:'+trade.id);return result;
+        if(!admission)tx.reserveTradeCompletion('trade:'+trade.id);return result;
       }finally{recordContexts.delete(state);}
-    },proposal?{tradeProposal:true}:{tradeCompletion:true});
+    },counter?{tradeCounter:true}:accepting?{tradeAcceptance:true}:proposal?{tradeProposal:true}:{tradeCompletion:true});
     try{return execute();}catch(error){if(error.code==='RECORD_MIGRATION_REQUIRED'){this.#store.read(state=>{this.#workflow(state,'trading',!!(input.give?.currencies?.length||input.receive?.currencies?.length));this.#admission(state);});this.#store.prepareRecordTransactions();try{return execute();}catch(retry){if(['RECORD_PATH_UNAVAILABLE','TRANSACTION_BUDGET'].includes(retry.code))return fallback();throw retry;}}if(['RECORD_PATH_UNAVAILABLE','TRANSACTION_BUDGET'].includes(error.code))return fallback();throw error;}
   }
   proposeTrade(actor,{key,toUserId,give,receive,expiresInSeconds,message='',versions={}}) {
     const input={toUserId,give,receive,expiresInSeconds,message,versions};return this.#tradeRecords(actor,key,'trade.proposed',input,()=>this.#command(actor,key,'trade.proposed',input,(s,user)=>this.#createTrade(s,user,input)));
   }
   counterTrade(actor,{key,tradeId,give,receive,message='',expiresInSeconds,expectedDigest}){
-    return this.#command(actor,key,'trade.countered',{tradeId,give,receive,message,expiresInSeconds,expectedDigest},(s,u)=>{
+    const input={tradeId,give,receive,message,expiresInSeconds,expectedDigest};return this.#tradeRecords(actor,key,'trade.countered',input,()=>this.#command(actor,key,'trade.countered',input,(s,u)=>this.#counterTradeBody(s,u,input)));
+  }
+  #counterTradeBody(s,u,{tradeId,give,receive,message='',expiresInSeconds,expectedDigest}){
       const old=s.trades[tradeId];check(old&&old.toUserId===u.id,'NOT_FOUND','Trade not found',404);check(old.status==='pending'&&Date.parse(old.expiresAt)>Date.parse(this.#clock()),'TRADE_CLOSED','Offer is no longer active',409);
       if(expectedDigest!==undefined)check(expectedDigest===this.#tradeDigest(old),'TRADE_CHANGED','Review the current offer',409);
       this.#release(s,old,'countered');const counter=this.#createTrade(s,u,{toUserId:old.fromUserId,give,receive,message,expiresInSeconds,parentTradeId:old.id});old.counterTradeId=counter.id;return counter;
-    });
   }
   #release(s,trade,status) {return this.#complete(s,'trade',trade.id,()=>{
     trade.status=status; trade.completedAt=this.#clock();
@@ -945,8 +948,10 @@ export class CardFramework {
     copy.metadata.transfers??=[]; copy.metadata.transfers.push({from,to,tradeId,at:this.#clock()});
     this.#event(s,'card.transferred',{copyId,from,to,tradeId});
   }
-  acceptTrade(actor,{key,tradeId,expectedDigest}) {
-    return this.#command(actor,key,'trade.accepted',{tradeId,expectedDigest},(s,user)=>{
+  acceptTrade(actor,{key,tradeId,expectedDigest}){
+    const input={tradeId,expectedDigest};return this.#tradeRecords(actor,key,'trade.accepted',input,()=>this.#command(actor,key,'trade.accepted',input,(s,u)=>this.#acceptTradeBody(s,u,input)));
+  }
+  #acceptTradeBody(s,user,{tradeId,expectedDigest}){
       const trade=s.trades[tradeId];
       check(trade && trade.toUserId===user.id,'NOT_FOUND','Trade not found',404);
       check(trade.status==='pending','TRADE_CLOSED','Trade already closed',409);
@@ -975,7 +980,6 @@ export class CardFramework {
       this.#removePlacements(s,new Set([...trade.give.copyIds,...trade.receive.copyIds]));
       s.users[trade.fromUserId].lastTradeAt=this.#clock();s.users[trade.toUserId].lastTradeAt=this.#clock();
       trade.status='accepted'; trade.completedAt=this.#clock();this.#notify(s,trade.fromUserId,'trade.accepted',{tradeId});this.#notify(s,user.id,'trade.accepted',{tradeId});return trade;
-    });
   }
   cancelTrade(actor,{key,tradeId}) {
     return this.#tradeRecords(actor,key,'trade.cancelled',{tradeId},()=>this.#command(actor,key,'trade.cancelled',{tradeId},(s,user)=>{

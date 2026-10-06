@@ -90,7 +90,11 @@
     "./card-policy-ui": "./src/card-policy-ui.js",
     "./presentation/authoring-tools": "./src/presentation/authoring-tools.js",
     "./presentation/text": "./src/presentation/text.js",
-    "./presentation/stats-csv": "./src/presentation/stats-csv.js"
+    "./presentation/stats-csv": "./src/presentation/stats-csv.js",
+    "./plugin-deployment": {
+      "types": "./src/plugin-deployment.d.ts",
+      "default": "./src/plugin-deployment.js"
+    }
   },
   "scripts": {
     "test": "node --test test/*.test.js",

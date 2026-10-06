@@ -180,10 +180,10 @@ export class SQLiteStore {
     }catch(error){try{this.#db.exec('ROLLBACK');}catch{}throw error;}
     finally{this.#active=false;}
   }
-  prepareRecordTransactions(){
+  prepareRecordTransactions({force=false}={}){
     return this.transact(state=>{
       let summary;try{summary=JSON.parse(state[recordAccountingField]);}catch{}
-      if(validRecordAccounting(summary,state.revision))return {prepared:false};
+      if(!force&&validRecordAccounting(summary,state.revision))return {prepared:false};
       state[recordAccountingField]=recordPreparationMarker;
       return {prepared:true};
     });

@@ -1,3 +1,4 @@
+import {codesFixture} from './codes-fixtures.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {createStateCodec} from '../src/encryption.js';
 import test from 'node:test';
@@ -155,7 +156,7 @@ for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' escrow projection
   assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),40);store.transact(s=>{s.balances[x.alice.userId].credits=Number.MAX_SAFE_INTEGER-30;});const invalid=store.read(s=>s);assert.throws(()=>x.core.cancelTrade(x.alice,{key:'overflow',tradeId:first.id}),code('BALANCE_OVERFLOW'));assert.deepEqual(store.read(s=>s),invalid);store.transact(s=>{s.balances[x.alice.userId].credits=9960;});x.core.acceptTrade(x.bob,{key:'accept-compat',tradeId:first.id});assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),20);
   // Model an older writer by deleting projection metadata after its otherwise valid commit.
   const transact=store.transact.bind(store);store.transact=fn=>transact(s=>{const result=fn(s);delete s._recordAccounting;delete s._tradeEscrow;return result;});store.transact(s=>{s.users[x.alice.userId].displayName='Updated';});store.transact=transact;
-  const third=offer('three');assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),40);assert.equal(store.read(s=>JSON.parse(s._recordAccounting).version),2);x.core.cancelTrade(x.alice,{key:'cancel-two',tradeId:second.id});assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),20);
+  const third=offer('three');assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),40);assert.equal(store.read(s=>JSON.parse(s._recordAccounting).version),3);x.core.cancelTrade(x.alice,{key:'cancel-two',tradeId:second.id});assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),20);
   const records=store.transactRecords.bind(store);store.transactRecords=(fn,options)=>records(tx=>{const get=tx.get;tx.get=(field,id)=>field==='_tradeEscrow'?{credits:-1}:get(field,id);return fn(tx);},options);const before=store.read(s=>s);assert.throws(()=>x.core.cancelTrade(x.alice,{key:'corrupt',tradeId:third.id}),code('INVALID_STATE'));assert.deepEqual(store.read(s=>s),before);store.transactRecords=records;
   x.core.cancelTrade(x.alice,{key:'cancel-three',tradeId:third.id});assert.equal(x.core.wallet(x.alice).credits,9980);assert.equal(x.core.audit(admin).ok,true);
  }finally{x.core.close();}
@@ -175,8 +176,54 @@ test('stale escrow accounting cannot force allocation during full-capacity compl
  const dir=mkdtempSync(join(tmpdir(),'trade-stale-')),path=join(dir,'state.sqlite');let core;
  try{
   let store=new SQLiteStore(path),x=fixture({store});core=x.core;const input={key:'one',toUserId:x.bob.userId,give:{copyIds:[],currencies:[{currencyId:'credits',amount:20}]},receive:{copyIds:[],currencies:[]}},trade=core.proposeTrade(x.alice,input);core.proposeTrade(x.alice,{...input,key:'two'});core.close();
-  const db=new DatabaseSync(path),codec=createStateCodec(),row=db.prepare("SELECT payload FROM framework_fields WHERE name='_recordAccounting'").get(),envelope=codec.decode(row.payload),summary=JSON.parse(envelope.value);summary.version=1;envelope.value=JSON.stringify(summary);db.prepare("UPDATE framework_fields SET payload=? WHERE name='_recordAccounting'").run(codec.encode(envelope));db.exec("DELETE FROM framework_entities WHERE collection='_tradeEscrow'; DELETE FROM framework_fields WHERE name='_tradeEscrow';");db.close();
+  const db=new DatabaseSync(path),codec=createStateCodec(),row=db.prepare("SELECT payload FROM framework_fields WHERE name='_recordAccounting'").get(),envelope=codec.decode(row.payload),summary=JSON.parse(envelope.value);summary.version=2;envelope.value=JSON.stringify(summary);db.prepare("UPDATE framework_fields SET payload=? WHERE name='_recordAccounting'").run(codec.encode(envelope));db.exec("DELETE FROM framework_entities WHERE collection='_tradeEscrow'; DELETE FROM framework_fields WHERE name='_tradeEscrow';");db.close();
   const inspection=new SQLiteStore(path,{readOnly:true}),cap=inspection.read(s=>inspection.measure(s).totalBytes);inspection.close();store=new SQLiteStore(path,{maxStateBytes:cap});core=new CardFramework({store,clock:()=> '2026-09-30T12:00:00.000Z'});
   const result=core.cancelTrade(x.alice,{key:'cancel-stale',tradeId:trade.id});assert.equal(result.status,'cancelled');assert.equal(store.read(s=>s._recordAccounting),undefined);assert.equal(store.read(s=>s._tradeEscrow),undefined);const before=store.diagnostics();assert.deepEqual(core.cancelTrade(x.alice,{key:'cancel-stale',tradeId:trade.id}),result);assert.equal(store.diagnostics().recordWrites,before.recordWrites);assert.equal(core.wallet(x.alice).credits,9980);assert.equal(core.audit(admin).ok,true);
  }finally{core?.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' bounded acceptance transfers both sides and clears indexed favorites and albums atomically',()=>{
+ const store=new Store(),x=fixture({store});try{
+  const a=x.open()[0],b=x.open('common',x.bob)[0];store.prepareRecordTransactions();x.core.setPreferences(x.alice,{key:'fav-a',favoriteCopyIds:[a.id]});x.core.setPreferences(x.bob,{key:'fav-b',favoriteCopyIds:[b.id]});
+  const aa=x.core.saveAlbum(x.alice,{key:'album-a',name:'A',placements:[{copyId:a.id}]}),ab=x.core.saveAlbum(x.bob,{key:'album-b',name:'B',placements:[{copyId:b.id}]});
+  const trade=x.core.proposeTrade(x.alice,{key:'exchange',toUserId:x.bob.userId,give:{copyIds:[a.id],currencies:[{currencyId:'credits',amount:50}]},receive:{copyIds:[b.id],currencies:[{currencyId:'credits',amount:10}]}}),before=store.diagnostics?.();
+  const result=x.core.acceptTrade(x.bob,{key:'accepted',tradeId:trade.id,expectedDigest:trade.digest}),after=store.diagnostics?.();assert.equal(result.status,'accepted');if(before){assert.equal(after.compatibilityMaterializations,before.compatibilityMaterializations);assert(after.decodedQueryRecords-before.decodedQueryRecords<60);assert(after.recordWrites-before.recordWrites<30);}
+  const state=store.read(s=>s);assert.equal(state.copies[a.id].ownerId,x.bob.userId);assert.equal(state.copies[b.id].ownerId,x.alice.userId);assert.deepEqual(state.users[x.alice.userId].preferences.favoriteCopyIds,[]);assert.deepEqual(state.users[x.bob.userId].preferences.favoriteCopyIds,[]);for(const album of [aa,ab]){assert.deepEqual(state.albums[album.id].placements,[]);assert.equal(state.albums[album.id].version,2);}for(const copy of [a,b])assert.deepEqual(state._copyReferences[copy.id],{users:[],albums:[]});
+  assert.equal(x.core.wallet(x.alice).credits,9950);assert.equal(x.core.wallet(x.bob).credits,10030);assert.deepEqual(x.core.acceptTrade(x.bob,{key:'accepted',tradeId:trade.id,expectedDigest:trade.digest}),result);const actual=summarizeRecords(state);actual.usedBytes=store.measure(state).usedBytes;assert.deepEqual(JSON.parse(state._recordAccounting),actual);assert.equal(x.core.audit(admin).ok,true);
+ }finally{x.core.close();}
+});
+for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' bounded counteroffer refunds old escrow and reserves independently reviewed new terms',()=>{
+ const store=new Store(),x=fixture({store});try{
+  const a=x.open()[0],b=x.open('common',x.bob)[0],trade=x.core.proposeTrade(x.alice,{key:'original',toUserId:x.bob.userId,give:{copyIds:[a.id],currencies:[{currencyId:'credits',amount:50}]},receive:{copyIds:[b.id],currencies:[]}}),before=store.diagnostics?.();
+  const input={key:'counter',tradeId:trade.id,expectedDigest:trade.digest,give:{copyIds:[b.id],currencies:[{currencyId:'credits',amount:20}]},receive:{copyIds:[a.id],currencies:[]}},counter=x.core.counterTrade(x.bob,input),after=store.diagnostics?.();if(before)assert.equal(after.compatibilityMaterializations,before.compatibilityMaterializations);
+  const state=store.read(s=>s);assert.equal(state.trades[trade.id].status,'countered');assert.equal(counter.parentTradeId,trade.id);assert.equal(state.copies[a.id].lockedBy,undefined);assert.equal(state.copies[b.id].lockedBy,counter.id);assert.equal(state.completionObligations['trade:'+trade.id].status,'completed');assert.equal(state.completionObligations['trade:'+counter.id].status,'reserved');assert.deepEqual(state._tradeEscrow[x.alice.userId],{});assert.equal(state._tradeEscrow[x.bob.userId].credits,20);assert.equal(x.core.wallet(x.alice).credits,9990);assert.equal(x.core.wallet(x.bob).credits,9970);assert.deepEqual(x.core.counterTrade(x.bob,input),counter);assert.equal(x.core.acceptTrade(x.alice,{key:'accept-counter',tradeId:counter.id}).status,'accepted');assert.equal(x.core.audit(admin).ok,true);
+ }finally{x.core.close();}
+});
+test('bounded code-bearing exchange preserves encrypted code identity and indexed holder history',()=>{
+ const store=new SQLiteStore(),x=codesFixture({store,transfer:'follow-unrevealed'});try{
+  const copy=x.openCode();store.prepareRecordTransactions();const codeId=store.read(s=>s.copies[copy.id].codeIds[0]),secret=store.read(s=>s.codes[codeId].encrypted),before=store.diagnostics(),trade=x.core.proposeTrade(x.alice,{key:'code-offer',toUserId:x.bob.userId,give:{copyIds:[copy.id],currencies:[]},receive:{copyIds:[],currencies:[]}});x.core.acceptTrade(x.bob,{key:'code-accept',tradeId:trade.id});assert.equal(store.diagnostics().compatibilityMaterializations,before.compatibilityMaterializations);assert.deepEqual(store.read(s=>s.codes[codeId].encrypted),secret);assert.equal(store.read(s=>s.codes[codeId].holderId),x.bob.userId);assert.equal(x.core.codeHistory(x.alice).total,1);assert.equal(x.core.codeHistory(x.bob).total,1);assert.equal(x.core.audit(admin).ok,true);
+ }finally{x.core.close();}
+});
+
+test('full-capacity acceptance recovers after rollback while a fresh counteroffer rejects atomically',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'exchange-capacity-')),path=join(dir,'state.sqlite'),encryptionKey=randomBytes(32),clock=()=> '2026-09-30T12:00:00.000Z';let core;
+ try{
+  let store=new SQLiteStore(path,{encryptionKey}),x=fixture({store});core=x.core;const a=x.open()[0],b=x.open('common',x.bob)[0];store.prepareRecordTransactions();core.setPreferences(x.alice,{key:'favorite',favoriteCopyIds:[a.id]});const album=core.saveAlbum(x.alice,{key:'album',name:'Owned',placements:[{copyId:a.id}]});const trade=core.proposeTrade(x.alice,{key:'offer',toUserId:x.bob.userId,give:{copyIds:[a.id],currencies:[{currencyId:'credits',amount:20}]},receive:{copyIds:[b.id],currencies:[]}}),cap=store.read(s=>store.measure(s).totalBytes);core.close();
+  store=new SQLiteStore(path,{encryptionKey,maxStateBytes:cap});core=new CardFramework({store,clock});const before=store.read(s=>s);assert.throws(()=>core.counterTrade(x.bob,{key:'counter-cap',tradeId:trade.id,expectedDigest:trade.digest,give:{copyIds:[b.id],currencies:[]},receive:{copyIds:[a.id],currencies:[]}}),code('STORAGE_CAPACITY'));assert.deepEqual(store.read(s=>s),before);
+  const records=store.transactRecords.bind(store);store.transactRecords=(fn,options)=>records(tx=>{const result=fn(tx);if(options?.tradeAcceptance)throw Error('interrupted acceptance');return result;},options);assert.throws(()=>core.acceptTrade(x.bob,{key:'accept',tradeId:trade.id}),/interrupted acceptance/);assert.deepEqual(store.read(s=>s),before);core.close();
+  store=new SQLiteStore(path,{encryptionKey,maxStateBytes:cap});core=new CardFramework({store,clock});const metrics=store.diagnostics(),result=core.acceptTrade(x.bob,{key:'accept',tradeId:trade.id});assert.equal(result.status,'accepted');assert.equal(store.diagnostics().compatibilityMaterializations,metrics.compatibilityMaterializations);assert.deepEqual(store.read(s=>s.albums[album.id].placements),[]);assert.deepEqual(store.read(s=>s._copyReferences[a.id]),{users:[],albums:[]});assert.deepEqual(core.acceptTrade(x.bob,{key:'accept',tradeId:trade.id}),result);assert.equal(core.audit(admin).ok,true);
+ }finally{core?.close();rmSync(dir,{recursive:true,force:true});}
+});
+test('missing reference metadata fails closed until forced accounting rebuild',()=>{
+ const store=new SQLiteStore(),x=fixture({store});try{
+  const copy=x.open()[0],album=x.core.saveAlbum(x.alice,{key:'album',name:'Retained',placements:[{copyId:copy.id}]}),trade=x.core.proposeTrade(x.alice,{key:'offer',toUserId:x.bob.userId,give:{copyIds:[copy.id],currencies:[]},receive:{copyIds:[],currencies:[]}}),records=store.transactRecords.bind(store),before=store.read(s=>s);
+  store.transactRecords=(fn,options)=>records(tx=>{const get=tx.get;tx.get=(name,id)=>name==='_copyReferences'?undefined:get(name,id);return fn(tx);},options);assert.throws(()=>x.core.acceptTrade(x.bob,{key:'accept',tradeId:trade.id}),code('INVALID_STATE'));assert.deepEqual(store.read(s=>s),before);store.transactRecords=records;store.prepareRecordTransactions({force:true});x.core.acceptTrade(x.bob,{key:'accept',tradeId:trade.id});assert.deepEqual(store.read(s=>s.albums[album.id].placements),[]);
+ }finally{x.core.close();}
+});
+
+test('compatibility administrator removal clears references maintained by preferences and album saving',()=>{
+ const store=new SQLiteStore(),x=fixture({store});try{
+  const copy=x.open()[0];store.prepareRecordTransactions();x.core.setPreferences(x.alice,{key:'fav',favoriteCopyIds:[copy.id]});const album=x.core.saveAlbum(x.alice,{key:'album',name:'Collection',placements:[{copyId:copy.id}]});assert.deepEqual(store.read(s=>s._copyReferences[copy.id]),{users:[x.alice.userId],albums:[album.id]});
+  x.core.administerCards(admin,{key:'remove',expectedRevision:x.core.adminOverview(admin).revision,reason:'Retire card',userId:x.alice.userId,action:'remove',copyIds:[copy.id]});assert.deepEqual(store.read(s=>s._copyReferences[copy.id]),{users:[],albums:[]});assert.deepEqual(store.read(s=>s.users[x.alice.userId].preferences.favoriteCopyIds),[]);assert.deepEqual(store.read(s=>s.albums[album.id].placements),[]);assert.equal(x.core.audit(admin).ok,true);
+ }finally{x.core.close();}
 });

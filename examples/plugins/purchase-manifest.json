@@ -1,0 +1,20 @@
+{
+  "contract": "digital-card-plugin-manifest@1",
+  "id": "example.buyer",
+  "version": "1.0.0",
+  "protocol": "digital-card-plugin@1",
+  "commands": ["purchase.quote", "purchase.register", "purchase.pending", "purchase.execute", "purchase.acknowledge"],
+  "dependencies": [],
+  "configurationSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {"region": {"type": "string", "enum": ["local"]}},
+    "required": ["region"]
+  },
+  "runtime": {
+    "kind": "external-http",
+    "language": "Python or Go",
+    "prerequisites": ["An installed service implementing digital-card-plugin@1"],
+    "migration": "none"
+  }
+}
