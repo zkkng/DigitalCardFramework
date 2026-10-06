@@ -898,7 +898,7 @@ export class CardFramework {
         if(!proposal)tx.reserveTradeCompletion('trade:'+trade.id);return result;
       }finally{recordContexts.delete(state);}
     },proposal?{tradeProposal:true}:{tradeCompletion:true});
-    try{return execute();}catch(error){if(error.code==='RECORD_MIGRATION_REQUIRED'){this.#store.read(state=>this.#admission(state));this.#store.prepareRecordTransactions();try{return execute();}catch(retry){if(['RECORD_PATH_UNAVAILABLE','TRANSACTION_BUDGET'].includes(retry.code))return fallback();throw retry;}}if(['RECORD_PATH_UNAVAILABLE','TRANSACTION_BUDGET'].includes(error.code))return fallback();throw error;}
+    try{return execute();}catch(error){if(error.code==='RECORD_MIGRATION_REQUIRED'){this.#store.read(state=>{this.#workflow(state,'trading',!!(input.give?.currencies?.length||input.receive?.currencies?.length));this.#admission(state);});this.#store.prepareRecordTransactions();try{return execute();}catch(retry){if(['RECORD_PATH_UNAVAILABLE','TRANSACTION_BUDGET'].includes(retry.code))return fallback();throw retry;}}if(['RECORD_PATH_UNAVAILABLE','TRANSACTION_BUDGET'].includes(error.code))return fallback();throw error;}
   }
   proposeTrade(actor,{key,toUserId,give,receive,expiresInSeconds,message='',versions={}}) {
     const input={toUserId,give,receive,expiresInSeconds,message,versions};return this.#tradeRecords(actor,key,'trade.proposed',input,()=>this.#command(actor,key,'trade.proposed',input,(s,user)=>this.#createTrade(s,user,input)));
