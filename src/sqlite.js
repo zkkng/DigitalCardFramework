@@ -1,3 +1,4 @@
+import {completionPool} from './completion.js';
 import {DatabaseSync,backup} from 'node:sqlite';
 import {existsSync,mkdtempSync,chmodSync,rmSync,statSync} from 'node:fs';
 import {createHash,createHmac} from 'node:crypto';
@@ -68,9 +69,10 @@ function inspect(path,authenticate) {
 
 /** Indexed durable queries with serialized commands. Legacy command callbacks materialize state. */
 export class SQLiteStore {
-  #db;#codec;#maxBytes;#identity;#recordKey;#readOnly;#active=false;#decoded=0;#materializations=0;#writes=0;
-  constructor(path=':memory:',{encryptionKey,maxStateBytes=64*1024*1024,readOnly=false,onMigration}={}) {
+  #db;#codec;#maxBytes;#maxCompletionBytes;#identity;#recordKey;#readOnly;#active=false;#decoded=0;#materializations=0;#writes=0;
+  constructor(path=':memory:',{encryptionKey,maxStateBytes=64*1024*1024,maxCompletionBytes=64*1024*1024,readOnly=false,onMigration}={}) {
     if(!Number.isSafeInteger(maxStateBytes)||maxStateBytes<1)throw new Error('Invalid storage capacity');
+    if(!Number.isSafeInteger(maxCompletionBytes)||maxCompletionBytes<1)throw new Error('Invalid completion capacity');this.#maxCompletionBytes=maxCompletionBytes;
     this.#codec=createStateCodec(encryptionKey);this.#maxBytes=maxStateBytes;this.#readOnly=readOnly;
     const digest=value=>{
       const text=JSON.stringify(value);
@@ -123,10 +125,16 @@ export class SQLiteStore {
   }
   read(fn) {return this.#snapshot(()=>{this.#materializations++;return fn(readState(this.#db,this.#codec,this.#recordKey));});}
   query(fn) {return this.#snapshot(()=>querySnapshot(sqliteQueries(this.#db,this.#codec,this.#identity,this.#recordKey,()=>this.#decoded++),fn));}
-  measure(state) {const usedBytes=encodeState(state,this.#codec,this.#identity,this.#recordKey).usedBytes,reservedBytes=completionBytes(state);return {usedBytes,reservedBytes,totalBytes:usedBytes+reservedBytes,limitBytes:this.#maxBytes};}
+  measure(state) {const usedBytes=encodeState(state,this.#codec,this.#identity,this.#recordKey).usedBytes,reservedBytes=completionBytes(state);const pool=completionPool(state);return {usedBytes,reservedBytes,totalBytes:usedBytes+reservedBytes,limitBytes:this.#maxBytes,completionStoredBytes:pool.storedBytes,completionReservedBytes:pool.reservedBytes,completionLimitBytes:this.#maxCompletionBytes};}
   assertCapacity(state,{previous}={}) {
     const measured=this.measure(state);
-    if(measured.totalBytes>this.#maxBytes&&(previous===undefined||measured.totalBytes>this.measure(previous).totalBytes))throw new FrameworkError('STORAGE_CAPACITY','Installation capacity reached; existing completion reservations are retained',507);
+    if(measured.completionStoredBytes+measured.completionReservedBytes>this.#maxCompletionBytes)throw new FrameworkError('COMPLETION_CAPACITY','Completion storage capacity reached',507);
+    const prior=previous===undefined?null:this.measure(previous);
+    const completionGrowth=prior?Math.max(0,measured.completionStoredBytes-prior.completionStoredBytes):0;
+    // Completion allowance is consumed only by this transaction. Retained receipts
+    // never provide a reusable discount for later ordinary writes.
+    if(measured.totalBytes>this.#maxBytes&&(prior===null||measured.totalBytes>prior.totalBytes+completionGrowth))throw new FrameworkError('STORAGE_CAPACITY','Installation capacity reached; existing completion reservations are retained',507);
+    if(measured.totalBytes+measured.completionReservedBytes>this.#maxBytes+this.#maxCompletionBytes)throw new FrameworkError('COMPLETION_CAPACITY','Combined storage capacity reached',507);
     return measured;
   }
   transact(fn) {

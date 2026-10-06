@@ -1,4 +1,5 @@
 import {hasPermission} from './access.js';
+import {completionContext,completionDefaults,completionCapacity,ordinaryRequestCount,reserveCompletion,withCompletion} from './completion.js';
 import {ExternalPurchaseService} from './external-purchases.js';
 import {deriveStats,inspectCardPolicy} from './card-policy.js';
 import {CardPolicyService,validateGovernedCatalog,redactGovernedCard} from './card-policy-service.js';
@@ -32,14 +33,14 @@ export class CardFramework {
     this.#store=store; this.#clock=clock; this.#random=random;
     this.#cardPolicies=new CardPolicyService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),clock});
     this.#administration=new AdminService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),now:clock,mint:(...args)=>this.#mint(...args),open:(...args)=>this.#openCopy(...args),removePlacements:(...args)=>this.#removePlacements(...args)});
-    const allowedLimits=['users','copies','packs','requests','albums','trades','copiesPerUser','packsPerUser','actionJobs','shops','listings','orders'];
+    const allowedLimits=['users','copies','packs','requests','albums','trades','copiesPerUser','packsPerUser','actionJobs','shops','listings','orders','events',...Object.keys(completionDefaults)];
     check(limits&&typeof limits==='object'&&!Array.isArray(limits),'INVALID_INPUT','Limits must be an object');
-    for(const [name,value]of Object.entries(limits)){check(allowedLimits.includes(name),'INVALID_INPUT','Unknown installation limit '+name);integer(value,'Installation limit '+name,1,10000000);}
-    this.#bindings=bindings; this.#policies=policies;this.#limits={actionJobs:50000,shops:1000,listings:10000,orders:50000,...limits};
+    for(const [name,value]of Object.entries(limits)){check(allowedLimits.includes(name),'INVALID_INPUT','Unknown installation limit '+name);integer(value,'Installation limit '+name,1,name==='completionBytes'?1073741824:10000000);}
+    this.#bindings=bindings; this.#policies=policies;this.#limits={actionJobs:50000,shops:1000,listings:10000,orders:50000,...completionDefaults,...limits};
     check(Array.isArray(eventSubscriptions)&&eventSubscriptions.length<=50,'INVALID_INPUT','At most 50 event subscriptions');
     this.#subscriptions=eventSubscriptions.map(x=>{text(x.id,'subscription ID',100);text(x.handler,'subscription handler',100);check(Array.isArray(x.events)&&x.events.every(e=>typeof e==='string'),'INVALID_INPUT','Subscription events required');return clone(x);});
     check(new Set(this.#subscriptions.map(x=>x.id)).size===this.#subscriptions.length,'INVALID_INPUT','Duplicate event subscription ID');
-    this.#actions=new ActionService({store,clock,handlers:actionHandlers,options:actionOptions});
+    this.#actions=new ActionService({store,clock,handlers:actionHandlers,options:actionOptions,limits:this.#limits});
     this.#codes=new CodeService({store,vault:codeVault,clock,generators:codeGenerators,...codeLimits,emit:(s,type,data,at)=>this.#event(s,type,data,at)});
     this.#externalPurchases=new ExternalPurchaseService({store,clock,user:(s,a)=>this.#user(s,a),capacity:s=>this.#capacity(s,true),capture:(s,u,q)=>this.#captureExternalPurchase(s,u,q),allocate:(s,row)=>this.#allocateExternalPurchase(s,row),legacy:(s,row)=>this.#reconcileLegacyPurchase(s,row),resolveLegacy:(s,row,key)=>this.#resolveLegacyPurchase(s,row,key),resolutionCandidate:(s,row)=>this.#legacyResolutionCandidate(s,row)},{providers:externalPurchaseProviders,limits:externalPurchaseLimits});
     this.#commerce=new CommerceService({
@@ -48,6 +49,7 @@ export class CardFramework {
       command:(...args)=>this.#command(...args),operator:(...args)=>this.#operatorCommand(...args),
       mint:(...args)=>this.#mint(...args),allocatePacks:(...args)=>this.#allocatePacks(...args),
       adjust:(...args)=>this.#adjust(...args),event:(...args)=>this.#event(...args),notify:(...args)=>this.#notify(...args),
+      complete:(s,kind,entityId,fn)=>this.#complete(s,kind,entityId,fn),
       copyView:(...args)=>this.#copyView(...args),packView:p=>this.#packView(p),
       transferAllowed:(s,c,from,to,channel,ignoreLock)=>{this.#feature(s,'cardTrading');const reason=this.#tradeReason(c,from,s,{channel,toUserId:to,ignoreLock});check(!reason,'TRANSFER_BLOCKED',reason,409);},
       checkResale:(s,from,to,units,price)=>{if(price.amount>0){this.#feature(s,'currencyTrading');check(this.#currency(s,price.currencyId).tradable===true,'TRANSFER_BLOCKED','Resale currency is not tradable',403);}const copyIds=units.flatMap(unit=>unit.kind==='copy'?[unit.copyId]:s.packs[unit.packId].copyIds);this.#checkTrade(s,{channel:'sale',fromUserId:from,toUserId:to,give:{copyIds,currencies:[]},receive:{copyIds:[],currencies:price.amount>0?[price]:[]}});s.users[from].lastTradeAt=this.#clock();s.users[to].lastTradeAt=this.#clock();},
@@ -131,8 +133,9 @@ export class CardFramework {
     return this.#store.transact(s=>{s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,hash=fingerprint({type,input}),previous=s.operatorRequests[token];if(previous){check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Operator key already used',409);return previous.result;}const result=fn(s);this.#capacity(s);this.#event(s,type,{userId:actor.userId??null});s.operatorRequests[token]={hash,result:clone(result)};return result;});
   }
   #capacity(s,completion=false){
+    completionCapacity(s,this.#limits);
     for(const field of ['copies','packs','requests','albums','trades','actionJobs','shops','listings','orders'])if(this.#limits[field]!==undefined)
-      check(field==='requests'?Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length+Object.keys(s.externalSettlements??{}).length+Object.keys(s.externalPurchaseKeys??{}).length+Object.values(s.externalPurchases??{}).reduce((total,row)=>total+(row.completionRequests??0),0)+(completion?0:1)<=this.#limits.requests:Object.keys(s[field]??{}).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
+      check(field==='requests'?ordinaryRequestCount(s)+(completion?0:1)<=this.#limits.requests:Object.values(s[field]??{}).filter(row=>field!=='actionJobs'||!row.completionId).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
     if(this.#limits.copiesPerUser!==undefined){const counts={};for(const c of Object.values(s.copies))if(c.state!=='consumed')counts[c.ownerId]=(counts[c.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.copiesPerUser,'INVENTORY_CAPACITY','Collector inventory capacity reached',507);}
     if(this.#limits.packsPerUser!==undefined){const counts={};for(const p of Object.values(s.packs))counts[p.ownerId]=(counts[p.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.packsPerUser,'PACK_CAPACITY','Collector pack capacity reached',507);}
   }
@@ -175,7 +178,20 @@ export class CardFramework {
   }
   #catalog(s) {check(s.catalog,'NO_CATALOG','Publish a catalog first',409); return s.catalog;}
   #feature(s,name) {check(this.#catalog(s).features[name],'FEATURE_DISABLED',name+' is disabled',403);}
-  #event(s,type,data,at=this.#clock()) {const event={id:id(),sequence:s.events.length+1,type,data,at};s.events.push(event);for(const subscription of this.#subscriptions)if(subscription.events.includes(type)||subscription.events.includes('*'))enqueueAction(s,{handler:subscription.handler,userId:data.userId??data.ownerId??null,params:{event:clone(event)},source:{type:'event',eventId:event.id,subscriptionId:subscription.id}},event.at);check(Object.keys(s.actionJobs??{}).length<=this.#limits.actionJobs,'INSTALLATION_CAPACITY','Action queue capacity reached',507);}
+  #event(s,type,data,at=this.#clock()) {
+    const completion=completionContext(s),event={id:id(),sequence:s.events.length+1,type,data,at,...(completion?{completionId:completion.id}:{})};s.events.push(event);
+    for(const subscription of completion?completion.subscriptions.filter(original=>this.#subscriptions.some(current=>current.id===original.id&&current.handler===original.handler&&(current.events.includes(type)||current.events.includes('*')))):this.#subscriptions)if(subscription.events.includes(type)||subscription.events.includes('*'))enqueueAction(s,{handler:subscription.handler,userId:data.userId??data.ownerId??null,params:{event:clone(event)},source:{type:'event',eventId:event.id,subscriptionId:subscription.id}},event.at);
+    check(Object.values(s.actionJobs??{}).filter(row=>!row.completionId).length<=this.#limits.actionJobs,'INSTALLATION_CAPACITY','Action queue capacity reached',507);
+    if(this.#limits.events!==undefined)check(s.events.filter(row=>!row.completionId).length<=this.#limits.events,'INSTALLATION_CAPACITY','Event journal capacity reached',507);
+    completionCapacity(s,this.#limits);
+  }
+  #reserve(s,kind,entityId){
+    const entity=(kind==='trade'?s.trades:kind==='listing'?s.listings:s.packs)?.[entityId];check(entity,'NOT_FOUND','Completion obligation not found',404);
+    const copyIds=kind==='trade'?[...entity.give.copyIds,...entity.receive.copyIds]:kind==='pack'?entity.copyIds:(entity.units??[]).flatMap(unit=>unit.kind==='copy'?[unit.copyId]:s.packs[unit.packId]?.copyIds??[]);
+    return reserveCompletion(s,{kind,entity,copyIds},this.#subscriptions,this.#limits);
+  }
+  #complete(s,kind,entityId,fn){const measure=state=>this.#store.measure?.(state)??{usedBytes:Buffer.byteLength(JSON.stringify(state))};const before=measure(s).usedBytes;return withCompletion(s,this.#reserve(s,kind,entityId),fn,measure,before);}
+
   #notify(s,userId,type,data){s.notifications??=[];s.notifications.push({id:id(),userId,type,data,at:this.#clock(),read:false});const own=s.notifications.filter(n=>n.userId===userId);if(own.length>2000){const remove=new Set(own.slice(0,own.length-2000).map(n=>n.id));s.notifications=s.notifications.filter(n=>!remove.has(n.id));}}
   #preferences(user){return {inventoryVisibility:'traders',favoriteCopyIds:[],wishlistCardIds:[],blockedUserIds:[],...user.preferences};}
   #query(fn){return this.#store.query?this.#store.query(fn):this.#store.read(s=>fn(memoryQueries(s)));}
@@ -225,11 +241,16 @@ export class CardFramework {
       if(type==='packs.purchased')check(!Object.values(s.externalPurchases??{}).some(row=>row.terms.userId===user.id&&row.legacy?.purchaseKey===key),'EXTERNAL_PURCHASE_STATE','Legacy purchase is managed by external reconciliation',409);
       const previous=s.requests[token];
       if (previous) {check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409); return previous.result;}
-      const result=fn(s,user);
-      this.#capacity(s);
-      s.requests[token]={hash,result:clone(result)};
-      this.#event(s,type,{userId:user.id});
-      return result;
+      const pending=(type==='trade.cancelled'||type==='trade.accepted')&&s.trades[input.tradeId]?.status==='pending'?['trade',input.tradeId]:type==='listing.canceled'&&s.listings?.[input.listingId]?.status==='active'?['listing',input.listingId]:type==='pack.opened'&&s.packs[input.packId]&&!s.packs[input.packId].receipt?['pack',input.packId]:null;
+      const execute=()=>{
+        const result=fn(s,user);
+        if(type==='trade.proposed'||type==='trade.countered')this.#reserve(s,'trade',result.id);
+        if(type==='listing.created')this.#reserve(s,'listing',result.id);
+        if(type==='shop.purchased'&&s.listings[input.listingId]?.units.every(unit=>unit.status!=='available')){const row=s.completionObligations?.['listing:'+input.listingId];if(row)row.status='completed';}
+        const completion=completionContext(s);s.requests[token]={hash,result:clone(result),...(completion?{completionId:completion.id}:{})};
+        this.#event(s,type,{userId:user.id});this.#capacity(s,true);return result;
+      };
+      return pending?this.#complete(s,...pending,execute):execute();
     });
   }
   #validateRevision(catalog,previous) {
@@ -263,7 +284,7 @@ export class CardFramework {
     return this.#store.transact(s=>{
       s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,inputHash=contentDigest({manifest,digest,expectedVersion,policyRevision:policyRevision??0});
       if(s.operatorRequests[token]){check(s.operatorRequests[token].hash===inputHash,'IDEMPOTENCY_CONFLICT','Import key already used',409);return s.operatorRequests[token].result;}
-      if(this.#limits.requests!==undefined)check(Object.keys(s.requests).length+Object.keys(s.operatorRequests).length+Object.keys(s.externalSettlements??{}).length<this.#limits.requests,'INSTALLATION_CAPACITY','Installation requests capacity reached',507);
+      if(this.#limits.requests!==undefined)check(ordinaryRequestCount(s)<this.#limits.requests,'INSTALLATION_CAPACITY','Installation requests capacity reached',507);
       check((s.catalog?.version??0)===expectedVersion,'STALE_IMPORT','Catalog changed; preview again',409);
       check((s.cardAuthoring?.revision??0)===(policyRevision??0),'POLICY_CHANGED','Card policy changed; preview again',409);
       const catalog=validateCatalog(manifest);check(contentDigest(catalog)===digest,'IMPORT_CHANGED','Preview differs from the submitted catalog',409);
@@ -318,7 +339,7 @@ export class CardFramework {
       this.#user(s,{userId});this.#currency(s,currencyId);s.externalSettlements??={};
       const old=s.externalSettlements[token];
       if(old){check(old.hash===hash,'SETTLEMENT_CONFLICT','External transaction already credited with different terms',409);return old.result;}
-      if(this.#limits.requests!==undefined)check(Object.keys(s.requests).length+Object.keys(s.operatorRequests??{}).length+Object.keys(s.externalSettlements).length+Object.keys(s.externalPurchaseKeys??{}).length+Object.values(s.externalPurchases??{}).reduce((total,row)=>total+(row.completionRequests??0),0)<this.#limits.requests,'INSTALLATION_CAPACITY','Settlement capacity reached',507);
+      if(this.#limits.requests!==undefined)check(ordinaryRequestCount(s)<this.#limits.requests,'INSTALLATION_CAPACITY','Settlement capacity reached',507);
       this.#adjust(s,userId,currencyId,amount,'external-credit',token);
       const result={providerId,transactionId,userId,currencyId,amount,balance:s.balances[userId][currencyId],at:this.#clock()};
       s.externalSettlements[token]={hash,result,externalCurrency,externalUnits};
@@ -566,7 +587,7 @@ export class CardFramework {
           }
         }
         if(personalized&&product.pity)s.pity[user.id][product.id]=qualified?0:(s.pity[user.id][product.id]??0)+1;
-        s.packs[pack.id]=pack; packs.push(this.#packView(pack));
+        s.packs[pack.id]=pack;this.#reserve(s,'pack',pack.id); packs.push(this.#packView(pack));
       }
     return packs;
   }
@@ -716,13 +737,14 @@ export class CardFramework {
       this.#release(s,old,'countered');const counter=this.#createTrade(s,u,{toUserId:old.fromUserId,give,receive,message,expiresInSeconds,parentTradeId:old.id});old.counterTradeId=counter.id;return counter;
     });
   }
-  #release(s,trade,status) {
+  #release(s,trade,status) {return this.#complete(s,'trade',trade.id,()=>{
     trade.status=status; trade.completedAt=this.#clock();
     for(const copyId of trade.give.copyIds) delete s.copies[copyId].lockedBy;
     for(const money of trade.give.currencies) this.#adjust(s,trade.fromUserId,money.currencyId,money.amount,'trade.refund',trade.id);
     this.#event(s,'trade.'+status,{tradeId:trade.id});
     this.#notify(s,trade.fromUserId,'trade.'+status,{tradeId:trade.id});this.#notify(s,trade.toUserId,'trade.'+status,{tradeId:trade.id});
-  }
+  });}
+
   #expire() {
     const ids=this.#store.read(s=>Object.values(s.trades).filter(trade=>trade.status==='pending'&&Date.parse(trade.expiresAt)<=Date.parse(this.#clock())).map(trade=>trade.id));
     const completed=[],failed=[];
@@ -730,7 +752,7 @@ export class CardFramework {
       const released=this.#store.transact(s=>{
         const trade=s.trades[tradeId];
         if(trade?.status!=='pending'||Date.parse(trade.expiresAt)>Date.parse(this.#clock()))return false;
-        this.#release(s,trade,'expired');return true;
+        this.#complete(s,'trade',trade.id,()=>this.#release(s,trade,'expired'));return true;
       });
       if(released)completed.push(tradeId);
     }catch(error){failed.push({tradeId,code:/^[A-Z][A-Z0-9_]{0,80}$/.test(error?.code)?error.code:'INTERNAL_ERROR'});}

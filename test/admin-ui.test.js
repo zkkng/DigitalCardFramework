@@ -7,6 +7,35 @@ import {mountAdminPanel} from '../src/admin-ui.js';
 import {fixture} from './helpers.js';
 const settle=async()=>{for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve));};
 const memory=()=>{const values=new Map();return {getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};};
+
+for (const failure of ['missing','read','write','discard','corrupt']) test('admin saves require durable storage: '+failure,async()=>{
+  const x=setup(),good=memory();let calls=0;
+  const original=x.client.administerCards;x.client.administerCards=async input=>{calls++;return original(input);};
+  const storage=failure==='missing'?undefined:{...good,
+    ...(failure==='read'?{getItem(){throw new Error('Unavailable');}}:{}),
+    ...(failure==='write'?{setItem(){throw new Error('Unavailable');}}:{}),
+    ...(failure==='discard'?{setItem(){}}:{})};
+  if(failure==='corrupt')good.setItem('digital-card.admin-command.v1:'+x.alice.userId,'{broken');
+  const controller=createAdminController({client:x.client,storage,namespace:x.alice.userId});
+  try {
+    await controller.load();controller.stage({command:'administerCards',input:{userId:x.bob.userId,action:'give',variantId:'dawn.standard',quantity:1,reason:'Replacement'},title:'Give Dawn',changes:[{label:'Dawn',before:'0',after:'1'}]});
+    await controller.confirm();assert.equal(calls,0);assert.equal(x.core.inventory(x.bob).length,0);assert.equal(controller.getState().error.code,'COMMAND_STORAGE_UNAVAILABLE');
+    if(failure==='write'||failure==='discard'){
+      Object.assign(storage,good);await controller.confirm();assert.equal(calls,1);assert.equal(x.core.inventory(x.bob).length,1);assert.equal(controller.getState().pending,false);
+    }
+  } finally {controller.dispose();x.core.close();}
+});
+
+test('admin retry restores the original journal after storage is erased while mounted',async()=>{
+  const x=setup(),storage=memory(),inputs=[],real=x.client.administerCards;
+  x.client.administerCards=async input=>{inputs.push(input);const result=await real(input);if(inputs.length===1)throw new Error('Response lost');return result;};
+  const controller=createAdminController({client:x.client,storage,namespace:x.alice.userId});
+  try {
+    await controller.load();controller.stage({command:'administerCards',input:{userId:x.bob.userId,action:'give',variantId:'dawn.standard',quantity:1,reason:'Replacement'},title:'Give Dawn',changes:[{label:'Dawn',before:'0',after:'1'}]});
+    await controller.confirm();storage.removeItem('digital-card.admin-command.v1:'+x.alice.userId);await controller.confirm();
+    assert.deepEqual(inputs[0],inputs[1]);assert.equal(x.core.inventory(x.bob).length,1);assert.equal(controller.getState().pending,false);
+  } finally {controller.dispose();x.core.close();}
+});
 function setup(){const x=fixture(),actor={...x.alice,role:'admin'};let key=0;const client={requestKey:()=>`admin-${++key}`,me:async()=>({...x.core.me(actor),role:'admin'})};for(const name of ['adminOverview','adminUsers','adminUser','adminHistory','configureAdmin','administerCards'])client[name]=async input=>x.core[name](actor,input);return {...x,actor,client};}
 function click(root,label){const button=[...root.querySelectorAll('button')].find(node=>node.textContent===label||node.getAttribute('aria-label')===label);assert(button,'Missing button '+label);assert(!button.disabled,'Disabled button '+label);button.click();return button;}
 function input(root,label,value,window){const node=root.querySelector(`[aria-label="${label}"]`);assert(node,'Missing field '+label);if(node.type==='checkbox')node.checked=value;else node.value=value;node.dispatchEvent(new window.Event('input',{bubbles:true}));node.dispatchEvent(new window.Event('change',{bubbles:true}));return node;}

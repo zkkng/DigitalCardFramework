@@ -7,11 +7,35 @@ export function createAdminController({client,storage,namespace} = {}) {
   if (!client || !namespace) throw new Error('An admin client and an operator namespace are required.');
   const storageKey = 'digital-card.admin-command.v1:' + namespace;
   let pending = null, disposed = false, generation = 0, usersGeneration = 0, personGeneration = 0, historyGeneration = 0, publication = 0, active = null;
-  try { const saved = JSON.parse(storage?.getItem(storageKey) ?? 'null'); if (saved && commands.has(saved.command) && saved.input?.key && saved.review) pending = saved; } catch {}
+  const storageError = () => Object.assign(new Error('Safe command storage is unavailable. Restore storage before retrying this change.'),{code:'COMMAND_STORAGE_UNAVAILABLE',status:503});
+  function readPending() {
+    try {
+      if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') throw storageError();
+      const raw = storage.getItem(storageKey);
+      if (raw === null) return null;
+      if (typeof raw !== 'string' || new TextEncoder().encode(raw).byteLength > 1024*1024) throw storageError();
+      const saved = JSON.parse(raw);
+      if (!saved || !commands.has(saved.command) || typeof saved.input?.key !== 'string' || !saved.input.key || saved.input.key.length > 128 || !saved.review || saved.review.command !== saved.command || !saved.review.input || !Array.isArray(saved.review.changes)) throw storageError();
+      return saved;
+    } catch { throw storageError(); }
+  }
+  try { pending = readPending(); } catch {}
   let state = {phase:'idle',overview:null,users:{items:[],next:null,total:0},person:null,history:{items:[],next:null,total:0},review:pending?.review ?? null,pending:!!pending,error:null,message:pending ? 'A previous save needs confirmation. Retry the same change to recover its result safely.' : '',loadingUsers:false,loadingPerson:false,loadingHistory:false};
   const listeners = new Set();
   const publish = patch => { if (disposed) return; state = {...state,...patch}; const version=++publication,snapshot=copy(state);for(const listener of listeners){if(disposed||version!==publication)break;listener(copy(snapshot));} };
-  const persist = clearKey => { try { if (pending) storage?.setItem(storageKey,JSON.stringify(pending)); else if(JSON.parse(storage?.getItem(storageKey)??'null')?.input?.key===clearKey)storage?.removeItem(storageKey); } catch {} };
+  const persist = clearKey => {
+    if (pending) {
+      try {
+        const value = JSON.stringify(pending);
+        if (new TextEncoder().encode(value).byteLength > 1024*1024) throw storageError();
+        storage.setItem(storageKey,value);
+        if (storage.getItem(storageKey) !== value) throw storageError();
+      } catch { throw storageError(); }
+    } else {
+      // A failed cleanup keeps the original identity available for safe replay.
+      try { if (readPending()?.input.key === clearKey) storage.removeItem(storageKey); } catch {}
+    }
+  };
   async function load({keepReview = true} = {}) {
     if (disposed || active) return;
     const current = ++generation; publish({phase:'loading',error:null,...(!keepReview && !pending ? {review:null} : {})});
@@ -52,11 +76,12 @@ export function createAdminController({client,storage,namespace} = {}) {
     if (active) return active;
     if (disposed || !state.review) return Promise.resolve(null);
     const priorAttempt=!!pending;
-    if (!pending) {
-      let saved;try{saved=JSON.parse(storage?.getItem(storageKey)??'null');}catch{}
-      if(saved&&commands.has(saved.command)&&saved.input?.key&&saved.review){pending=saved;publish({pending:true,review:copy(saved.review),message:'Another save needs confirmation. Retry that original change before making a new one.'});return Promise.resolve(null);}
-      pending = {command:state.review.command,input:{...copy(state.review.input),key:client.requestKey()},review:copy(state.review)}; persist();
-    }
+    try {
+      const saved = readPending();
+      if (saved && saved.input.key !== pending?.input.key) {pending=saved;publish({pending:true,review:copy(saved.review),message:'Another save needs confirmation. Retry that original change before making a new one.'});return Promise.resolve(null);}
+      if (!pending) pending = {command:state.review.command,input:{...copy(state.review.input),key:client.requestKey()},review:copy(state.review)};
+      persist();
+    } catch (error) {publish({phase:'error',pending:!!pending,error:errors(error),message:'Restore command storage before saving or retrying this change.'});return Promise.resolve(null);}
     const operation = pending,current=++generation;
     active = Promise.resolve().then(async () => {
       if(disposed||current!==generation)return null;

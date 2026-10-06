@@ -1,3 +1,4 @@
+import {completionContext,withCompletion,reserveDelivery,deliveryBytes,completionCapacity,completionDefaults} from './completion.js';
 import { randomUUID } from "node:crypto";
 import { check, integer, text, jsonObject } from "./catalog.js";
 import { hasPermission } from "./access.js";
@@ -15,6 +16,7 @@ export function enqueueAction(
   s.actionJobs ??= {};
   const job = {
     id: randomUUID(),
+    ...(completionContext(s)?{completionId:completionContext(s).id}:{}),
     handler,
     params: structuredClone(params),
     userId,
@@ -31,6 +33,7 @@ export function enqueueAction(
     completedAt: null,
   };
   s.actionJobs[job.id] = job;
+  reserveDelivery(s,job);
   return job;
 }
 export function openingActions(s, copy, userId, at) {
@@ -80,10 +83,19 @@ export class ActionService {
   #clock;
   #handlers;
   #options;
-  constructor({ store, clock, handlers = {}, options = {} }) {
+  #limits;
+  #completeJob(s,job,fn){
+    const measure=state=>this.#store.measure?.(state)??{usedBytes:Buffer.byteLength(JSON.stringify(state))},before=measure(s).usedBytes;
+    reserveDelivery(s,job);
+    const obligation=s.completionObligations?.[job.completionId??job.deliveryCompletionId];
+    check(obligation,'INVALID_STATE','Action completion obligation is missing',500);
+    const result=withCompletion(s,obligation,fn,measure,before);completionCapacity(s,this.#limits);return result;
+  }
+  constructor({ store, clock, handlers = {}, options = {}, limits=completionDefaults }) {
     this.#store = store;
     this.#clock = clock;
     this.#handlers = handlers;
+    this.#limits=limits;
     this.#options = {
       maxAttempts: 8,
       leaseMs: 60000,
@@ -161,6 +173,7 @@ export class ActionService {
         "Action history capacity reached; operator review required",
         507,
       );
+      reserveDelivery(s,j);const reservation=s.completionObligations[j.completionId??j.deliveryCompletionId];reservation.bytes+=deliveryBytes;
       j.status = "pending";
       j.attempts = 0;
       j.nextAt = this.#clock();
@@ -173,6 +186,7 @@ export class ActionService {
       });
       const result = view(j);
       s.actionRetryRequests[token] = { jobId, result };
+      completionCapacity(s,this.#limits);
       return result;
     });
   }
@@ -194,20 +208,21 @@ export class ActionService {
         now = Date.parse(at);
       for (const j of Object.values(s.actionJobs ?? {})) {
         if (!due(j, now)) continue;
+        const claimed=this.#completeJob(s,j,()=>{
         if (j.attempts >= this.#options.maxAttempts) {
           j.status = "dead";
           j.error =
             "Delivery attempts exhausted; provider reconciliation required";
           j.leaseToken = null;
           j.leaseUntil = null;
-          continue;
+          return null;
         }
         if ((j.history?.length ?? 0) > 1998) {
           j.status = "dead";
           j.error = "Action history capacity reached; operator review required";
           j.leaseToken = null;
           j.leaseUntil = null;
-          continue;
+          return null;
         }
         j.status = "running";
         j.attempts++;
@@ -220,6 +235,8 @@ export class ActionService {
         j.leaseToken = randomUUID();
         j.leaseUntil = new Date(now + this.#options.leaseMs).toISOString();
         return structuredClone(j);
+        });
+        if(claimed)return claimed;
       }
       return null;
     });
@@ -241,6 +258,7 @@ export class ActionService {
         "Delivery lease is no longer current",
         409,
       );
+      return this.#completeJob(s,j,()=>{
       j.leaseToken = null;
       j.leaseUntil = null;
       (j.history ??= []).push({
@@ -265,6 +283,7 @@ export class ActionService {
         ).toISOString();
       }
       return view(j);
+      });
     });
   }
   async dispatch(actor, { limit = 10, signal } = {}) {
