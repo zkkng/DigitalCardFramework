@@ -41,7 +41,7 @@ for(const Store of [MemoryStore,SQLiteStore]){
     const values=tx.value('balances');assert.equal(Object.getPrototypeOf(values),Object.prototype);assert.equal(Object.hasOwn(values,'__proto__'),true);assert.equal(values.__proto__.credits,7);
     values.alice.credits=99;assert.equal(tx.get('balances','alice').credits,8);
     assert.equal(tx.append('events',{sequence:1,type:'test'}),0);assert.deepEqual(tx.value('events'),[{sequence:1,type:'test'}]);assert.equal(tx.count('events'),1);
-    const counts=tx.ownerCounts('alice');tx.put('copies','test-copy',{id:'test-copy',ownerId:'alice',state:'owned'});assert.equal(tx.ownerCounts('alice').ownedCopies,counts.ownedCopies+1);assert.equal(tx.ownerCounts('bob').ownedCopies,0);
+    const counts=tx.ownerCounts('alice');tx.put('copies','test-copy',{id:'test-copy',ownerId:'alice',state:'owned',variantId:'sample'});assert.equal(tx.ownerCounts('alice').ownedCopies,counts.ownedCopies+1);assert.equal(tx.ownerCounts('bob').ownedCopies,0);assert.equal(tx.ownedVariantCount('alice',['sample']),1);assert.equal(tx.ownedVariantCount('bob',['sample']),0);
    });
    assert.throws(()=>retained.get('balances','alice'),code('TRANSACTION_ENDED'));
    assert.equal(store.read(s=>s.balances.__proto__.credits),7);

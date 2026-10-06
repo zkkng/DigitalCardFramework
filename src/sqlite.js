@@ -187,6 +187,7 @@ export class SQLiteStore {
         count:name=>this.#db.prepare('SELECT COUNT(*) AS n FROM framework_entities WHERE collection=?').get(name).n,
         nextOrdinal:name=>this.#db.prepare('SELECT COALESCE(MAX(ordinal)+1,0) AS n FROM framework_entities WHERE collection=?').get(name).n,
         ownerCounts:ownerId=>sqliteQueries(this.#db,this.#codec,this.#identity,this.#recordKey).collectionCounts(ownerId),
+        ownedVariantCount:(ownerId,variantIds)=>variantIds.length?this.#db.prepare("SELECT COUNT(*) AS n FROM framework_entities INDEXED BY framework_owner_variant WHERE collection='copies' AND owner_id=? AND state='owned' AND variant_id IN ("+variantIds.map(()=>'?').join(',')+")").get(ownerId,...variantIds).n:0,
       };
       scope=createRecordTransaction(backend,options);
       const result=cloneResult(fn(scope.api)),plan=scope.finish();
@@ -224,7 +225,7 @@ export class SQLiteStore {
           for(const key of Object.keys(summary.completion))summary.completion[key]=previousSummary.completion[key]+added.completion[key]-oldPart.completion[key];
           const used=previousSummary.usedBytes+delta-accountingBytes+encodedRecordBytes(this.#codec,recordAccountingField,null,JSON.stringify(summary));
           const consumed=completionRow?priorUsed+Math.max(0,used-previousSummary.usedBytes):0;
-          if(completionRow)check(consumed<=completionRow.value.bytes,'COMPLETION_INVARIANT','Intent completion exceeds its admitted reservation',500);
+          if(completionRow)check(consumed<=completionRow.value.bytes,'COMPLETION_INVARIANT','Completion exceeds its admitted reservation',500);
           if(used===summary.usedBytes&&(!completionRow||consumed===completionRow.value.usedBytes)){stabilized=true;break;}summary.usedBytes=used;
           if(completionRow&&consumed!==completionRow.value.usedBytes){const token=JSON.stringify([completionRow.collection,completionRow.key]),oldBytes=after.entities.get(token).bytes;completionRow.value.usedBytes=consumed;const encoded=encodeEntity(completionRow.collection,completionRow.key,completionRow.value,completionRow.ordinal,this.#codec,this.#identity,this.#recordKey);after.entities.set(token,encoded);delta+=encoded.bytes-oldBytes;}
         }

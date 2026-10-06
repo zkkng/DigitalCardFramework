@@ -17,7 +17,23 @@ export function validateAcquisitionChanges(changes){
     if(row.collection==='actionJobs')check(additions.completionObligations?.[row.value.deliveryCompletionId],'RECORD_TRANSACTION_UNSUPPORTED','New deliveries require a new reservation',409);
   }
 }
-export function validateRecordPlan(plan,{intent=false,preferences=false}={}){
+export function validateRecordPlan(plan,{intent=false,preferences=false,packCompletion=false}={}){
+  if(!plan.changes.length&&!plan.scalars.length&&!plan.completion)return;
+  if(packCompletion){
+    check(!intent&&!preferences&&!plan.scalars.length&&plan.completion&&!plan.completion.admission,'RECORD_TRANSACTION_UNSUPPORTED','Pack opening requires its admitted reservation',409);
+    const reservation=plan.changes.find(row=>row.collection==='completionObligations'&&row.key===plan.completion.id);check(reservation?.old?.value.kind==='pack'&&reservation.old.value.status==='reserved'&&reservation.value.status==='completed','INVALID_STATE','Pending pack reservation required',500);
+    for(const row of plan.changes){
+      check(['copies','packs','requests','events','notifications','actionJobs','completionObligations'].includes(row.collection),'RECORD_TRANSACTION_UNSUPPORTED','Collection is outside pack completion scope',409);
+      if(row.collection==='copies'||row.collection==='packs'){
+        check(row.old,'INVALID_STATE','Opening cannot create pack or copy records',500);const mutable=row.collection==='copies'?['state','openedAt','openedBy','version','actionJobIds']:['openedAt','receipt'];
+        const stable=value=>Object.fromEntries(Object.entries(value).filter(([key])=>!mutable.includes(key)));check(isDeepStrictEqual(stable(row.old.value),stable(row.value)),'INVALID_STATE','Issued pack and copy snapshots are immutable',500);
+        if(row.collection==='copies')check(row.old.value.state==='sealed'&&row.value.state==='owned'&&row.value.version===row.old.value.version+1,'INVALID_STATE','Opening requires a sealed copy transition',500);
+        else check(row.key===reservation.value.entityId&&!row.old.value.receipt&&row.value.receipt?.id===row.key,'INVALID_STATE','Opening receipt must match the reserved pack',500);
+      }else if(row.collection==='completionObligations'){check(row===reservation,'INVALID_STATE','Opening cannot spend another reservation',500);for(const field of ['id','kind','entityId','bytes','events','jobs'])check(isDeepStrictEqual(row.old.value[field],row.value[field]),'INVALID_STATE','Reservation terms are immutable',500);}
+      else {check(!row.old,'INVALID_STATE','Opening only appends receipts and delivery records',500);if(['requests','events','actionJobs'].includes(row.collection))check(row.value.completionId===reservation.key,'INVALID_STATE','Opening records require their reservation identity',500);if(row.collection==='events')check(row.value.sequence===row.ordinal+1,'INVALID_STATE','Event sequence differs from append position',500);}
+    }
+    return;
+  }
   if(preferences){
     check(!intent&&!plan.scalars.length&&!plan.completion,'RECORD_TRANSACTION_UNSUPPORTED','Preferences require ordinary admission',409);
     check(plan.changes.every(row=>['users','requests','events','actionJobs','completionObligations'].includes(row.collection)),'RECORD_TRANSACTION_UNSUPPORTED','Collection is outside preferences transaction scope',409);
@@ -54,10 +70,12 @@ export function createRecordTransaction(backend,{maxRecords=4096,maxBytes=16*102
     ownerCounts(ownerId){keyName(ownerId);charge(0);const result=clone(backend.ownerCounts(ownerId));
       const apply=(collection,row,delta)=>{if(!row)return;if(collection==='copies'&&row.ownerId===ownerId){result.copies+=delta;if(row.state==='owned')result.ownedCopies+=delta;if(row.state==='sealed')result.sealedCopies+=delta;}if(collection==='packs'&&row.ownerId===ownerId){result.packs+=delta;if(!row.openedAt)result.unopenedPacks+=delta;}if(collection==='codes'&&row.holderId===ownerId)result.codes+=delta;};
       for(const row of records.values()){apply(row.collection,row.old?.value,-1);apply(row.collection,row.value,1);}return result;},
+    ownedVariantCount(ownerId,variantIds){keyName(ownerId);check(Array.isArray(variantIds)&&variantIds.length<=2000&&variantIds.every(id=>typeof id==='string'&&id.length<=2048),'INVALID_INPUT','Invalid owned variant query');charge(Buffer.byteLength(JSON.stringify(variantIds)));const ids=new Set(variantIds),matches=row=>!!row&&row.ownerId===ownerId&&row.state==='owned'&&ids.has(row.variantId);let total=backend.ownedVariantCount(ownerId,[...ids]);for(const row of records.values())if(row.collection==='copies')total+=Number(matches(row.value))-Number(matches(row.old?.value));return total;},
     put(name,key,value){const metadata=field(name),kind=metadata?.kind??createdKinds.get(name);check(!kind||kind==='object','INVALID_INPUT','put requires an object collection');check(value!==undefined,'INVALID_INPUT','Cannot store undefined');createdKinds.set(name,'object');const row=load(name,key);row.value=clone(value);if(row.ordinal===undefined)row.ordinal=ordinal(name);return clone(value);},
     append(name,value){const metadata=field(name),kind=metadata?.kind??createdKinds.get(name);check(!kind||kind==='array','INVALID_INPUT','append requires an array collection');check(value!==undefined,'INVALID_INPUT','Cannot store undefined');createdKinds.set(name,'array');const index=ordinal(name),key=String(index),row=load(name,key);check(!row.old,'INVALID_STATE','Append position is occupied',500);row.value=clone(value);row.ordinal=index;row.array=true;return index;},
     setScalar(name,value){const metadata=field(name);check(!metadata||metadata.kind==='scalar','INVALID_INPUT','Scalar field required');check(value!==undefined,'INVALID_INPUT','Cannot store undefined');scalars.set(name,{name,old:metadata?.value,value:clone(value)});},
     reserveIntentCompletion(id,{admission=false}={}){live();keyName(id);check(!completion,'INVALID_STATE','Only one intent reservation can fund a transaction',500);completion={id,admission};},
+    reservePackCompletion(id){live();keyName(id);check(!completion,'INVALID_STATE','Only one reservation can fund a transaction',500);completion={id,admission:false};},
   };
   return {api,close(){active=false;},finish(){live();const changes=[...records.values()].filter(row=>!isDeepStrictEqual(row.old?.value,row.value)||completion&&row.collection==='completionObligations'&&row.key===completion.id);
     const changedScalars=[...scalars.values()].filter(row=>!isDeepStrictEqual(row.old,row.value));check(changes.length+changedScalars.length<=maxRecords,'TRANSACTION_BUDGET','Record transaction write budget exceeded',507);

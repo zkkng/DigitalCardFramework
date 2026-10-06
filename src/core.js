@@ -1,6 +1,6 @@
 import {hasPermission} from './access.js';
 import {recordContexts} from './record-context.js';
-import {validRecordAccounting,recordAccountingField} from './record-accounting.js';
+import {validRecordAccounting,recordAccountingField,summarizeRecords} from './record-accounting.js';
 import {resolveCapabilities,admitWorkflow,transitionCapabilities,workflowRequirements} from './capability-policy.js';
 import {CommandIntentService} from './command-intents.js';
 import {completionContext,completionDefaults,completionCapacity,ordinaryRequestCount,reserveCompletion,withCompletion,missingCompletions,reserveDelivery,accountReservationMetadata} from './completion.js';
@@ -729,10 +729,28 @@ export class CardFramework {
     return result;
   }
   openPack(actor,{key,packId}) {
-    return this.#command(actor,key,'pack.opened',{packId},(s,user)=>{
+    text(key,'idempotency key',128);const input={packId},fallback=()=>this.#command(actor,key,'pack.opened',input,(s,user)=>this.#openPackBody(s,user,packId));
+    if(!this.#store.transactRecords)return fallback();
+    try{return this.#store.transactRecords(tx=>{
+      const user=this.#queryUser(tx,actor),token=user.id+':'+key,hash=fingerprint({type:'pack.opened',input}),previous=tx.get('requests',token);if(previous){check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409);return previous.result;}
+      const pack=typeof packId==='string'?tx.get('packs',packId):undefined;check(pack?.ownerId===user.id,'NOT_FOUND','Pack not found',404);check(!pack.lockedBy,'PACK_LOCKED','Pack is reserved in a listing',409);
+      let accounting;try{accounting=JSON.parse(tx.value(recordAccountingField));}catch{}check(validRecordAccounting(accounting,tx.value('revision'))&&!pack.receipt&&(accounting.counts.notifications??0)<2000,'RECORD_PATH_UNAVAILABLE','Opening requires the compatibility completion path',409);
+      const obligation=tx.get('completionObligations','pack:'+pack.id);check(obligation?.status==='reserved','RECORD_PATH_UNAVAILABLE','Opening requires the compatibility reservation path',409);
+      const copies=Object.create(null);for(const copyId of pack.copyIds){const copy=tx.get('copies',copyId);check(copy,'INVALID_STATE','Pack copy is missing',500);check(!(copy.codeIds?.length||copy.variant.codes?.length),'RECORD_PATH_UNAVAILABLE','Code attachments require compatibility opening',409);copies[copyId]=copy;}
+      const state={schemaVersion:1,revision:accounting.revision,catalog:tx.value('catalog'),cardAuthoring:tx.value('cardAuthoring'),users:{[user.id]:user},copies,packs:{[pack.id]:pack},requests:{},events:[],notifications:[],completionObligations:{[obligation.id]:obligation}};
+      const prior=summarizeRecords(state);for(const field of ['copies','packs'])accounting.counts[field]-=prior.counts[field];for(const field of Object.keys(accounting.completion))accounting.completion[field]-=prior.completion[field];
+      const ownerCounts=tx.ownerCounts(user.id);ownerCounts.packs--;for(const copy of Object.values(copies)){if(copy.state==='owned')ownerCounts.ownedCopies--;if(copy.state==='sealed')ownerCounts.sealedCopies--;}
+      const seen=new Set();for(const cardId of new Set(Object.values(copies).map(copy=>copy.cardId))){const variants=state.catalog.variants.filter(variant=>variant.cardId===cardId).map(variant=>variant.id);check(variants.length<=2000,'RECORD_PATH_UNAVAILABLE','Card history requires compatibility opening',409);if(tx.ownedVariantCount(user.id,variants)>0)seen.add(cardId);}
+      recordContexts.set(state,{accounting,ownerId:user.id,ownerCounts});
+      try{const result=this.#complete(state,'pack',pack.id,()=>{const receipt=this.#openPackBody(state,user,packId,seen);state.requests[token]={hash,result:clone(receipt),completionId:obligation.id};this.#event(state,'pack.opened',{userId:user.id});this.#capacity(state,true);return receipt;});
+        for(const field of ['copies','packs','requests','actionJobs','completionObligations'])for(const [id,row]of Object.entries(state[field]??{}))tx.put(field,id,row);for(const field of ['events','notifications'])for(const row of state[field])tx.append(field,row);tx.reservePackCompletion(obligation.id);return result;
+      }finally{recordContexts.delete(state);}
+    },{packCompletion:true});}catch(error){if(['RECORD_PATH_UNAVAILABLE','TRANSACTION_BUDGET'].includes(error.code))return fallback();throw error;}
+  }
+  #openPackBody(s,user,packId,priorSeen) {
       const pack=s.packs[packId]; check(pack && pack.ownerId===user.id,'NOT_FOUND','Pack not found',404);check(!pack.lockedBy,'PACK_LOCKED','Pack is reserved in a listing',409);
       if(pack.receipt) return pack.receipt;
-      const seen=new Set(Object.values(s.copies).filter(x=>x.ownerId===user.id && x.state==='owned').map(x=>x.cardId));
+      const seen=priorSeen??new Set(Object.values(s.copies).filter(x=>x.ownerId===user.id && x.state==='owned').map(x=>x.cardId));
       const openedAt=this.#clock(), cards=[];
       for(const copyId of pack.copyIds) {
         const copy=s.copies[copyId]; copy.state='owned'; copy.openedAt=openedAt; copy.openedBy=user.id; copy.version++;
@@ -743,7 +761,6 @@ export class CardFramework {
       pack.openedAt=openedAt; pack.receipt={id:pack.id,openedAt,cards};
       this.#notify(s,user.id,'pack.opened',{packId:pack.id,count:cards.length});
       return pack.receipt;
-    });
   }
   inventory(actor) {return this.#query(q=>{const user=this.#queryUser(q,actor),copies=[];let after='';do{const result=q.pageCopies({ownerId:user.id,after,limit:200,sort:'ordinal'});copies.push(...result.items);after=result.next;}while(after);return this.#inventoryViews(this.#viewState(q,copies,[user.id]),copies,user.id);});}
   inspectCard(actor,copyId) {
