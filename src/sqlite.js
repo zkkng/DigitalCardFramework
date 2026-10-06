@@ -1,4 +1,6 @@
 import {completionPool} from './completion.js';
+import {createRecordTransaction,validateAcquisitionChanges} from './record-transaction.js';
+import {validRecordAccounting,recordAccountingField,summarizeRecords,finalizeRecordAccounting} from './record-accounting.js';
 import {DatabaseSync,backup} from 'node:sqlite';
 import {existsSync,mkdtempSync,chmodSync,rmSync,statSync} from 'node:fs';
 import {createHash,createHmac} from 'node:crypto';
@@ -6,11 +8,11 @@ import {isDeepStrictEqual} from 'node:util';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createStateCodec} from './encryption.js';
-import {FrameworkError} from './catalog.js';
+import {FrameworkError,check} from './catalog.js';
 import {initialState} from './store.js';
 import {cloneResult,completionBytes,querySnapshot} from './storage-query.js';
 import {copySnapshotFiles} from './storage-snapshot.js';
-import {STORAGE_SCHEMA,schemaSql,schemaSqlV2,codeHolderSchemaSql,migrateCodeHolders,encodeState,readState,writeDifference,sqliteQueries} from './indexed-storage.js';
+import {STORAGE_SCHEMA,schemaSql,schemaSqlV2,codeHolderSchemaSql,migrateCodeHolders,encodeState,readState,writeDifference,sqliteQueries,storageRecordKey,decodeRecordEnvelope,encodedRecordBytes,encodeRecordPayload,encodeEntity} from './indexed-storage.js';
 
 const emptyRecords=()=>({fields:new Map(),entities:new Map(),usedBytes:0});
 const marker={format:'digital-card.indexed-state',version:STORAGE_SCHEMA,recordKeys:'blind-v1'};
@@ -148,12 +150,87 @@ export class SQLiteStore {
       const result=cloneResult(fn(state));
       if(!isDeepStrictEqual(state,before)){
         state.revision++;
+        if(Object.hasOwn(state,recordAccountingField)){
+          const baseline=encodeState(state,this.#codec,this.#identity,this.#recordKey).usedBytes;
+          const size=(field,key,value)=>value===undefined?0:encodedRecordBytes(this.#codec,field,key,value);
+          const originalAccounting=size(recordAccountingField,null,state[recordAccountingField]);
+          const obligations=Object.entries(state.completionObligations??{}).map(([key,row])=>({key,bytes:size('completionObligations',key,row)}));
+          finalizeRecordAccounting(state,before,value=>baseline+size(recordAccountingField,null,value[recordAccountingField])-originalAccounting
+            +obligations.reduce((sum,row)=>sum+size('completionObligations',row.key,value.completionObligations[row.key])-row.bytes,0));
+        }
         this.assertCapacity(state,{previous:before});
         this.#writes+=writeDifference(this.#db,encodeState(before,this.#codec,this.#identity,this.#recordKey),encodeState(state,this.#codec,this.#identity,this.#recordKey));
       }
       this.#db.exec('COMMIT');return result;
     }catch(error){try{this.#db.exec('ROLLBACK');}catch{}throw error;}
     finally{this.#active=false;}
+  }
+  prepareRecordTransactions(){
+    return this.transact(state=>{
+      let summary;try{summary=JSON.parse(state[recordAccountingField]);}catch{}
+      if(validRecordAccounting(summary,state.revision))return {prepared:false};
+      state[recordAccountingField]=String(state[recordAccountingField]??'')+' ';
+      return {prepared:true};
+    });
+  }
+  transactRecords(fn,options={}){
+    if(this.#readOnly)throw new Error('Database is read-only');
+    if(this.#active)throw new Error('Nested storage operations are unsupported');
+    this.#active=true;let scope;
+    try{
+      this.#db.exec('BEGIN IMMEDIATE');
+      const decode=(row,field,key,charge)=>{if(!row){charge(0);return undefined;}charge(Buffer.byteLength(row.payload??''));this.#decoded++;return decodeRecordEnvelope(this.#codec,row.payload,field,key,this.#recordKey);};
+      const backend={
+        field:(name,charge)=>{const row=this.#db.prepare('SELECT kind,payload FROM framework_fields WHERE name=?').get(name);if(!row)return undefined;return {...row,...(row.kind==='scalar'?{value:decode(row,name,null,charge).value}:{})};},
+        record:(name,key,charge)=>{const storageKey=storageRecordKey(name,key,this.#recordKey),row=this.#db.prepare('SELECT ordinal,payload FROM framework_entities WHERE collection=? AND entity_key=?').get(name,storageKey);const envelope=decode(row,name,storageKey,charge);return row?{value:envelope.value,ordinal:row.ordinal}:undefined;},
+        entries:(name,charge)=>{const rows=[];for(const row of this.#db.prepare('SELECT entity_key,ordinal,payload FROM framework_entities WHERE collection=? ORDER BY ordinal').iterate(name)){const envelope=decode(row,name,row.entity_key,charge);rows.push({key:envelope.key,value:envelope.value,ordinal:row.ordinal});}return rows;},
+        count:name=>this.#db.prepare('SELECT COUNT(*) AS n FROM framework_entities WHERE collection=?').get(name).n,
+        nextOrdinal:name=>this.#db.prepare('SELECT COALESCE(MAX(ordinal)+1,0) AS n FROM framework_entities WHERE collection=?').get(name).n,
+        ownerCounts:ownerId=>sqliteQueries(this.#db,this.#codec,this.#identity,this.#recordKey).collectionCounts(ownerId),
+      };
+      scope=createRecordTransaction(backend,options);
+      const result=cloneResult(fn(scope.api)),plan=scope.finish();
+      if(plan.changes.length){
+        validateAcquisitionChanges(plan.changes);
+        const revision=scope.api.value('revision');let summary;
+        try{summary=JSON.parse(scope.api.value(recordAccountingField));}catch{}
+        check(validRecordAccounting(summary,revision),'RECORD_MIGRATION_REQUIRED','Prepare revision-bound record accounting before using record transactions',503);
+        const previousSummary=structuredClone(summary),partial={schemaVersion:1,revision:0,events:[],ledger:[]};
+        const before=emptyRecords(),after=emptyRecords();after.encode=(field,key,value)=>encodeRecordPayload(this.#codec,field,key,value);
+        let delta=0;
+        for(const row of plan.changes){
+          const metadata=plan.fields.get(row.collection),kind=metadata?.kind??(row.array?'array':'object');
+          if(metadata)before.fields.set(row.collection,{kind,raw:null});after.fields.set(row.collection,{kind,raw:null});
+          const key=JSON.stringify([row.collection,row.key]),encoded=encodeEntity(row.collection,row.key,row.value,row.ordinal,this.#codec,this.#identity,this.#recordKey);
+          after.entities.set(key,encoded);delta+=encoded.bytes;
+          if(row.old){const old=encodeEntity(row.collection,row.key,row.old.value,row.old.ordinal,this.#codec,this.#identity,this.#recordKey);before.entities.set(key,old);delta-=old.bytes;}
+          else {summary.counts[row.collection]=(summary.counts[row.collection]??0)+1;
+            partial[row.collection]??=kind==='array'?[]:Object.create(null);
+            if(kind==='array')partial[row.collection].push(row.value);else partial[row.collection][row.key]=row.value;
+          }
+          if(row.collection==='events')check(row.value.sequence===row.ordinal+1,'INVALID_STATE','Event sequence differs from append position',500);
+        }
+        const added=summarizeRecords(partial);
+        check(added.missingCompletions===0,'COMPLETION_MIGRATION_REQUIRED','New obligations require completion reservations',503);
+        summary.ordinaryRequests+=added.ordinaryRequests;summary.ordinaryJobs+=added.ordinaryJobs;summary.ordinaryEvents+=added.ordinaryEvents;
+        for(const key of Object.keys(summary.completion))summary.completion[key]+=added.completion[key];
+        summary.revision=revision+1;
+        const scalar=(name,old,value)=>{before.fields.set(name,{kind:'scalar',raw:JSON.stringify(old),value:old});after.fields.set(name,{kind:'scalar',raw:JSON.stringify(value),value});};
+        scalar('revision',revision,summary.revision);
+        delta+=encodedRecordBytes(this.#codec,'revision',null,summary.revision)-encodedRecordBytes(this.#codec,'revision',null,revision);
+        const oldAccounting=scope.api.value(recordAccountingField),base=previousSummary.usedBytes+delta-encodedRecordBytes(this.#codec,recordAccountingField,null,oldAccounting);
+        let stabilized=false;
+        for(let i=0;i<12;i++){const used=base+encodedRecordBytes(this.#codec,recordAccountingField,null,JSON.stringify(summary));if(used===summary.usedBytes){stabilized=true;break;}summary.usedBytes=used;}
+        check(stabilized,'INVALID_STATE','Record accounting did not stabilize',500);
+        scalar(recordAccountingField,oldAccounting,JSON.stringify(summary));
+        const total=summary.usedBytes+summary.externalReservedBytes,previousTotal=previousSummary.usedBytes+previousSummary.externalReservedBytes;
+        check(total<=this.#maxBytes||total<=previousTotal,'STORAGE_CAPACITY','Installation capacity reached; existing completion reservations are retained',507);
+        check(summary.completion.storedBytes+summary.completion.reservedBytes<=this.#maxCompletionBytes&&total+summary.completion.reservedBytes<=this.#maxBytes+this.#maxCompletionBytes,'COMPLETION_CAPACITY','Completion storage capacity reached',507);
+        this.#writes+=writeDifference(this.#db,before,after);
+      }
+      scope.close();this.#db.exec('COMMIT');return result;
+    }catch(error){try{this.#db.exec('ROLLBACK');}catch{}throw error;}
+    finally{scope?.close();this.#active=false;}
   }
   diagnostics(){return {storageSchema:STORAGE_SCHEMA,decodedQueryRecords:this.#decoded,compatibilityMaterializations:this.#materializations,recordWrites:this.#writes,readOnly:this.#readOnly};}
   integrity(){return this.#db.prepare('PRAGMA quick_check').all().every(row=>row.quick_check==='ok');}

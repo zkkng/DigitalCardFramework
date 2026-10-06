@@ -1,6 +1,6 @@
 # Core API and configuration
 
-API version 0.2. All core methods are synchronous, detached-result methods. Browser/HTTP methods are asynchronous. Hosts pass verified server contexts: {userId} for players and {role:'admin'} for operator-only methods. Never derive authority from request body fields. A provider + immutable subject identifies one registered user; display name changes retain inventory. See [content authoring](content-authoring.md), [production operations](production.md) and [generated HTTP contract](openapi.json) for the 0.2 additions.
+API version 0.2. Core command and query methods return detached results; most are synchronous. The opt-in [incremental acquisition method](record-transactions.md), `purchaseAsync`, returns a Promise while its SQLite operations still run on the calling thread. Browser/HTTP methods and action dispatch are asynchronous. Hosts pass verified server contexts: {userId} for players and {role:'admin'} for operator-only methods. Never derive authority from request body fields. A provider + immutable subject identifies one registered user; display name changes retain inventory. See [content authoring](content-authoring.md), [production operations](production.md) and [generated HTTP contract](openapi.json) for the 0.2 additions.
 
 For a balance owned by another service, use the [external purchase workflow](external-purchases.md). It binds a reviewed quote to one external payment and records either complete delivery or required compensation.
 

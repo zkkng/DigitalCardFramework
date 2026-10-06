@@ -1,4 +1,6 @@
 import {hasPermission} from './access.js';
+import {recordContexts} from './record-context.js';
+import {validRecordAccounting,recordAccountingField} from './record-accounting.js';
 import {resolveCapabilities,admitWorkflow,transitionCapabilities,workflowRequirements} from './capability-policy.js';
 import {CommandIntentService} from './command-intents.js';
 import {completionContext,completionDefaults,completionCapacity,ordinaryRequestCount,reserveCompletion,withCompletion,missingCompletions,reserveDelivery,accountReservationMetadata} from './completion.js';
@@ -137,12 +139,13 @@ export class CardFramework {
     return this.#store.transact(s=>{s.operatorRequests??={};const token=(actor.userId??'operator')+':'+key,hash=fingerprint({type,input}),previous=s.operatorRequests[token];if(previous){check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Operator key already used',409);return previous.result;}const result=fn(s);this.#capacity(s);this.#event(s,type,{userId:actor.userId??null});s.operatorRequests[token]={hash,result:clone(result)};return result;});
   }
   #capacity(s,completion=false){
+    const context=recordContexts.get(s),baseline=context?.accounting;
     this.#admission(s);
     completionCapacity(s,this.#limits);
     for(const field of ['copies','packs','requests','albums','trades','actionJobs','shops','listings','orders'])if(this.#limits[field]!==undefined)
-      check(field==='requests'?ordinaryRequestCount(s)+(completion?0:1)<=this.#limits.requests:Object.values(s[field]??{}).filter(row=>field!=='actionJobs'||!row.completionId).length<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
-    if(this.#limits.copiesPerUser!==undefined){const counts={};for(const c of Object.values(s.copies))if(c.state!=='consumed')counts[c.ownerId]=(counts[c.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.copiesPerUser,'INVENTORY_CAPACITY','Collector inventory capacity reached',507);}
-    if(this.#limits.packsPerUser!==undefined){const counts={};for(const p of Object.values(s.packs))counts[p.ownerId]=(counts[p.ownerId]??0)+1;for(const count of Object.values(counts))check(count<=this.#limits.packsPerUser,'PACK_CAPACITY','Collector pack capacity reached',507);}
+      check(field==='requests'?ordinaryRequestCount(s)+(completion?0:1)<=this.#limits.requests:Object.values(s[field]??{}).filter(row=>field!=='actionJobs'||!row.completionId).length+(field==='actionJobs'?baseline?.ordinaryJobs??0:baseline?.counts[field]??0)<=this.#limits[field],'INSTALLATION_CAPACITY','Installation '+field+' capacity reached',507);
+    if(this.#limits.copiesPerUser!==undefined){const counts={};for(const c of Object.values(s.copies))if(c.state!=='consumed')counts[c.ownerId]=(counts[c.ownerId]??0)+1;for(const [owner,count] of Object.entries(counts))check(count+(context?.ownerId===owner?context.ownerCounts.ownedCopies+context.ownerCounts.sealedCopies:0)<=this.#limits.copiesPerUser,'INVENTORY_CAPACITY','Collector inventory capacity reached',507);}
+    if(this.#limits.packsPerUser!==undefined){const counts={};for(const p of Object.values(s.packs))counts[p.ownerId]=(counts[p.ownerId]??0)+1;for(const [owner,count] of Object.entries(counts))check(count+(context?.ownerId===owner?context.ownerCounts.packs:0)<=this.#limits.packsPerUser,'PACK_CAPACITY','Collector pack capacity reached',507);}
   }
   configureCodePool(actor,input){return this.#codes.configurePool(actor,input);}
   importCodes(actor,input){return this.#codes.importBatch(actor,input);}
@@ -219,10 +222,10 @@ export class CardFramework {
   }
   #event(s,type,data,at=this.#clock()) {
     this.#admission(s);
-    const completion=completionContext(s),event={id:id(),sequence:s.events.length+1,type,data,at,...(completion?{completionId:completion.id}:{})};s.events.push(event);
+    const baseline=recordContexts.get(s)?.accounting,completion=completionContext(s),event={id:id(),sequence:(baseline?.counts.events??0)+s.events.length+1,type,data,at,...(completion?{completionId:completion.id}:{})};s.events.push(event);
     for(const subscription of completion?completion.subscriptions.filter(original=>this.#subscriptions.some(current=>current.id===original.id&&current.handler===original.handler&&(current.events.includes(type)||current.events.includes('*')))):this.#subscriptions)if(subscription.events.includes(type)||subscription.events.includes('*'))enqueueAction(s,{handler:subscription.handler,userId:data.userId??data.ownerId??null,params:{event:clone(event)},source:{type:'event',eventId:event.id,subscriptionId:subscription.id}},event.at);
-    check(Object.values(s.actionJobs??{}).filter(row=>!row.completionId).length<=this.#limits.actionJobs,'INSTALLATION_CAPACITY','Action queue capacity reached',507);
-    if(this.#limits.events!==undefined)check(s.events.filter(row=>!row.completionId).length<=this.#limits.events,'INSTALLATION_CAPACITY','Event journal capacity reached',507);
+    check(Object.values(s.actionJobs??{}).filter(row=>!row.completionId).length+(baseline?.ordinaryJobs??0)<=this.#limits.actionJobs,'INSTALLATION_CAPACITY','Action queue capacity reached',507);
+    if(this.#limits.events!==undefined)check(s.events.filter(row=>!row.completionId).length+(baseline?.ordinaryEvents??0)<=this.#limits.events,'INSTALLATION_CAPACITY','Event journal capacity reached',507);
     completionCapacity(s,this.#limits);
   }
   #reserve(s,kind,entityId){
@@ -232,7 +235,7 @@ export class CardFramework {
     return reserveCompletion(s,{kind,entity,copyIds,projections},this.#subscriptions,this.#limits);
   }
   #complete(s,kind,entityId,fn){const measure=state=>this.#store.measure?.(state)??{usedBytes:Buffer.byteLength(JSON.stringify(state))};const before=measure(s).usedBytes;return withCompletion(s,this.#reserve(s,kind,entityId),fn,measure,before);}
-  #admission(s){if(!completionContext(s))check(missingCompletions(s).length===0,'COMPLETION_MIGRATION_REQUIRED','Reserve existing completion obligations before admitting new work',503);}
+  #admission(s){if(!completionContext(s))check(missingCompletions(s).length+(recordContexts.get(s)?.accounting.missingCompletions??0)===0,'COMPLETION_MIGRATION_REQUIRED','Reserve existing completion obligations before admitting new work',503);}
   backfillCompletionReservations(actor){
     this.#admin(actor,'maintenance.run');
     return this.#store.transact(s=>{
@@ -606,7 +609,10 @@ export class CardFramework {
   pityProgress(actor){return this.#store.read(s=>{const u=this.#user(s,actor);return s.pity?.[u.id]??{};});}
   purchase(actor,{key,productId,quantity=1,productRevision,catalogVersion,adminRevision:quotedAdminRevision}) {
     integer(quantity,'quantity',1,100);
-    return this.#command(actor,key,'packs.purchased',{productId,quantity,productRevision,catalogVersion,...(quotedAdminRevision===undefined?{}:{adminRevision:quotedAdminRevision})},(s,user)=>{
+    const input={productId,quantity,productRevision,catalogVersion,...(quotedAdminRevision===undefined?{}:{adminRevision:quotedAdminRevision})};
+    return this.#command(actor,key,'packs.purchased',input,(s,user)=>this.#purchaseBody(s,user,input));
+  }
+  #purchaseBody(s,user,{productId,quantity,productRevision,catalogVersion,adminRevision:quotedAdminRevision}){
       const c=this.#catalog(s),base=lookup(c.products,productId);
       check(base && base.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
       assertAdminPurchase(s,user.id,base);const product=effectiveProduct(s,base);
@@ -618,7 +624,44 @@ export class CardFramework {
       const purchaseId=id(); this.#adjust(s,user.id,product.price.currencyId,-total,'purchase',purchaseId);
       const packs=this.#allocatePacks(s,user,product,quantity,{purchaseId});
       return {id:purchaseId,packs,paid:{currencyId:product.price.currencyId,amount:total}};
+  }
+  async purchaseAsync(actor,request){
+    const principal=clone(actor),reviewed=clone(request);
+    await Promise.resolve();
+    if(!this.#store.transactRecords)return this.purchase(principal,reviewed);
+    const {key,productId,quantity=1,productRevision,catalogVersion,adminRevision:quotedAdminRevision}=reviewed;
+    integer(quantity,'quantity',1,100);text(key,'idempotency key',128);
+    const input={productId,quantity,productRevision,catalogVersion,...(quotedAdminRevision===undefined?{}:{adminRevision:quotedAdminRevision})};
+    const execute=()=>this.#store.transactRecords(tx=>{
+      check(principal?.disabled!==true&&typeof principal?.userId==='string','UNAUTHENTICATED','A verified framework user is required',401);
+      const user=tx.get('users',principal.userId);check(user,'UNAUTHENTICATED','A verified framework user is required',401);
+      const token=user.id+':'+key,hash=fingerprint({type:'packs.purchased',input}),previous=tx.get('requests',token);
+      let accounting;try{accounting=JSON.parse(tx.value(recordAccountingField));}catch{}
+      check(validRecordAccounting(accounting,tx.value('revision')),previous?'RECORD_PATH_UNAVAILABLE':'RECORD_MIGRATION_REQUIRED','Prepare revision-bound record accounting',503);
+      check(!accounting.legacyPurchases,'RECORD_PATH_UNAVAILABLE','Legacy external purchases require the compatibility path',409);
+      if(previous){check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409);return previous.result;}
+      const catalog=tx.value('catalog'),base=catalog?.products.find(product=>product.id===productId);
+      check(base,'UNAVAILABLE','Pack product unavailable',404);
+      const variants=[...new Set(base.slots.flatMap(slot=>slot.pool.map(entry=>entry.variantId)))].map(variantId=>catalog.variants.find(variant=>variant.id===variantId));
+      check(base.duplicatePolicy.scope!=='inventory'&&variants.every(variant=>!variant.codes?.length&&!Object.values(variant.bindings).some(binding=>binding.factory)),'RECORD_PATH_UNAVAILABLE','This product requires the compatibility acquisition path',409);
+      const state={schemaVersion:1,revision:accounting.revision,catalog,adminControls:tx.value('adminControls'),cardAuthoring:tx.value('cardAuthoring'),
+        users:{[user.id]:user},balances:{[user.id]:tx.get('balances',user.id)},supply:Object.create(null),pity:{[user.id]:tx.get('pity',user.id)??{}},cardValidation:Object.create(null),
+        copies:{},packs:{},trades:{},requests:{},ledger:[],events:[]};
+      for(const variant of variants){state.supply[variant.id]=tx.get('supply',variant.id)??0;const validation=tx.get('cardValidation',variant.id);if(validation)state.cardValidation[variant.id]=validation;}
+      recordContexts.set(state,{accounting,ownerId:user.id,ownerCounts:tx.ownerCounts(user.id)});
+      try{
+        const result=this.#purchaseBody(state,user,input);state.requests[token]={hash,result:clone(result)};
+        this.#event(state,'packs.purchased',{userId:user.id});this.#capacity(state,true);
+        for(const field of ['balances','supply','pity','copies','packs','requests','actionJobs','completionObligations'])for(const [recordId,value]of Object.entries(state[field]??{}))tx.put(field,recordId,value);
+        for(const field of ['ledger','events'])for(const value of state[field])tx.append(field,value);
+        return result;
+      }finally{recordContexts.delete(state);}
     });
+    try{return execute();}catch(error){
+      if(error.code==='RECORD_MIGRATION_REQUIRED'){this.#store.prepareRecordTransactions();try{return execute();}catch(retry){if(retry.code==='RECORD_PATH_UNAVAILABLE')return this.purchase(principal,reviewed);throw retry;}}
+      if(error.code==='RECORD_PATH_UNAVAILABLE')return this.purchase(principal,reviewed);
+      throw error;
+    }
   }
   #allocatePacks(s,user,product,quantity,source={},personalized=true){
     const c=this.#catalog(s),purchaseId=source.purchaseId??null;

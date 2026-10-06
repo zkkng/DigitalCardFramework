@@ -1,4 +1,6 @@
 import {completionPool} from './completion.js';
+import {createRecordTransaction,validateAcquisitionChanges} from './record-transaction.js';
+import {validRecordAccounting,recordAccountingField,finalizeRecordAccounting} from './record-accounting.js';
 import {isDeepStrictEqual} from 'node:util';
 import {querySnapshot, memoryQueries, completionBytes} from './storage-query.js';
 export function initialState() {
@@ -8,17 +10,33 @@ export function initialState() {
 // The transaction callback must be synchronous; commit its state and result together.
 export class MemoryStore {
   #state = initialState();
-  read(fn) { return structuredClone(fn(structuredClone(this.#state))); }
-  query(fn) { return querySnapshot(memoryQueries(this.#state),fn); }
+  #recordActive=false;
+  read(fn) {if(this.#recordActive)throw new Error('Nested storage operations are unsupported');return structuredClone(fn(structuredClone(this.#state))); }
+  query(fn) {if(this.#recordActive)throw new Error('Nested storage operations are unsupported');return querySnapshot(memoryQueries(this.#state),fn); }
   measure(state) { const usedBytes=Buffer.byteLength(JSON.stringify(state)),reservedBytes=completionBytes(state);const pool=completionPool(state);return {usedBytes,reservedBytes,totalBytes:usedBytes+reservedBytes,limitBytes:Infinity,completionStoredBytes:pool.storedBytes,completionReservedBytes:pool.reservedBytes}; }
   assertCapacity(state) { return this.measure(state); }
   transact(fn) {
+    if(this.#recordActive)throw new Error('Nested storage operations are unsupported');
     const draft = structuredClone(this.#state);
     const result = fn(draft);
     if (result?.then) throw new Error('Async transaction callbacks are unsupported');
     const detachedResult = structuredClone(result);
-    if (!isDeepStrictEqual(draft,this.#state)) {draft.revision++;this.#state = draft;}
+    if (!isDeepStrictEqual(draft,this.#state)) {draft.revision++;if(Object.hasOwn(draft,recordAccountingField))finalizeRecordAccounting(draft,this.#state,value=>Buffer.byteLength(JSON.stringify(value)));this.#state = draft;}
     return detachedResult;
+  }
+  prepareRecordTransactions(){return this.transact(state=>{let summary;try{summary=JSON.parse(state[recordAccountingField]);}catch{}if(validRecordAccounting(summary,state.revision))return {prepared:false};state[recordAccountingField]=String(state[recordAccountingField]??'')+' ';return {prepared:true};});}
+  transactRecords(fn,options={}){
+    return this.transact(state=>{
+      const bytes=value=>Buffer.byteLength(JSON.stringify(value)??''),scope=createRecordTransaction({
+        field:(name,charge)=>{if(!Object.hasOwn(state,name))return undefined;const value=state[name],kind=Array.isArray(value)?'array':value!==null&&typeof value==='object'?'object':'scalar';if(kind==='scalar')charge(bytes(value));return {kind,value};},
+        record:(name,key,charge)=>{const exists=Object.hasOwn(state[name]??{},key);charge(exists?bytes(state[name][key]):0);return exists?{value:structuredClone(state[name][key]),ordinal:Object.keys(state[name]).indexOf(key)}:undefined;},
+        entries:(name,charge)=>Object.entries(state[name]??{}).map(([key,value],ordinal)=>{charge(bytes(value));return {key,value:structuredClone(value),ordinal};}),
+        count:name=>Object.keys(state[name]??{}).length,nextOrdinal:name=>Object.keys(state[name]??{}).length,
+        ownerCounts:ownerId=>memoryQueries(state).collectionCounts(ownerId),
+      },options);
+      this.#recordActive=true;
+      try{const value=fn(scope.api);if(value?.then)throw new Error('Async transaction callbacks are unsupported');const plan=scope.finish();validateAcquisitionChanges(plan.changes);if(plan.changes.length){let summary;try{summary=JSON.parse(state[recordAccountingField]);}catch{}if(!validRecordAccounting(summary,state.revision))throw Object.assign(new Error('Prepare revision-bound record accounting before using record transactions'),{code:'RECORD_MIGRATION_REQUIRED',status:503});}for(const row of plan.changes){state[row.collection]??=row.array?[]:{};Object.defineProperty(state[row.collection],row.key,{value:structuredClone(row.value),enumerable:true,writable:true,configurable:true});}return value;}finally{scope.close();this.#recordActive=false;}
+    });
   }
   close() {}
 }

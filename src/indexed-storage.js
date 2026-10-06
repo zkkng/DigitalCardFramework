@@ -39,6 +39,7 @@ const fieldName = value => {
 const wrapper = (collection, key, value) => ({collection, key, value});
 const publicKeyCollections=new Set(['users','copies','packs','codes','externalPurchases']);
 const recordKey=(collection,key,keyHash)=>publicKeyCollections.has(collection)?key:keyHash(collection,key);
+export const storageRecordKey=recordKey;
 const codecShapes = new WeakMap();
 function encodedBytes(codec, value) {
   if (!codecShapes.has(codec)) {
@@ -47,6 +48,15 @@ function encodedBytes(codec, value) {
   }
   const bytes=Buffer.byteLength(JSON.stringify(value)),overhead=codecShapes.get(codec);
   return overhead===null?bytes:overhead+4*Math.ceil(bytes/3);
+}
+export const encodedRecordBytes=(codec,field,key,value)=>encodedBytes(codec,wrapper(field,key,value));
+export const encodeRecordPayload=(codec,field,key,value)=>codec.encode(wrapper(field,key,value));
+export function encodeEntity(collection,key,value,ordinal,codec,identityHash,keyHash){
+  fieldName(collection);const item=JSON.parse(JSON.stringify(value));
+  return {collection,key,storageKey:recordKey(collection,key,keyHash),value:item,ordinal,raw:JSON.stringify(item),
+    bytes:encodedBytes(codec,wrapper(collection,key,item)),projected:projection(collection,key,item),
+    identity:collection==='users'&&typeof item?.provider==='string'&&typeof item?.subject==='string'?identityHash(item.provider,item.subject):null,
+    holders:collection==='codes'?[...new Set([item.holderId,...(item.holderHistory??[])].filter(id=>typeof id==='string'))].map(id=>keyHash('code-holder',id)):[]};
 }
 
 /** One authoritative record per entity; configuration fields retain their logical shapes. */
@@ -79,6 +89,7 @@ function decodeEnvelope(codec, payload, collection, key, keyHash) {
   check(value && value.collection === collection && (key===null?value.key===null:typeof value.key==='string'&&recordKey(collection,value.key,keyHash)===key) && Object.hasOwn(value,'value'), 'INVALID_STATE', 'Stored record identity mismatch', 500);
   return value;
 }
+export const decodeRecordEnvelope=decodeEnvelope;
 export const decodeRecord=(codec,payload,collection,key,keyHash)=>decodeEnvelope(codec,payload,collection,key,keyHash).value;
 
 export function readState(db, codec, keyHash) {

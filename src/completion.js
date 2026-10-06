@@ -1,4 +1,5 @@
 import {check} from './catalog.js';
+import {recordContexts} from './record-context.js';
 const contexts=new WeakMap();
 export const completionContext=state=>contexts.get(state);
 export const completionDefaults={completionRequests:100000,completionJobs:100000,completionEvents:500000,completionObligations:100000,completionBytes:64*1024*1024};
@@ -25,18 +26,19 @@ export function accountReservationMetadata(s,rows,measure,before){
   check(false,'COMPLETION_INVARIANT','Completion metadata accounting did not stabilize',500);
 }
 export function ordinaryRequestCount(s){
-  return count(s.requests,row=>!row.completionId)+count(s.operatorRequests,row=>!row.completionId)+Object.keys(s.externalSettlements??{}).length+Object.keys(s.externalPurchaseKeys??{}).length+Object.values(s.externalPurchases??{}).reduce((total,row)=>total+(row.completionRequests??0),0);
+  return (recordContexts.get(s)?.accounting.ordinaryRequests??0)+count(s.requests,row=>!row.completionId)+count(s.operatorRequests,row=>!row.completionId)+Object.keys(s.externalSettlements??{}).length+Object.keys(s.externalPurchaseKeys??{}).length+Object.values(s.externalPurchases??{}).reduce((total,row)=>total+(row.completionRequests??0),0);
 }
 export function completionCapacity(s,limits){
+  const baseline=recordContexts.get(s)?.accounting.completion;
   const rows=Object.values(s.completionObligations??{}),pending=rows.filter(row=>row.status==='reserved');
-  check(rows.length<=limits.completionObligations,'COMPLETION_CAPACITY','Completion obligation capacity reached',507);
-  const bytes=completionPool(s);check(bytes.storedBytes+bytes.reservedBytes<=limits.completionBytes,'COMPLETION_CAPACITY','Completion byte capacity reached',507);
+  check(rows.length+(baseline?.obligations??0)<=limits.completionObligations,'COMPLETION_CAPACITY','Completion obligation capacity reached',507);
+  const bytes=completionPool(s);check(bytes.storedBytes+bytes.reservedBytes+(baseline?.storedBytes??0)+(baseline?.reservedBytes??0)<=limits.completionBytes,'COMPLETION_CAPACITY','Completion byte capacity reached',507);
   const usedRequests=count(s.requests,row=>!!row.completionId)+count(s.operatorRequests,row=>!!row.completionId);
   const usedJobs=count(s.actionJobs,row=>!!row.completionId),usedEvents=(s.events??[]).filter(row=>row.completionId).length;
   const usage=new Map(rows.map(row=>[row.id,{requests:0,jobs:0,events:0}]));
   for(const [name,items]of [['requests',Object.values(s.requests??{}).concat(Object.values(s.operatorRequests??{}))],['jobs',Object.values(s.actionJobs??{})],['events',s.events??[]]])for(const item of items){const id=item.completionId??(name==='jobs'?item.deliveryCompletionId:null);if(id){const tally=usage.get(id);check(tally,'INVALID_STATE','Completion record has no obligation',500);tally[name]++;}}
   for(const row of rows){const used=usage.get(row.id);check(used.requests<=1&&used.jobs<=row.jobs&&used.events<=row.events,'COMPLETION_INVARIANT','Completion exceeded its admitted record reservation',500);}
-  for(const [name,used,reserved]of [['completionRequests',usedRequests,pending.length],['completionJobs',usedJobs,pending.reduce((n,row)=>n+row.jobs,0)],['completionEvents',usedEvents,pending.reduce((n,row)=>n+row.events,0)]])check(used+reserved<=limits[name],'COMPLETION_CAPACITY',name+' capacity reached',507);
+  for(const [name,used,reserved,prior]of [['completionRequests',usedRequests,pending.length,baseline?.requests??0],['completionJobs',usedJobs,pending.reduce((n,row)=>n+row.jobs,0),baseline?.jobs??0],['completionEvents',usedEvents,pending.reduce((n,row)=>n+row.events,0),baseline?.events??0]])check(used+reserved+prior<=limits[name],'COMPLETION_CAPACITY',name+' capacity reached',507);
 }
 export function reserveCompletion(s,{kind,entity,copyIds=[],projections=[]},subscriptions,limits){
   const id=kind+':'+entity.id;s.completionObligations??={};if(s.completionObligations[id])return s.completionObligations[id];
