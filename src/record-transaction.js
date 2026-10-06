@@ -17,13 +17,23 @@ export function validateAcquisitionChanges(changes){
     if(row.collection==='actionJobs')check(additions.completionObligations?.[row.value.deliveryCompletionId],'RECORD_TRANSACTION_UNSUPPORTED','New deliveries require a new reservation',409);
   }
 }
+export function validateRecordPlan(plan,{intent=false}={}){
+  if(!intent){check(!plan.scalars.length&&!plan.completion,'RECORD_TRANSACTION_UNSUPPORTED','Acquisition cannot mutate scalars or settle reservations',409);return validateAcquisitionChanges(plan.changes);}
+  for(const row of plan.scalars)check(row.name==='commandIntentCount'&&Number.isSafeInteger(row.value)&&row.value===(row.old??0)+1,'RECORD_TRANSACTION_UNSUPPORTED','Invalid intent count change',409);
+  for(const row of plan.changes){
+    check(['commandIntents','commandIntentHeads','completionObligations'].includes(row.collection),'RECORD_TRANSACTION_UNSUPPORTED','Collection is outside intent transaction scope',409);
+    if(row.collection==='commandIntents'&&row.old)for(const field of ['id','userId','command','input','createdAt'])check(isDeepStrictEqual(row.old.value[field],row.value[field]),'INVALID_STATE','Intent identity and reviewed input are immutable',500);
+    if(row.collection==='completionObligations'){check(row.value.kind==='intent'&&row.key===row.value.id,'INVALID_STATE','Intent reservation is required',500);if(row.old)for(const field of ['id','kind','entityId','bytes','events','jobs'])check(isDeepStrictEqual(row.old.value[field],row.value[field]),'INVALID_STATE','Reservation terms are immutable',500);}
+  }
+  if(plan.completion){const row=plan.changes.find(row=>row.collection==='completionObligations'&&row.key===plan.completion.id);check(row&&((!!row.old)!==plan.completion.admission),'INVALID_STATE','Completion must use its own admitted reservation',500);}
+}
 
 /** Synchronous record scope inside one database transaction; no external awaits. */
 export function createRecordTransaction(backend,{maxRecords=4096,maxBytes=16*1024*1024}={}){
   check(Number.isSafeInteger(maxRecords)&&maxRecords>=1&&maxRecords<=100000,'INVALID_INPUT','Invalid record budget');
   check(Number.isSafeInteger(maxBytes)&&maxBytes>=1&&maxBytes<=64*1024*1024,'INVALID_INPUT','Invalid byte budget');
   let active=true,reads=0,bytes=0;
-  const fields=new Map(),records=new Map(),nextOrdinals=new Map(),createdKinds=new Map();
+  const fields=new Map(),records=new Map(),nextOrdinals=new Map(),createdKinds=new Map(),scalars=new Map();let completion;
   const live=()=>check(active,'TRANSACTION_ENDED','Record transaction has ended',409);
   const charge=size=>{live();reads++;bytes+=size;check(reads<=maxRecords&&bytes<=maxBytes,'TRANSACTION_BUDGET','Record transaction read budget exceeded',507);};
   const field=name=>{live();fieldName(name);if(!fields.has(name))fields.set(name,backend.field(name,charge));return fields.get(name);};
@@ -31,7 +41,7 @@ export function createRecordTransaction(backend,{maxRecords=4096,maxBytes=16*102
   const ordinal=name=>{if(!nextOrdinals.has(name))nextOrdinals.set(name,backend.nextOrdinal(name));const value=nextOrdinals.get(name);nextOrdinals.set(name,value+1);return value;};
   const api={
     get(name,key){return clone(load(name,key).value);},
-    value(name){const metadata=field(name),kind=metadata?.kind??createdKinds.get(name);if(!kind)return undefined;if(kind==='scalar')return clone(metadata.value);const result=kind==='array'?[]:{};
+    value(name){const metadata=field(name);if(scalars.has(name))return clone(scalars.get(name).value);const kind=metadata?.kind??createdKinds.get(name);if(!kind)return undefined;if(kind==='scalar')return clone(metadata.value);const result=kind==='array'?[]:{};
       for(const row of backend.entries(name,charge)){const token=JSON.stringify([name,row.key]);if(!records.has(token))records.set(token,{collection:name,key:row.key,old:row,value:row.value,ordinal:row.ordinal});}
       for(const row of [...records.values()].filter(row=>row.collection===name&&row.value!==undefined).sort((a,b)=>a.ordinal-b.ordinal))Object.defineProperty(result,row.key,{value:clone(row.value),enumerable:true,writable:true,configurable:true});return result;},
     count(name){const metadata=field(name);check(metadata?.kind!=='scalar','INVALID_INPUT','count requires a collection');charge(0);return backend.count(name)+[...records.values()].filter(row=>row.collection===name&&!row.old&&row.value!==undefined).length;},
@@ -40,9 +50,11 @@ export function createRecordTransaction(backend,{maxRecords=4096,maxBytes=16*102
       for(const row of records.values()){apply(row.collection,row.old?.value,-1);apply(row.collection,row.value,1);}return result;},
     put(name,key,value){const metadata=field(name),kind=metadata?.kind??createdKinds.get(name);check(!kind||kind==='object','INVALID_INPUT','put requires an object collection');check(value!==undefined,'INVALID_INPUT','Cannot store undefined');createdKinds.set(name,'object');const row=load(name,key);row.value=clone(value);if(row.ordinal===undefined)row.ordinal=ordinal(name);return clone(value);},
     append(name,value){const metadata=field(name),kind=metadata?.kind??createdKinds.get(name);check(!kind||kind==='array','INVALID_INPUT','append requires an array collection');check(value!==undefined,'INVALID_INPUT','Cannot store undefined');createdKinds.set(name,'array');const index=ordinal(name),key=String(index),row=load(name,key);check(!row.old,'INVALID_STATE','Append position is occupied',500);row.value=clone(value);row.ordinal=index;row.array=true;return index;},
+    setScalar(name,value){const metadata=field(name);check(!metadata||metadata.kind==='scalar','INVALID_INPUT','Scalar field required');check(value!==undefined,'INVALID_INPUT','Cannot store undefined');scalars.set(name,{name,old:metadata?.value,value:clone(value)});},
+    reserveIntentCompletion(id,{admission=false}={}){live();keyName(id);check(!completion,'INVALID_STATE','Only one intent reservation can fund a transaction',500);completion={id,admission};},
   };
-  return {api,close(){active=false;},finish(){live();const changes=[...records.values()].filter(row=>!isDeepStrictEqual(row.old?.value,row.value));
-    check(changes.length<=maxRecords,'TRANSACTION_BUDGET','Record transaction write budget exceeded',507);
-    const written=changes.reduce((total,row)=>total+Buffer.byteLength(JSON.stringify(row.value)),0);check(written<=maxBytes,'TRANSACTION_BUDGET','Record transaction write byte budget exceeded',507);
-    return {changes,fields,reads,bytes,written};}};
+  return {api,close(){active=false;},finish(){live();const changes=[...records.values()].filter(row=>!isDeepStrictEqual(row.old?.value,row.value)||completion&&row.collection==='completionObligations'&&row.key===completion.id);
+    const changedScalars=[...scalars.values()].filter(row=>!isDeepStrictEqual(row.old,row.value));check(changes.length+changedScalars.length<=maxRecords,'TRANSACTION_BUDGET','Record transaction write budget exceeded',507);
+    const written=changes.concat(changedScalars).reduce((total,row)=>total+Buffer.byteLength(JSON.stringify(row.value)),0);check(written<=maxBytes,'TRANSACTION_BUDGET','Record transaction write byte budget exceeded',507);
+    return {changes,scalars:changedScalars,completion,fields,reads,bytes,written};}};
 }

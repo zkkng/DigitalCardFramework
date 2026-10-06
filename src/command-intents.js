@@ -3,6 +3,8 @@ import {check,text,FrameworkError} from './catalog.js';
 import {safeData} from './data.js';
 import {hasPermission} from './access.js';
 import {completionCapacity,withCompletion,accountReservationMetadata} from './completion.js';
+import {recordAccountingField,validRecordAccounting,summarizeRecords} from './record-accounting.js';
+import {recordContexts} from './record-context.js';
 
 export const durableCommands=Object.freeze(['purchase','openPack','convert','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','consumeBinding','counterTrade','preferences','readNotifications','commitImport','reportCodeUsage','createShop','createListing','buyListing','cancelListing','enterRaffle','openCard','configureAdmin','administerCards']);
 const permissions={commitImport:'catalog.publish',configureAdmin:'admin.manage',administerCards:'admin.cards'};
@@ -33,7 +35,17 @@ export class CommandIntentService{
   register(actor,{command,input},options={}){
     authorize(actor,command,options);check(input&&typeof input==='object'&&!Array.isArray(input),'INVALID_INPUT','Command input must be an object');
     const reviewed=safeData(input,{maxBytes:1048576});if(reviewed.key!==undefined)text(reviewed.key,'idempotency key',128);
-    return this.#store.transact(s=>{
+    return this.#records(tx=>{
+      user(tx,actor);const heads=tx.get('commandIntentHeads',actor.userId)??{},old=heads[command]&&tx.get('commandIntents',heads[command]);if(old&&old.state!=='acknowledged')return old;
+      const accounting=this.#accounting(tx),count=tx.value('commandIntentCount')??0;check(count<this.#limits.commandIntents,'INSTALLATION_CAPACITY','Command intent retention capacity reached',507);
+      const token=actor.userId+':'+reviewed.key,probe={requests:{[token]:reviewed.key&&tx.get('requests',token)},operatorRequests:{[token]:reviewed.key&&tx.get('operatorRequests',token)},packs:Object.create(null),trades:Object.create(null),listings:Object.create(null)};
+      for(const [field,key]of [['packs',reviewed.packId],['trades',reviewed.tradeId],['listings',reviewed.listingId]])if(typeof key==='string')probe[field][key]=tx.get(field,key);
+      const completion=this.#completion(probe,actor,command,reviewed),id=randomUUID(),row={id,userId:actor.userId,command,input:{...reviewed,key:reviewed.key??randomUUID()},state:'pending',createdAt:this.#clock(),completedAt:null,error:null},obligationId='intent:'+id;
+      const obligation={id:obligationId,kind:'intent',entityId:id,status:'reserved',events:0,jobs:0,bytes:8192+2*Buffer.byteLength(JSON.stringify(row)),usedBytes:0,subscriptions:[]};
+      const state={copies:{},packs:{},requests:{},trades:{},events:[],completionObligations:{[obligationId]:obligation}};recordContexts.set(state,{accounting});
+      try{this.#admit(state,completion);}finally{recordContexts.delete(state);}
+      tx.put('commandIntents',id,row);heads[command]=id;tx.put('commandIntentHeads',actor.userId,heads);tx.setScalar('commandIntentCount',count+1);tx.put('completionObligations',obligationId,obligation);if(completion)tx.reserveIntentCompletion(obligationId,{admission:true});return row;
+    },()=>this.#store.transact(s=>{
       check(actor?.disabled!==true&&actor?.userId&&s.users[actor.userId],'UNAUTHENTICATED','A verified account is required',401);
       const before=this.#store.measure(s).usedBytes,completion=this.#completion(s,actor,command,reviewed);
       s.commandIntents??={};s.commandIntentHeads??={};const heads=s.commandIntentHeads[actor.userId]??={},old=heads[command]&&s.commandIntents[heads[command]];
@@ -45,14 +57,22 @@ export class CommandIntentService{
       s.completionObligations[obligationId]={id:obligationId,kind:'intent',entityId:id,status:'reserved',events:0,jobs:0,bytes:8192+2*Buffer.byteLength(JSON.stringify(row)),usedBytes:0,subscriptions:[]};
       if(completion)accountReservationMetadata(s,[s.completionObligations[obligationId]],state=>this.#store.measure(state),before);
       this.#admit(s,completion);return row;
-    });
+    }));
   }
+  #accounting(tx){let accounting;try{accounting=JSON.parse(tx.value(recordAccountingField));}catch{}check(validRecordAccounting(accounting,tx.value('revision')),'RECORD_MIGRATION_REQUIRED','Record accounting is not prepared',503);return accounting;}
+  #records(fn,fallback){if(!this.#store.transactRecords)return fallback();try{return this.#store.transactRecords(fn,{intent:true});}catch(error){if(error.code==='RECORD_MIGRATION_REQUIRED')return fallback();throw error;}}
   #finish(actor,id,fn){
-    return this.#store.transact(s=>{
+    return this.#records(tx=>{
+      const accounting=this.#accounting(tx),row=tx.get('commandIntents',id);check(row?.userId===actor.userId,'NOT_FOUND','Command intent not found',404);
+      const obligationId='intent:'+id,obligation=tx.get('completionObligations',obligationId);check(obligation,'INVALID_STATE','Command completion reservation is missing',500);
+      const state={commandIntents:{[id]:row},commandIntentHeads:{[actor.userId]:tx.get('commandIntentHeads',actor.userId)??{}},completionObligations:{[obligationId]:obligation},events:[]},prior=summarizeRecords(state);
+      for(const key of Object.keys(accounting.completion))accounting.completion[key]-=prior.completion[key];recordContexts.set(state,{accounting});
+      try{obligation.status='completed';const result=fn(row,state);completionCapacity(state,this.#limits);tx.put('commandIntents',id,row);tx.put('commandIntentHeads',actor.userId,state.commandIntentHeads[actor.userId]);tx.put('completionObligations',obligationId,obligation);tx.reserveIntentCompletion(obligationId);return result;}finally{recordContexts.delete(state);}
+    },()=>this.#store.transact(s=>{
       const row=s.commandIntents?.[id];check(row?.userId===actor.userId,'NOT_FOUND','Command intent not found',404);
       const obligation=s.completionObligations?.['intent:'+id];check(obligation,'INVALID_STATE','Command completion reservation is missing',500);
       const result=withCompletion(s,obligation,()=>fn(row,s),state=>this.#store.measure(state));completionCapacity(s,this.#limits);return result;
-    });
+    }));
   }
   execute(actor,{id},options={}){
     const row=this.#read(actor,id,options);

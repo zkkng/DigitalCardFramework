@@ -53,6 +53,15 @@ for(const Store of [MemoryStore,SQLiteStore]){
    assert.equal(store.prepareRecordTransactions().prepared,false);
   }finally{x.core.close();}
  });
+ test(Store.name+' intent record scope preserves immutable input and scalar boundaries',()=>{
+  const store=new Store(),x=fixture({store});try{
+   store.prepareRecordTransactions();const intent=x.core.registerCommandIntent(x.alice,{command:'purchase',input:x.core.quote(x.alice,{productId:'common',quantity:1})}),before=store.read(s=>s);
+   assert.throws(()=>store.transactRecords(tx=>{const row=tx.get('commandIntents',intent.id);row.input.productId='rare';tx.put('commandIntents',intent.id,row);},{intent:true}),code('INVALID_STATE'));
+   assert.throws(()=>store.transactRecords(tx=>tx.setScalar('revision',999),{intent:true}),code('RECORD_TRANSACTION_UNSUPPORTED'));
+   assert.throws(()=>store.transactRecords(tx=>tx.setScalar('commandIntentCount',2)),code('RECORD_TRANSACTION_UNSUPPORTED'));
+   assert.deepEqual(store.read(s=>s),before);
+  }finally{x.core.close();}
+ });
 }
 
 test('bounded acquisition rolls back at storage capacity without losing accepted completion',async()=>{

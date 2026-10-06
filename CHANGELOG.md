@@ -24,6 +24,7 @@
 
 ### Changed
 
+- Prepared SQLite installations now register, finalize and acknowledge recovery intents with bounded record transactions, preserving reserved completion at ordinary storage capacity.
 - Production HTTP purchases now await incremental acquisition and durable command execution while preserving original receipt recovery after interrupted finalization.
 - Converted the admin controller to strict TypeScript and generated declarations. Saved admin commands must match their reviewed inputs before recovery.
 - Converted the browser client, code-reveal controller and durable command runner to strict TypeScript with generated declarations and checked build parity.

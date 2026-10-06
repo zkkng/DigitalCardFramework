@@ -4,7 +4,9 @@
 
 This method returns a Promise, but SQLite operations still run synchronously on the calling thread. It does not provide a worker thread, concurrent writer execution or a general asynchronous application API. Other production commands continue to use their established storage paths.
 
-`executeCommandIntentAsync(actor, {id}, options)` awaits the underlying command before finalizing its server-owned recovery head. It preserves the same authorization, immutable input, receipt replay and explicit acknowledgement rules as synchronous `executeCommandIntent`. An interruption after the purchase commit leaves the original key available for recovery. Intent registration, finalization and acknowledgement still materialize installation state; the complete browser purchase lifecycle is not yet an incremental transaction path.
+`executeCommandIntentAsync(actor, {id}, options)` awaits the underlying command before finalizing its server-owned recovery head. It preserves the same authorization, immutable input, receipt replay and explicit acknowledgement rules as synchronous `executeCommandIntent`. An interruption after the purchase commit leaves the original key available for recovery.
+
+Once accounting is prepared, intent registration, finalization and acknowledgement also use bounded record transactions. Each finalization charges actual record and accounting growth to that intent's own reservation. Registering recovery for an already accepted pack or other supported obligation can use its newly allocated intent reservation at full ordinary capacity. New purchases still require ordinary admission capacity. Missing or stale accounting retains the compatibility recovery path so accepted work does not depend on allocating migration metadata first. The first browser purchase can therefore include compatibility registration and preparation; quotes and other read models are not covered by this acquisition bound.
 
 ## Supported products
 
@@ -23,5 +25,7 @@ Once activated, compatibility transactions refresh accounting in their own trans
 `store.transactRecords(callback, {maxRecords, maxBytes})` runs a synchronous callback in one atomic transaction. Its scope exposes `get(collection, key)`, `value(field)`, `count(collection)`, `ownerCounts(userId)`, `put(collection, key, value)` and `append(collection, value)`. Reads include staged changes and return detached values. The scope expires when the transaction ends. Awaiting inside it and nested storage operations are rejected; run external effects through the committed outbox.
 
 The supported mutation scope is deliberately narrow: balances, supply and pity may change; copies, packs, receipts, ledger entries, events, jobs and completion obligations may be inserted. New obligations require their reservations. Existing accepted records cannot be replaced through this interface, and completion settlement uses its established reserved path. This is a storage extension API for trusted application code, not an authorization boundary or general database editor.
+
+The internal intent service uses the separate `{intent:true}` transaction scope for intent rows, per-account recovery heads and intent reservations. It may increment `commandIntentCount` with `setScalar`, and identify one intent reservation with `reserveIntentCompletion`. Identity, reviewed input and reservation terms cannot be rewritten through that scope. These operations do not authorize other commands or permit general scalar mutation.
 
 MemoryStore implements the same transaction behavior using its existing in-memory snapshot model. Only SQLite provides incremental persisted record writes. These interfaces do not establish performance acceptance for every workflow or deployment size.

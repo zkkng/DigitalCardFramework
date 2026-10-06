@@ -45,10 +45,24 @@ for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' async execution p
  const store=new Store(),x=fixture({store});try{
   const intent=x.core.registerCommandIntent(x.alice,{command:'purchase',input:x.core.quote(x.alice,{productId:'common',quantity:1})}),transact=store.transact.bind(store);let inject=true;
   store.transact=fn=>transact(s=>{const result=fn(s);if(inject&&s.commandIntents?.[intent.id]?.state==='completed'){inject=false;throw new FrameworkError('FINALIZATION_INTERRUPTED','Interrupted before finalization',503);}return result;});
+  const records=store.transactRecords.bind(store);store.transactRecords=(fn,options)=>records(tx=>{const result=fn(tx);if(inject&&tx.get('commandIntents',intent.id)?.state==='completed'){inject=false;throw new FrameworkError('FINALIZATION_INTERRUPTED','Interrupted before finalization',503);}return result;},options);
   await assert.rejects(x.core.executeCommandIntentAsync(x.alice,{id:intent.id}),code('FINALIZATION_INTERRUPTED'));assert.equal(x.core.wallet(x.alice).credits,9990);assert.equal(x.core.commandIntents(x.alice).items[0].state,'pending');
   await assert.rejects(x.core.executeCommandIntentAsync(x.bob,{id:intent.id}),code('NOT_FOUND'));
   const result=await x.core.executeCommandIntentAsync(x.alice,{id:intent.id});assert.equal(result.intent.state,'completed');assert.equal(x.core.wallet(x.alice).credits,9990);assert.equal(x.core.packs(x.alice).length,1);assert.deepEqual(x.core.executeCommandIntent(x.alice,{id:intent.id}).result,result.result);
  }finally{x.core.close();}
+});
+
+test('bounded encrypted intent lifecycle survives restart and full-capacity completion',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'bounded-intent-')),path=join(dir,'state.sqlite'),encryptionKey=randomBytes(32);let core;
+ try{
+  let store=new SQLiteStore(path,{encryptionKey}),x=fixture({store});core=x.core;store.prepareRecordTransactions();const quote=core.quote(x.alice,{productId:'common',quantity:1});
+  const before=store.diagnostics(),intent=core.registerCommandIntent(x.alice,{command:'purchase',input:quote});assert.equal(store.diagnostics().compatibilityMaterializations,before.compatibilityMaterializations);
+  const records=store.transactRecords.bind(store);let interrupted=false;store.transactRecords=(fn,options)=>records(tx=>{const result=fn(tx);if(!interrupted&&tx.get('commandIntents',intent.id)?.state==='completed'){interrupted=true;throw new FrameworkError('FINALIZATION_INTERRUPTED','Interrupted before finalization',503);}return result;},options);
+  await assert.rejects(core.executeCommandIntentAsync(x.alice,{id:intent.id}),code('FINALIZATION_INTERRUPTED'));const receipt=await core.purchaseAsync(x.alice,intent.input);assert.equal(core.commandIntents(x.alice).items[0].state,'pending');assert.equal(store.diagnostics().compatibilityMaterializations,before.compatibilityMaterializations);const cap=store.read(s=>store.measure(s).totalBytes);core.close();
+  store=new SQLiteStore(path,{encryptionKey,maxStateBytes:cap});core=new CardFramework({store});const restart=store.diagnostics(),recovered=await core.executeCommandIntentAsync(x.alice,{id:intent.id});assert.deepEqual(recovered.result,receipt);assert.equal(recovered.intent.state,'completed');core.acknowledgeCommandIntent(x.alice,{id:intent.id});assert.equal(store.diagnostics().compatibilityMaterializations,restart.compatibilityMaterializations);
+  const open=core.registerCommandIntent(x.alice,{command:'openPack',input:{packId:receipt.packs[0].id}});assert.equal(open.state,'pending');await core.executeCommandIntentAsync(x.alice,{id:open.id});core.acknowledgeCommandIntent(x.alice,{id:open.id});assert.equal(core.audit(admin).ok,true);
+  const state=store.read(s=>s);assert.throws(()=>core.registerCommandIntent(x.alice,{command:'purchase',input:quote}),code('STORAGE_CAPACITY'));assert.throws(()=>core.registerCommandIntent(x.alice,{command:'openPack',input:{packId:'__proto__'}}),code('STORAGE_CAPACITY'));assert.deepEqual(store.read(s=>s),state);
+ }finally{core?.close();rmSync(dir,{recursive:true,force:true});}
 });
 
 test('HTTP direct and intent purchases await the asynchronous acquisition boundary',async t=>{

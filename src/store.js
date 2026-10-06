@@ -1,5 +1,5 @@
 import {completionPool} from './completion.js';
-import {createRecordTransaction,validateAcquisitionChanges} from './record-transaction.js';
+import {createRecordTransaction,validateRecordPlan} from './record-transaction.js';
 import {validRecordAccounting,recordAccountingField,finalizeRecordAccounting} from './record-accounting.js';
 import {isDeepStrictEqual} from 'node:util';
 import {querySnapshot, memoryQueries, completionBytes} from './storage-query.js';
@@ -35,7 +35,7 @@ export class MemoryStore {
         ownerCounts:ownerId=>memoryQueries(state).collectionCounts(ownerId),
       },options);
       this.#recordActive=true;
-      try{const value=fn(scope.api);if(value?.then)throw new Error('Async transaction callbacks are unsupported');const plan=scope.finish();validateAcquisitionChanges(plan.changes);if(plan.changes.length){let summary;try{summary=JSON.parse(state[recordAccountingField]);}catch{}if(!validRecordAccounting(summary,state.revision))throw Object.assign(new Error('Prepare revision-bound record accounting before using record transactions'),{code:'RECORD_MIGRATION_REQUIRED',status:503});}for(const row of plan.changes){state[row.collection]??=row.array?[]:{};Object.defineProperty(state[row.collection],row.key,{value:structuredClone(row.value),enumerable:true,writable:true,configurable:true});}return value;}finally{scope.close();this.#recordActive=false;}
+      try{const value=fn(scope.api);if(value?.then)throw new Error('Async transaction callbacks are unsupported');const plan=scope.finish();validateRecordPlan(plan,options);const beforeBytes=bytes(state);if(plan.changes.length||plan.scalars.length){let summary;try{summary=JSON.parse(state[recordAccountingField]);}catch{}if(!validRecordAccounting(summary,state.revision))throw Object.assign(new Error('Prepare revision-bound record accounting before using record transactions'),{code:'RECORD_MIGRATION_REQUIRED',status:503});}for(const row of plan.changes){state[row.collection]??=row.array?[]:{};Object.defineProperty(state[row.collection],row.key,{value:structuredClone(row.value),enumerable:true,writable:true,configurable:true});}for(const row of plan.scalars)state[row.name]=structuredClone(row.value);if(plan.completion){const row=state.completionObligations[plan.completion.id],base=plan.changes.find(r=>r.collection==='completionObligations'&&r.key===row.id).old?.value.usedBytes??0;let stable=false;for(let i=0;i<12;i++){const used=base+Math.max(0,bytes(state)-beforeBytes);if(used===row.usedBytes){stable=true;break;}row.usedBytes=used;}if(!stable||row.usedBytes>row.bytes)throw Object.assign(new Error('Intent completion exceeds its reservation'),{code:'COMPLETION_INVARIANT',status:500});}return value;}finally{scope.close();this.#recordActive=false;}
     });
   }
   close() {}

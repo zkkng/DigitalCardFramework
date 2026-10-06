@@ -1,5 +1,5 @@
 import {completionPool} from './completion.js';
-import {createRecordTransaction,validateAcquisitionChanges} from './record-transaction.js';
+import {createRecordTransaction,validateRecordPlan} from './record-transaction.js';
 import {validRecordAccounting,recordAccountingField,summarizeRecords,finalizeRecordAccounting} from './record-accounting.js';
 import {DatabaseSync,backup} from 'node:sqlite';
 import {existsSync,mkdtempSync,chmodSync,rmSync,statSync} from 'node:fs';
@@ -190,12 +190,12 @@ export class SQLiteStore {
       };
       scope=createRecordTransaction(backend,options);
       const result=cloneResult(fn(scope.api)),plan=scope.finish();
-      if(plan.changes.length){
-        validateAcquisitionChanges(plan.changes);
+      if(plan.changes.length||plan.scalars.length){
+        validateRecordPlan(plan,options);
         const revision=scope.api.value('revision');let summary;
         try{summary=JSON.parse(scope.api.value(recordAccountingField));}catch{}
         check(validRecordAccounting(summary,revision),'RECORD_MIGRATION_REQUIRED','Prepare revision-bound record accounting before using record transactions',503);
-        const previousSummary=structuredClone(summary),partial={schemaVersion:1,revision:0,events:[],ledger:[]};
+        const previousSummary=structuredClone(summary),partial={schemaVersion:1,revision:0,events:[],ledger:[]},previousPartial={schemaVersion:1,revision:0,events:[],ledger:[]};
         const before=emptyRecords(),after=emptyRecords();after.encode=(field,key,value)=>encodeRecordPayload(this.#codec,field,key,value);
         let delta=0;
         for(const row of plan.changes){
@@ -203,28 +203,36 @@ export class SQLiteStore {
           if(metadata)before.fields.set(row.collection,{kind,raw:null});after.fields.set(row.collection,{kind,raw:null});
           const key=JSON.stringify([row.collection,row.key]),encoded=encodeEntity(row.collection,row.key,row.value,row.ordinal,this.#codec,this.#identity,this.#recordKey);
           after.entities.set(key,encoded);delta+=encoded.bytes;
-          if(row.old){const old=encodeEntity(row.collection,row.key,row.old.value,row.old.ordinal,this.#codec,this.#identity,this.#recordKey);before.entities.set(key,old);delta-=old.bytes;}
-          else {summary.counts[row.collection]=(summary.counts[row.collection]??0)+1;
-            partial[row.collection]??=kind==='array'?[]:Object.create(null);
-            if(kind==='array')partial[row.collection].push(row.value);else partial[row.collection][row.key]=row.value;
-          }
+          if(row.old){const old=encodeEntity(row.collection,row.key,row.old.value,row.old.ordinal,this.#codec,this.#identity,this.#recordKey);before.entities.set(key,old);delta-=old.bytes;previousPartial[row.collection]??=kind==='array'?[]:Object.create(null);if(kind==='array')previousPartial[row.collection].push(row.old.value);else previousPartial[row.collection][row.key]=row.old.value;}
+          else summary.counts[row.collection]=(summary.counts[row.collection]??0)+1;
+          partial[row.collection]??=kind==='array'?[]:Object.create(null);
+          if(kind==='array')partial[row.collection].push(row.value);else partial[row.collection][row.key]=row.value;
           if(row.collection==='events')check(row.value.sequence===row.ordinal+1,'INVALID_STATE','Event sequence differs from append position',500);
         }
-        const added=summarizeRecords(partial);
-        check(added.missingCompletions===0,'COMPLETION_MIGRATION_REQUIRED','New obligations require completion reservations',503);
-        summary.ordinaryRequests+=added.ordinaryRequests;summary.ordinaryJobs+=added.ordinaryJobs;summary.ordinaryEvents+=added.ordinaryEvents;
-        for(const key of Object.keys(summary.completion))summary.completion[key]+=added.completion[key];
+        const oldPart=summarizeRecords(previousPartial);
         summary.revision=revision+1;
         const scalar=(name,old,value)=>{before.fields.set(name,{kind:'scalar',raw:JSON.stringify(old),value:old});after.fields.set(name,{kind:'scalar',raw:JSON.stringify(value),value});};
         scalar('revision',revision,summary.revision);
         delta+=encodedRecordBytes(this.#codec,'revision',null,summary.revision)-encodedRecordBytes(this.#codec,'revision',null,revision);
-        const oldAccounting=scope.api.value(recordAccountingField),base=previousSummary.usedBytes+delta-encodedRecordBytes(this.#codec,recordAccountingField,null,oldAccounting);
+        for(const row of plan.scalars){if(row.old!==undefined)before.fields.set(row.name,{kind:'scalar',raw:JSON.stringify(row.old),value:row.old});after.fields.set(row.name,{kind:'scalar',raw:JSON.stringify(row.value),value:row.value});delta+=encodedRecordBytes(this.#codec,row.name,null,row.value)-(row.old===undefined?0:encodedRecordBytes(this.#codec,row.name,null,row.old));}
+        const oldAccounting=scope.api.value(recordAccountingField),accountingBytes=encodedRecordBytes(this.#codec,recordAccountingField,null,oldAccounting);
+        const completionRow=plan.completion&&plan.changes.find(row=>row.collection==='completionObligations'&&row.key===plan.completion.id),priorUsed=completionRow?.old?.value.usedBytes??0;
         let stabilized=false;
-        for(let i=0;i<12;i++){const used=base+encodedRecordBytes(this.#codec,recordAccountingField,null,JSON.stringify(summary));if(used===summary.usedBytes){stabilized=true;break;}summary.usedBytes=used;}
+        for(let i=0;i<24;i++){
+          const added=summarizeRecords(partial);check(added.missingCompletions===0,'COMPLETION_MIGRATION_REQUIRED','New obligations require completion reservations',503);
+          for(const key of ['ordinaryRequests','ordinaryJobs','ordinaryEvents'])summary[key]=previousSummary[key]+added[key]-oldPart[key];
+          for(const key of Object.keys(summary.completion))summary.completion[key]=previousSummary.completion[key]+added.completion[key]-oldPart.completion[key];
+          const used=previousSummary.usedBytes+delta-accountingBytes+encodedRecordBytes(this.#codec,recordAccountingField,null,JSON.stringify(summary));
+          const consumed=completionRow?priorUsed+Math.max(0,used-previousSummary.usedBytes):0;
+          if(completionRow)check(consumed<=completionRow.value.bytes,'COMPLETION_INVARIANT','Intent completion exceeds its admitted reservation',500);
+          if(used===summary.usedBytes&&(!completionRow||consumed===completionRow.value.usedBytes)){stabilized=true;break;}summary.usedBytes=used;
+          if(completionRow&&consumed!==completionRow.value.usedBytes){const token=JSON.stringify([completionRow.collection,completionRow.key]),oldBytes=after.entities.get(token).bytes;completionRow.value.usedBytes=consumed;const encoded=encodeEntity(completionRow.collection,completionRow.key,completionRow.value,completionRow.ordinal,this.#codec,this.#identity,this.#recordKey);after.entities.set(token,encoded);delta+=encoded.bytes-oldBytes;}
+        }
         check(stabilized,'INVALID_STATE','Record accounting did not stabilize',500);
         scalar(recordAccountingField,oldAccounting,JSON.stringify(summary));
         const total=summary.usedBytes+summary.externalReservedBytes,previousTotal=previousSummary.usedBytes+previousSummary.externalReservedBytes;
-        check(total<=this.#maxBytes||total<=previousTotal,'STORAGE_CAPACITY','Installation capacity reached; existing completion reservations are retained',507);
+        const allowance=completionRow?Math.max(0,completionRow.value.usedBytes-priorUsed):0;
+        check(total<=this.#maxBytes||total<=previousTotal+allowance,'STORAGE_CAPACITY','Installation capacity reached; existing completion reservations are retained',507);
         check(summary.completion.storedBytes+summary.completion.reservedBytes<=this.#maxCompletionBytes&&total+summary.completion.reservedBytes<=this.#maxBytes+this.#maxCompletionBytes,'COMPLETION_CAPACITY','Completion storage capacity reached',507);
         this.#writes+=writeDifference(this.#db,before,after);
       }
