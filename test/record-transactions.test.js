@@ -1,3 +1,5 @@
+import {DatabaseSync} from 'node:sqlite';
+import {createStateCodec} from '../src/encryption.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MemoryStore} from '../src/store.js';
@@ -134,4 +136,47 @@ for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' opening trims onl
   const original=state.notifications.map(n=>n.id);x.core.readNotifications(x.alice,{key:'mark-read',ids:['a:1']});assert.deepEqual(store.read(s=>s.notifications.map(n=>n.id)),original);assert.equal(store.read(s=>s.notifications.find(n=>n.id==='a:1').read),true);
   const read=store.read;store.read=()=>{throw Error('No whole-state read');};assert.equal(x.core.notifications(x.bob,{limit:10}).total,2000);store.read=read;store.transact(s=>s.notifications.reverse());assert.deepEqual(store.read(s=>s.notifications.map(n=>n.id)),original.slice().reverse());store.transact(s=>s.notifications.unshift({id:'inserted',userId:x.bob.userId,type:'test',data:{},at:'now',read:false}));assert.equal(store.read(s=>s.notifications[0].id),'inserted');
  }finally{x.core.close();}
+});
+
+for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' bounded trade proposal and cancellation preserve escrow, immutable cards, receipts and queued events',async()=>{
+ const store=new Store(),x=fixture({store,eventSubscriptions:[{id:'trade',handler:'trade',events:['trade.proposed','trade.cancelled']}]});try{
+  const copy=x.open()[0];store.prepareRecordTransactions();const original=store.read(s=>s.copies[copy.id]),input={key:'bounded-trade',toUserId:x.bob.userId,give:{copyIds:[copy.id],currencies:[{currencyId:'credits',amount:50}]},receive:{copyIds:[],currencies:[{currencyId:'credits',amount:10}]}};
+  const before=store.diagnostics?.(),trade=x.core.proposeTrade(x.alice,input),after=store.diagnostics?.();if(before){assert.equal(after.compatibilityMaterializations,before.compatibilityMaterializations);assert(after.decodedQueryRecords-before.decodedQueryRecords<45);assert(after.recordWrites-before.recordWrites<15);}
+  assert.equal(x.core.wallet(x.alice).credits,9940);assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),50);assert.deepEqual(x.core.proposeTrade(x.alice,input),trade);
+  assert.throws(()=>x.core.proposeTrade(x.alice,{...input,message:'different'}),code('IDEMPOTENCY_CONFLICT'));
+  const cancellationBefore=store.diagnostics?.(),cancel=x.core.cancelTrade(x.bob,{key:'decline',tradeId:trade.id}),cancellationAfter=store.diagnostics?.();assert.equal(cancel.status,'declined');if(cancellationBefore){assert.equal(cancellationAfter.compatibilityMaterializations,cancellationBefore.compatibilityMaterializations);assert(cancellationAfter.decodedQueryRecords-cancellationBefore.decodedQueryRecords<45);}
+  assert.equal(x.core.wallet(x.alice).credits,9990);assert.deepEqual(store.read(s=>s.copies[copy.id]),original);assert.deepEqual(store.read(s=>s._tradeEscrow[x.alice.userId]),{});assert.deepEqual(x.core.cancelTrade(x.bob,{key:'decline',tradeId:trade.id}),cancel);
+  store.read(s=>{const actual=summarizeRecords(s);actual.usedBytes=store.measure(s).usedBytes;assert.deepEqual(JSON.parse(s._recordAccounting),actual);assert.equal(Object.values(s.actionJobs).filter(row=>row.source?.type==='event').length,2);});assert.equal(x.core.audit(admin).ok,true);
+ }finally{x.core.close();}
+});
+for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' escrow projection survives compatibility mutations and rejects corrupt refunds',()=>{
+ const store=new Store(),x=fixture({store});try{
+  const offer=key=>x.core.proposeTrade(x.alice,{key,toUserId:x.bob.userId,give:{copyIds:[],currencies:[{currencyId:'credits',amount:20}]},receive:{copyIds:[],currencies:[]}}),first=offer('one'),second=offer('two');
+  assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),40);store.transact(s=>{s.balances[x.alice.userId].credits=Number.MAX_SAFE_INTEGER-30;});const invalid=store.read(s=>s);assert.throws(()=>x.core.cancelTrade(x.alice,{key:'overflow',tradeId:first.id}),code('BALANCE_OVERFLOW'));assert.deepEqual(store.read(s=>s),invalid);store.transact(s=>{s.balances[x.alice.userId].credits=9960;});x.core.acceptTrade(x.bob,{key:'accept-compat',tradeId:first.id});assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),20);
+  // Model an older writer by deleting projection metadata after its otherwise valid commit.
+  const transact=store.transact.bind(store);store.transact=fn=>transact(s=>{const result=fn(s);delete s._recordAccounting;delete s._tradeEscrow;return result;});store.transact(s=>{s.users[x.alice.userId].displayName='Updated';});store.transact=transact;
+  const third=offer('three');assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),40);assert.equal(store.read(s=>JSON.parse(s._recordAccounting).version),2);x.core.cancelTrade(x.alice,{key:'cancel-two',tradeId:second.id});assert.equal(store.read(s=>s._tradeEscrow[x.alice.userId].credits),20);
+  const records=store.transactRecords.bind(store);store.transactRecords=(fn,options)=>records(tx=>{const get=tx.get;tx.get=(field,id)=>field==='_tradeEscrow'?{credits:-1}:get(field,id);return fn(tx);},options);const before=store.read(s=>s);assert.throws(()=>x.core.cancelTrade(x.alice,{key:'corrupt',tradeId:third.id}),code('INVALID_STATE'));assert.deepEqual(store.read(s=>s),before);store.transactRecords=records;
+  x.core.cancelTrade(x.alice,{key:'cancel-three',tradeId:third.id});assert.equal(x.core.wallet(x.alice).credits,9980);assert.equal(x.core.audit(admin).ok,true);
+ }finally{x.core.close();}
+});
+
+test('bounded encrypted trade cancellation survives rollback and restart at ordinary capacity',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'record-trade-')),path=join(dir,'state.sqlite'),encryptionKey=randomBytes(32),clock=()=> '2026-09-30T12:00:00.000Z';let core;
+ try{
+  let store=new SQLiteStore(path,{encryptionKey}),x=fixture({store});core=x.core;const copy=x.open()[0],trade=core.proposeTrade(x.alice,{key:'offer',toUserId:x.bob.userId,give:{copyIds:[copy.id],currencies:[{currencyId:'credits',amount:25}]},receive:{copyIds:[],currencies:[]}}),cap=store.read(s=>store.measure(s).totalBytes);core.close();
+  store=new SQLiteStore(path,{encryptionKey,maxStateBytes:cap});core=new CardFramework({store,clock});const before=store.read(s=>s),records=store.transactRecords.bind(store);store.transactRecords=(fn,options)=>records(tx=>{const result=fn(tx);if(options?.tradeCompletion)throw Error('interrupted trade commit');return result;},options);
+  assert.throws(()=>core.cancelTrade(x.alice,{key:'cancel',tradeId:trade.id}),/interrupted trade commit/);assert.deepEqual(store.read(s=>s),before);core.close();
+  store=new SQLiteStore(path,{encryptionKey,maxStateBytes:cap});core=new CardFramework({store,clock});const metrics=store.diagnostics(),result=core.cancelTrade(x.alice,{key:'cancel',tradeId:trade.id});assert.equal(result.status,'cancelled');assert.equal(store.diagnostics().compatibilityMaterializations,metrics.compatibilityMaterializations);assert.equal(core.wallet(x.alice).credits,9990);assert.equal(store.read(s=>s.copies[copy.id].lockedBy),undefined);assert.deepEqual(core.cancelTrade(x.alice,{key:'cancel',tradeId:trade.id}),result);assert.equal(core.audit(admin).ok,true);
+ }finally{core?.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+test('stale escrow accounting cannot force allocation during full-capacity completion or replay',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'trade-stale-')),path=join(dir,'state.sqlite');let core;
+ try{
+  let store=new SQLiteStore(path),x=fixture({store});core=x.core;const input={key:'one',toUserId:x.bob.userId,give:{copyIds:[],currencies:[{currencyId:'credits',amount:20}]},receive:{copyIds:[],currencies:[]}},trade=core.proposeTrade(x.alice,input);core.proposeTrade(x.alice,{...input,key:'two'});core.close();
+  const db=new DatabaseSync(path),codec=createStateCodec(),row=db.prepare("SELECT payload FROM framework_fields WHERE name='_recordAccounting'").get(),envelope=codec.decode(row.payload),summary=JSON.parse(envelope.value);summary.version=1;envelope.value=JSON.stringify(summary);db.prepare("UPDATE framework_fields SET payload=? WHERE name='_recordAccounting'").run(codec.encode(envelope));db.exec("DELETE FROM framework_entities WHERE collection='_tradeEscrow'; DELETE FROM framework_fields WHERE name='_tradeEscrow';");db.close();
+  const inspection=new SQLiteStore(path,{readOnly:true}),cap=inspection.read(s=>inspection.measure(s).totalBytes);inspection.close();store=new SQLiteStore(path,{maxStateBytes:cap});core=new CardFramework({store,clock:()=> '2026-09-30T12:00:00.000Z'});
+  const result=core.cancelTrade(x.alice,{key:'cancel-stale',tradeId:trade.id});assert.equal(result.status,'cancelled');assert.equal(store.read(s=>s._recordAccounting),undefined);assert.equal(store.read(s=>s._tradeEscrow),undefined);const before=store.diagnostics();assert.deepEqual(core.cancelTrade(x.alice,{key:'cancel-stale',tradeId:trade.id}),result);assert.equal(store.diagnostics().recordWrites,before.recordWrites);assert.equal(core.wallet(x.alice).credits,9980);assert.equal(core.audit(admin).ok,true);
+ }finally{core?.close();rmSync(dir,{recursive:true,force:true});}
 });

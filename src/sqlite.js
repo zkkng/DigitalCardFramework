@@ -1,6 +1,6 @@
 import {completionPool} from './completion.js';
 import {createRecordTransaction,validateRecordPlan} from './record-transaction.js';
-import {validRecordAccounting,recordAccountingField,summarizeRecords,finalizeRecordAccounting} from './record-accounting.js';
+import {validRecordAccounting,recordAccountingField,summarizeRecords,finalizeRecordAccounting,refreshTradeAccounting,recordPreparationMarker} from './record-accounting.js';
 import {DatabaseSync,backup} from 'node:sqlite';
 import {existsSync,mkdtempSync,chmodSync,rmSync,statSync} from 'node:fs';
 import {createHash,createHmac} from 'node:crypto';
@@ -165,7 +165,7 @@ export class SQLiteStore {
       const result=cloneResult(fn(state));
       if(!isDeepStrictEqual(state,before)){
         state.revision++;
-        if(Object.hasOwn(state,recordAccountingField)){
+        if(Object.hasOwn(state,recordAccountingField)&&refreshTradeAccounting(state)){
           const baseline=encodeState(state,this.#codec,this.#identity,this.#recordKey).usedBytes;
           const size=(field,key,value)=>value===undefined?0:encodedRecordBytes(this.#codec,field,key,value);
           const originalAccounting=size(recordAccountingField,null,state[recordAccountingField]);
@@ -184,7 +184,7 @@ export class SQLiteStore {
     return this.transact(state=>{
       let summary;try{summary=JSON.parse(state[recordAccountingField]);}catch{}
       if(validRecordAccounting(summary,state.revision))return {prepared:false};
-      state[recordAccountingField]=String(state[recordAccountingField]??'')+' ';
+      state[recordAccountingField]=recordPreparationMarker;
       return {prepared:true};
     });
   }

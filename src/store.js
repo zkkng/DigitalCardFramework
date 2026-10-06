@@ -1,6 +1,6 @@
 import {completionPool} from './completion.js';
 import {createRecordTransaction,validateRecordPlan} from './record-transaction.js';
-import {validRecordAccounting,recordAccountingField,finalizeRecordAccounting} from './record-accounting.js';
+import {validRecordAccounting,recordAccountingField,finalizeRecordAccounting,refreshTradeAccounting,recordPreparationMarker} from './record-accounting.js';
 import {isDeepStrictEqual} from 'node:util';
 import {querySnapshot, memoryQueries, completionBytes} from './storage-query.js';
 export function initialState() {
@@ -21,10 +21,10 @@ export class MemoryStore {
     const result = fn(draft);
     if (result?.then) throw new Error('Async transaction callbacks are unsupported');
     const detachedResult = structuredClone(result);
-    if (!isDeepStrictEqual(draft,this.#state)) {draft.revision++;if(Object.hasOwn(draft,recordAccountingField))finalizeRecordAccounting(draft,this.#state,value=>Buffer.byteLength(JSON.stringify(value)));this.#state = draft;}
+    if (!isDeepStrictEqual(draft,this.#state)) {draft.revision++;if(Object.hasOwn(draft,recordAccountingField)&&refreshTradeAccounting(draft)){finalizeRecordAccounting(draft,this.#state,value=>Buffer.byteLength(JSON.stringify(value)));}this.#state = draft;}
     return detachedResult;
   }
-  prepareRecordTransactions(){return this.transact(state=>{let summary;try{summary=JSON.parse(state[recordAccountingField]);}catch{}if(validRecordAccounting(summary,state.revision))return {prepared:false};state[recordAccountingField]=String(state[recordAccountingField]??'')+' ';return {prepared:true};});}
+  prepareRecordTransactions(){return this.transact(state=>{let summary;try{summary=JSON.parse(state[recordAccountingField]);}catch{}if(validRecordAccounting(summary,state.revision))return {prepared:false};state[recordAccountingField]=recordPreparationMarker;return {prepared:true};});}
   transactRecords(fn,options={}){
     return this.transact(state=>{
       const bytes=value=>Buffer.byteLength(JSON.stringify(value)??''),scope=createRecordTransaction({

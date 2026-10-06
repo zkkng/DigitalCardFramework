@@ -17,8 +17,26 @@ export function validateAcquisitionChanges(changes){
     if(row.collection==='actionJobs')check(additions.completionObligations?.[row.value.deliveryCompletionId],'RECORD_TRANSACTION_UNSUPPORTED','New deliveries require a new reservation',409);
   }
 }
-export function validateRecordPlan(plan,{intent=false,preferences=false,packCompletion=false}={}){
+export function validateRecordPlan(plan,{intent=false,preferences=false,packCompletion=false,tradeProposal=false,tradeCompletion=false}={}){
   if(!plan.changes.length&&!plan.scalars.length&&!plan.completion)return;
+  if(tradeProposal||tradeCompletion){
+    check(!intent&&!preferences&&!packCompletion&&!plan.scalars.length&&tradeProposal!==tradeCompletion,'RECORD_TRANSACTION_UNSUPPORTED','Invalid trade scope',409);
+    const trades=plan.changes.filter(row=>row.collection==='trades');check(trades.length===1,'INVALID_STATE','One trade transition required',500);const trade=trades[0],sender=trade.value.fromUserId;
+    check(tradeProposal?!trade.old&&trade.value.status==='pending':trade.old?.value.status==='pending'&&['cancelled','declined'].includes(trade.value.status),'INVALID_STATE','Invalid trade transition',500);
+    const reservation=plan.changes.find(row=>row.collection==='completionObligations'&&row.key==='trade:'+trade.key);check(reservation&&reservation.value.kind==='trade'&&reservation.value.entityId===trade.key,'INVALID_STATE','Trade reservation required',500);
+    if(tradeCompletion){check(plan.completion?.id===reservation.key&&!plan.completion.admission&&reservation.old?.value.status==='reserved'&&reservation.value.status==='completed','INVALID_STATE','Admitted trade reservation required',500);const stable=value=>Object.fromEntries(Object.entries(value).filter(([key])=>!['status','completedAt'].includes(key)));check(isDeepStrictEqual(stable(trade.old.value),stable(trade.value)),'INVALID_STATE','Trade terms are immutable',500);for(const field of ['id','kind','entityId','bytes','events','jobs'])check(isDeepStrictEqual(reservation.old.value[field],reservation.value[field]),'INVALID_STATE','Reservation terms are immutable',500);}
+    else check(!plan.completion&&!reservation.old&&reservation.value.status==='reserved','INVALID_STATE','New trade reservation required',500);
+    for(const row of plan.changes){
+      check(['trades','copies','balances','_tradeEscrow','requests','ledger','events','notifications','actionJobs','completionObligations'].includes(row.collection),'RECORD_TRANSACTION_UNSUPPORTED','Collection is outside trade scope',409);
+      if(row.collection==='copies'){check(row.old&&trade.value.give.copyIds.includes(row.key)&&row.value.ownerId===sender,'INVALID_STATE','Only offered copies may change',500);const stable=value=>Object.fromEntries(Object.entries(value).filter(([key])=>key!=='lockedBy'));check(isDeepStrictEqual(stable(row.old.value),stable(row.value)),'INVALID_STATE','Trade may change only copy reservation',500);check(tradeProposal?!row.old.value.lockedBy&&row.value.lockedBy===trade.key:row.old.value.lockedBy===trade.key&&!row.value.lockedBy,'INVALID_STATE','Escrow lock differs',500);}
+      else if(['balances','_tradeEscrow'].includes(row.collection)){check(row.key===sender,'INVALID_STATE','Only sender escrow and balance may change',500);const expected=structuredClone(row.old?.value??{});for(const money of trade.value.give.currencies){const sign=(tradeProposal?1:-1)*(row.collection==='_tradeEscrow'?1:-1);expected[money.currencyId]=(expected[money.currencyId]??0)+sign*money.amount;if(row.collection==='_tradeEscrow'&&expected[money.currencyId]===0)delete expected[money.currencyId];}check(isDeepStrictEqual(expected,row.value),'INVALID_STATE','Trade balance or escrow projection differs',500);}
+      else if(row.collection==='notifications'&&row.old){check(row.value===undefined&&[sender,trade.value.toUserId].includes(row.old.value.userId),'INVALID_STATE','Only participant history may be trimmed',500);}
+      else if(!['trades','completionObligations'].includes(row.collection)){check(!row.old,'INVALID_STATE','Trade delivery records are append-only',500);if(['requests','events','actionJobs'].includes(row.collection))check(tradeCompletion?row.value.completionId===reservation.key:!row.value.completionId,'INVALID_STATE','Trade delivery reservation differs',500);}
+      if(row.collection==='events')check(row.value.sequence===row.ordinal+1,'INVALID_STATE','Event sequence differs from append position',500);
+    }
+    if(tradeProposal)validateAcquisitionChanges(plan.changes.filter(row=>!['trades','copies','balances','_tradeEscrow','notifications'].includes(row.collection)));
+    return;
+  }
   if(packCompletion){
     check(!intent&&!preferences&&!plan.scalars.length&&plan.completion&&!plan.completion.admission,'RECORD_TRANSACTION_UNSUPPORTED','Pack opening requires its admitted reservation',409);
     const reservation=plan.changes.find(row=>row.collection==='completionObligations'&&row.key===plan.completion.id);check(reservation?.old?.value.kind==='pack'&&reservation.old.value.status==='reserved'&&reservation.value.status==='completed','INVALID_STATE','Pending pack reservation required',500);
@@ -77,6 +95,7 @@ export function createRecordTransaction(backend,{maxRecords=4096,maxBytes=16*102
     trimNotifications(ownerId,limit=2000){keyName(ownerId);check(limit===2000,'INVALID_INPUT','Notification retention is fixed');field('notifications');const pending=[...records.values()].filter(row=>row.collection==='notifications'&&row.value?.userId===ownerId&&!row.old).length;for(const item of backend.notificationOverflow(ownerId,limit-pending,charge)){const row=load('notifications',item.key);row.value=undefined;}},
     setScalar(name,value){const metadata=field(name);check(!metadata||metadata.kind==='scalar','INVALID_INPUT','Scalar field required');check(value!==undefined,'INVALID_INPUT','Cannot store undefined');scalars.set(name,{name,old:metadata?.value,value:clone(value)});},
     reserveIntentCompletion(id,{admission=false}={}){live();keyName(id);check(!completion,'INVALID_STATE','Only one intent reservation can fund a transaction',500);completion={id,admission};},
+    reserveTradeCompletion(id){live();keyName(id);check(!completion,'INVALID_STATE','Only one reservation can fund a transaction',500);completion={id,admission:false};},
     reservePackCompletion(id){live();keyName(id);check(!completion,'INVALID_STATE','Only one reservation can fund a transaction',500);completion={id,admission:false};},
   };
   return {api,close(){active=false;},finish(){live();const changes=[...records.values()].filter(row=>!isDeepStrictEqual(row.old?.value,row.value)||completion&&row.collection==='completionObligations'&&row.key===completion.id);

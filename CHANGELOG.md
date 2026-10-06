@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added bounded trade proposals, cancellation and decline with encrypted sender escrow accounting, atomic refunds and retained receipt replay. Stale accounting can fall back to completion recovery at full capacity.
+
 - Added delegated plugin purchases with exact quote review, server-owned intent recovery and safe receipt/acknowledgment replay. Added Python and Go transport examples and shared recovery conformance.
 
 - Added owner-scoped retained command-intent status lookup after acknowledgement, with exact command authorization and no input payload exposure.

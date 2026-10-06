@@ -16,13 +16,17 @@ Pack quotes read the requesting account, catalog and administrator controls in o
 
 ## Supported products
 
-The incremental purchase path supports products whose variants do not allocate codes or invoke binding factories, and whose duplicate policy does not inspect the owner's whole inventory. Other products and installations with legacy externally managed purchase keys use the established acquisition path. That fallback materializes installation state and can block for substantial time on larger databases. Trade, commerce and action delivery transactions retain their existing storage paths.
+The incremental purchase path supports products whose variants do not allocate codes or invoke binding factories, and whose duplicate policy does not inspect the owner's whole inventory. Other products and installations with legacy externally managed purchase keys use the established acquisition path. That fallback materializes installation state and can block for substantial time on larger databases. Trade acceptance and counteroffers, commerce and action delivery retain their compatibility storage paths.
 
 `openPack` incrementally completes code-free unopened packs with prepared accounting and a pending pack reservation. It retains issued card definitions and the pack's product snapshot, determines new-card status through the owner/state/variant index, and commits the opening receipt, events, notifications and queued actions together. Exact-key replay returns the stored receipt. Actual record and accounting growth consumes only that pack's own reservation, so ordinary capacity exhaustion does not strand admitted opening.
 
 Opening uses the compatibility completion path for code attachments, missing accounting/reservations, an already opened pack under a new key. Record/byte budget exhaustion also falls back for opening, because an admitted completion must remain recoverable. These completion fallbacks may still block the calling thread.
 
 SQLite reads the selected catalog/configuration, account, balance, receipt, supply, validation and pity records plus indexed owner counts. It writes changed records only. Default read/write budgets are 4,096 records and 16 MiB per transaction; oversized operations reject with `TRANSACTION_BUDGET` before committing. This bound includes selected configuration payloads, so a sufficiently large catalog can exceed it even for a small purchase.
+
+`proposeTrade` uses bounded participant, offered-card, balance, policy and catalog reads for code-free offers. It atomically locks offered cards, debits offered currency, reserves completion capacity and commits the reviewed snapshots, receipt, notifications and outbox. `cancelTrade` and recipient decline read the selected trade and offered copies, refund escrow, release locks and settle the original reservation. Exact-key replay does not require accounting preparation. Code-bearing proposals and operations exceeding transaction budgets retain compatibility execution.
+
+Encrypted `_tradeEscrow` records contain each sender's refundable currency totals. Cancellation reads one sender record rather than scanning trade history, preserving the safe-integer balance-plus-escrow check. Accounting version 2 gates this projection: preparation rebuilds it, compatibility writers refresh it, and bounded proposal/cancellation update it in the same transaction as escrow. Negative or incomplete refund totals reject before mutation. An older writer invalidates this versioned accounting; an accepted completion can discard the stale cache and use compatibility recovery without allocating projection metadata at exhausted capacity. New admission prepares again with the existing legacy-obligation fence.
 
 ## Preparation and mixed writers
 
