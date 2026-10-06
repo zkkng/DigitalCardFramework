@@ -554,11 +554,26 @@ export function mountAuthoringTools({
         },
       );
       fieldControls.set(scope + ".stats." + f.key, control);
+      const help = el("p", "Scope: " + scope + " · Source: " + (f.source ?? "author") +
+        " · Visibility: " + (f.visibility ?? "public") +
+        (f.unit ? " · Unit: " + f.unit : "") + (f.description ? " · " + f.description : "") +
+        (["integer", "number"].includes(f.type) ? " · Range: " + (f.minimum ?? -1e12) + " to " + (f.maximum ?? 1e12) : "") +
+        (f.precision !== undefined ? " · Decimal places: " + f.precision : "") +
+        (f.type === "string" ? " · Text length: " + (f.minLength ?? 0) + " to " + (f.maxLength ?? 10000) : "") +
+        (f.type === "array" ? " · List items: " + (f.minItems ?? 0) + " to " + (f.maxItems ?? 256) : ""));
+      help.id = "dcs-field-help-" + crypto.randomUUID();
+      control.setAttribute("aria-describedby", help.id);
+      stats.append(help);
+      if (["integer", "number"].includes(f.type)) {
+        control.step = f.type === "integer" ? "1" : f.precision === undefined ? "any" : String(10 ** -f.precision);
+        if (f.minimum !== undefined) control.min = String(f.minimum);
+        if (f.maximum !== undefined) control.max = String(f.maximum);
+      }
       if (error) {
         const message = el("p", f.label + ": " + error);
         message.id = "dcs-field-error-" + crypto.randomUUID();
         control.setAttribute("aria-invalid", "true");
-        control.setAttribute("aria-describedby", message.id);
+        control.setAttribute("aria-describedby", help.id + " " + message.id);
         stats.append(message);
       }
       if (value === null) stats.append(el("p", f.label + ": null"));
@@ -639,7 +654,22 @@ export function mountAuthoringTools({
     };
     input(fieldForm, "Field key", draft.key, (v) => (draft.key = v));
     input(fieldForm, "Field label", draft.label, (v) => (draft.label = v));
-    input(fieldForm, "Field type", draft.type, (v) => (draft.type = v), {
+    input(fieldForm, "Field help", "", (v) => {
+      if (v) draft.description = v;
+      else delete draft.description;
+    }, { type: "textarea" });
+    input(fieldForm, "Field unit", "", (v) => {
+      if (v) draft.unit = v;
+      else delete draft.unit;
+    });
+    input(fieldForm, "Field scope", draft.scope, (v) => (draft.scope = v), { choices: ["card", "variant"] });
+    input(fieldForm, "Field visibility", draft.visibility, (v) => (draft.visibility = v), { choices: ["public", "owner", "operator"] });
+    input(fieldForm, "Field type", draft.type, (v) => {
+      draft.type = v;
+      for (const key of ["minimum", "maximum", "precision", "minLength", "maxLength", "minItems", "maxItems", "enum"]) delete draft[key];
+      paintConstraints();
+      paintChoices();
+    }, {
       choices: ["integer", "number", "string", "boolean", "array", "object"],
     });
     input(
@@ -649,13 +679,55 @@ export function mountAuthoringTools({
       (v) => (draft.required = v === "required"),
       { choices: ["optional", "required"] },
     );
+    input(fieldForm, "Allow null", "no", (v) => (draft.nullable = v === "yes"), { choices: ["no", "yes"] });
+    const constraints = el("fieldset"), enumForm = el("fieldset");
+    fieldForm.append(constraints, enumForm);
+    function paintConstraints() {
+      constraints.replaceChildren(el("legend", "Value bounds"));
+      const bounds = ["integer", "number"].includes(draft.type)
+        ? [["minimum", "Field minimum"], ["maximum", "Field maximum"], ...(draft.type === "number" ? [["precision", "Field decimal places"]] : [])]
+        : draft.type === "string" ? [["minLength", "Minimum text length"], ["maxLength", "Maximum text length"]]
+        : draft.type === "array" ? [["minItems", "Minimum list items"], ["maxItems", "Maximum list items"]] : [];
+      if (!bounds.length) constraints.append(el("p", "This type has no size or numeric bounds in this form."));
+      for (const [key, label] of bounds) input(constraints, label, draft[key] ?? "", (v) => {
+        if (v === "") delete draft[key];
+        else draft[key] = Number(v);
+      }, { type: "number" });
+      constraints.append(el("p", "Blank bounds use the field contract defaults. List item and nested object schemas require a policy or API definition."));
+    }
+    function paintChoices() {
+      enumForm.replaceChildren(el("legend", "Allowed choices"));
+      if (["array", "object"].includes(draft.type)) {
+        enumForm.append(el("p", "Structured enumeration values require a policy or API definition."));
+        return;
+      }
+      enumForm.append(el("p", "No choices means any value allowed by the bounds. Changing type resets choices and bounds."));
+      for (const [index, value] of (draft.enum ?? []).entries()) {
+        input(enumForm, "Allowed choice " + (index + 1), value, (v) => {
+          draft.enum[index] = draft.type === "boolean" ? v === "true" : ["integer", "number"].includes(draft.type) ? Number(v) : v;
+        }, { type: ["integer", "number"].includes(draft.type) ? "number" : "text", choices: draft.type === "boolean" ? ["false", "true"] : undefined });
+        button(enumForm, "Remove allowed choice " + (index + 1), () => {
+          draft.enum.splice(index, 1);
+          if (!draft.enum.length) delete draft.enum;
+          paintChoices();
+        });
+      }
+      button(enumForm, "Add allowed choice", () => {
+        draft.enum ??= [];
+        if (draft.enum.length >= 128) throw new Error("A field supports at most 128 choices");
+        draft.enum.push(draft.type === "boolean" ? false : ["integer", "number"].includes(draft.type) ? 0 : "");
+        paintChoices();
+      }).disabled = (draft.enum?.length ?? 0) >= 128;
+    }
+    paintConstraints();
+    paintChoices();
     button(fieldForm, "Create field", async () => {
       validateField(draft);
       await edit(() => {
         p.manifest.authoring ??= { values: { card: {}, variant: {} } };
         p.manifest.authoring.fields ??= [];
-        if (p.manifest.authoring.fields.some((f) => f.key === draft.key))
-          throw new Error("Field key already exists");
+        if (p.manifest.authoring.fields.some((f) => f.key === draft.key && (f.scope ?? "card") === draft.scope))
+          throw new Error("Field key already exists in this scope");
         p.manifest.authoring.fields.push(structuredClone(draft));
       });
     });

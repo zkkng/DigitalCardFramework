@@ -168,6 +168,84 @@ try {
   await page.getByText("Arrange layers", { exact: true }).click();
   await page.getByRole("button", { name: "Unlock selected", exact: true }).click();
   checks.push("artist spans, rejected-edit recovery, emphasis/icon/reorder/reset/remove, portable round trip, undo/redo and locked/bounded controls");
+  await page.getByText("Define a custom field", { exact: true }).click();
+  for (const [label, value] of [["Field key", "museum.price"], ["Field label", "Museum price"], ["Field help", "Printed ticket price"], ["Field unit", "USD"]]) {
+    await page.getByLabel(label, { exact: true }).fill(value);
+    await page.getByLabel(label, { exact: true }).press("Tab");
+  }
+  await page.getByLabel("Field type", { exact: true }).selectOption("number");
+  await page.getByLabel("Field scope", { exact: true }).selectOption("variant");
+  await page.getByLabel("Allow null", { exact: true }).selectOption("yes");
+  for (const [label, value] of [["Field minimum", "20"], ["Field maximum", "10"], ["Field decimal places", "2"]]) {
+    await page.getByLabel(label, { exact: true }).fill(value);
+    await page.getByLabel(label, { exact: true }).press("Tab");
+  }
+  await page.getByRole("button", { name: "Create field", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".dcs-status").textContent.includes("Invalid field range"));
+  assert.equal(await page.evaluate(() => window.studio.getProject().manifest.authoring?.fields?.length ?? 0), 0);
+  await page.getByLabel("Field minimum", { exact: true }).fill("0");
+  await page.getByLabel("Field minimum", { exact: true }).press("Tab");
+  await page.getByLabel("Field maximum", { exact: true }).fill("100");
+  await page.getByLabel("Field maximum", { exact: true }).press("Tab");
+  await page.getByRole("button", { name: "Create field", exact: true }).click();
+  await page.getByLabel("Museum price", { exact: true }).fill("12.34");
+  await page.getByLabel("Museum price", { exact: true }).press("Tab");
+  await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.variant["museum.price"] === 12.34);
+  assert.equal(await page.getByLabel("Museum price", { exact: true }).getAttribute("step"), "0.01");
+  await page.getByText("Scope: variant · Source: author · Visibility: public · Unit: USD · Printed ticket price · Range: 0 to 100 · Decimal places: 2", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Set Museum price to null", exact: true }).click();
+  await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.variant["museum.price"] === null);
+  await page.getByText("Define a custom field", { exact: true }).click();
+  await page.getByLabel("Field key", { exact: true }).fill("museum.category");
+  await page.getByLabel("Field key", { exact: true }).press("Tab");
+  await page.getByLabel("Field label", { exact: true }).fill("Catalog style");
+  await page.getByLabel("Field label", { exact: true }).press("Tab");
+  await page.getByLabel("Field type", { exact: true }).selectOption("string");
+  await page.getByLabel("Field visibility", { exact: true }).selectOption("owner");
+  for (const [label, value] of [["Minimum text length", "2"], ["Maximum text length", "10"]]) {
+    await page.getByLabel(label, { exact: true }).fill(value);
+    await page.getByLabel(label, { exact: true }).press("Tab");
+  }
+  await page.getByRole("button", { name: "Add allowed choice", exact: true }).click();
+  await page.getByLabel("Allowed choice 1", { exact: true }).fill("print");
+  await page.getByLabel("Allowed choice 1", { exact: true }).press("Tab");
+  await page.getByRole("button", { name: "Add allowed choice", exact: true }).click();
+  await page.getByLabel("Allowed choice 2", { exact: true }).fill("photo");
+  await page.getByLabel("Allowed choice 2", { exact: true }).press("Tab");
+  await page.getByRole("button", { name: "Create field", exact: true }).click();
+  await page.getByLabel("Catalog style", { exact: true }).selectOption('"photo"');
+  assert.equal(await page.getByRole("button", { name: "Add Catalog style to card", exact: true }).count(), 0);
+  assert(await page.evaluate(async () => !(await window.studio.getProject().export()).manifest.authoring.fields.some(f=>f.key === "museum.category")));
+  await page.getByText("Define a custom field", { exact: true }).click();
+  await page.getByLabel("Field key", { exact: true }).fill("museum.tags");
+  await page.getByLabel("Field key", { exact: true }).press("Tab");
+  await page.getByLabel("Field label", { exact: true }).fill("Catalog tags");
+  await page.getByLabel("Field label", { exact: true }).press("Tab");
+  await page.getByLabel("Field type", { exact: true }).selectOption("array");
+  for (const [label, value] of [["Minimum list items", "1"], ["Maximum list items", "2"]]) {
+    await page.getByLabel(label, { exact: true }).fill(value);
+    await page.getByLabel(label, { exact: true }).press("Tab");
+  }
+  await page.getByRole("button", { name: "Create field", exact: true }).click();
+  await page.getByLabel("Catalog tags", { exact: true }).fill('[]');
+  await page.getByLabel("Catalog tags", { exact: true }).press("Tab");
+  await page.getByText("Catalog tags: List length is outside the permitted range", { exact: true }).waitFor();
+  await page.getByLabel("Catalog tags", { exact: true }).fill('["featured"]');
+  await page.getByLabel("Catalog tags", { exact: true }).press("Tab");
+  await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.card["museum.tags"]?.[0] === "featured");
+  await page.getByText("Define a custom field", { exact: true }).click();
+  assert.deepEqual(await page.getByLabel("Field scope", { exact: true }).locator("option").evaluateAll(options=>options.map(o=>o.value)), ["card", "variant"]);
+  await page.getByLabel("Field key", { exact: true }).fill("museum.price");
+  await page.getByLabel("Field key", { exact: true }).press("Tab");
+  await page.getByLabel("Field label", { exact: true }).fill("Card price");
+  await page.getByLabel("Field label", { exact: true }).press("Tab");
+  await page.getByRole("button", { name: "Create field", exact: true }).click();
+  await page.getByLabel("Card price", { exact: true }).fill("0");
+  await page.getByLabel("Card price", { exact: true }).press("Tab");
+  await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.card["museum.price"] === 0);
+  assert.equal(await page.evaluate(() => window.studio.getProject().manifest.authoring.values.variant["museum.price"]), null);
+  await page.screenshot({ path: resolve(output, "custom-fields.png"), fullPage: true });
+  checks.push("type-aware numeric ranges/precision/nullability, scope/help/unit, enumerated private field and public-export privacy");
   const fontChooser = page.waitForEvent("filechooser");
   await page
     .getByRole("button", { name: "Add custom font", exact: true })
