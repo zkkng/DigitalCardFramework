@@ -52,6 +52,7 @@ export function mountStudio(
     paintDialog,
     painting = false,
     rebuildRevision = 0,
+    queuedActions = 0,
     actionTail = Promise.resolve();
   const events = new AbortController(),
     toolbar = el("div"),
@@ -100,13 +101,20 @@ export function mountStudio(
     const b = el("button", label);
     b.type = "button";
     b.onclick = () => {
-      actionTail = actionTail
-        .then(() => (disposed ? undefined : fn()))
-        .catch((e) => report(e.message));
-      return actionTail;
+      return schedule(fn).catch((e) => { if (!disposed) report(e.message); });
     };
     parent.append(b);
     return b;
+  }
+  function schedule(fn) {
+    if (disposed) return Promise.resolve();
+    queuedActions++;
+    root.setAttribute("aria-busy", "true");
+    actionTail = actionTail.catch(()=>{}).then(() => disposed ? undefined : fn()).finally(()=>{
+      queuedActions--;
+      if (!disposed && queuedActions === 0) root.removeAttribute("aria-busy");
+    });
+    return actionTail;
   }
   function upload(accept, fn) {
     const file = el("input");
@@ -136,6 +144,7 @@ export function mountStudio(
     sync();
   }
   async function rebuild() {
+    if (disposed) return;
     const revision = ++rebuildRevision;
     view?.dispose();
     stage?.dispose();
@@ -1028,7 +1037,7 @@ export function mountStudio(
     if (!destination) return;
     side = destination;
     selected = id;
-  },rebuild,open,report,library,policyProvider,context,panels});
+  },rebuild,open,report,schedule,library,policyProvider,context,panels});
   root.append(authoring.root);
   const ready = initialPackage
     ? open(initialPackage)
@@ -1041,6 +1050,7 @@ export function mountStudio(
     refreshPolicy: authoring.refreshPolicy,
     dispose() {
       disposed = true;
+      root.removeAttribute("aria-busy");
       events.abort();
       authoring.dispose();
       view?.dispose();

@@ -34,6 +34,10 @@ Save `.dcproject` for editable source and local draft data. Exported `.dcard` fi
 
 **Save card as template** records a versioned composition. **Save clipping mask** and **Save effect mask** preserve those distinct uses. Masks use normalized layer-local coordinates, including after cropping; resizing a target scales the mask. Image masks retain their pixels and inversion. **Save reusable text style** includes its embedded font dependency.
 
+Select an unlocked layer and open **Clipping mask properties** to choose an embedded image's alpha coverage or a polygon. Upload PNG, JPEG or WebP masks up to 32 MiB; opaque images cover the whole layer. Polygon coordinates range from 0 to 1 and support 3–64 vertices. Edit coordinates, insert a midpoint, remove a vertex, invert coverage or remove the mask. These controls clip the layer; effect masks remain separate. Groups require a prebaked image or host adapter for isolated masking.
+
+Name the item under **Reusable library**, then **Save clipping mask** and apply that saved version to another layer or card. Editing an applied mask detaches its library reference and keeps the saved revision intact. Reapply the saved item to restore it. Polygon masks follow existing layer transforms; independent mask crop/transform properties are not supported. Authoring changes and toolbar undo share an action queue; queued changes are skipped after the editor is disposed.
+
 Personal items live in this browser's IndexedDB. Export/import library JSON to move them between browsers. Administrators can **Share** immutable library revisions. Shared packages pass content validation before registration.
 
 Applying a template shows the layers that will change. Editable text, bindings and compatible artwork slots are preserved; fixed properties come from the selected revision. Application rejects a draft changed since its preview. `previewTemplateBatch` offers the same dry run for multiple projects through the public authoring API. Published cards never follow later library changes automatically.

@@ -12,6 +12,18 @@ import { createProject } from "../src/presentation/project.js";
 import { addStatBlock, configureAuthoring, setStat } from "../src/presentation/authoring-tools.js";
 import { textValue } from "../src/presentation/text.js";
 
+test("mask inversion rejects truthy strings and preserves the previous mask", async () => {
+  const project = createProject(await build(presentationFixture())),
+    node = project.scenes.get(project.manifest.faces.front.scene).nodes[0],
+    before = project.serialize();
+  assert.throws(() => project.edit(() => { node.mask = {polygon:[[0,0],[1,0],[1,1]],invert:"false"}; }),
+    error=>error.code === "MASK");
+  assert.deepEqual(project.serialize(), before);
+  project.edit(p=>{p.scenes.get(p.manifest.faces.front.scene).nodes[0].mask={polygon:[[0,0],[1,0],[1,1]],invert:false};});
+  const restored = await importPackage((await project.export()).archive);
+  assert.equal(restored.scenes.get(project.manifest.faces.front.scene).nodes[0].mask.invert,false);
+});
+
 test("stat blocks resolve explicit scopes and reject ambiguous or private fields before editing", async () => {
   const project = createProject(await build(presentationFixture()));
   configureAuthoring(project, { policy: { defaults: {}, fields: [

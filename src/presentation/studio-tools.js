@@ -44,6 +44,7 @@ export function mountAuthoringTools({
   rebuild,
   open,
   report,
+  schedule,
   library = createLocalLibrary(),
   policyProvider,
   context = {},
@@ -60,16 +61,18 @@ export function mountAuthoringTools({
   root.className = "dcs-authoring";
   status.setAttribute("role", "status");
   const pending = new Set();
+  let taskTail = Promise.resolve();
   const expandedSpans = new Set();
+  const expandedMasks = new Set();
   let mountedPanels = [];
   const disposePanels = () => {
     for (const panel of mountedPanels) panel.dispose?.();
     mountedPanels = [];
   };
   function run(fn) {
-    const task = Promise.resolve()
-      .then(fn)
-      .catch((e) => report(e.message))
+    const enqueue = schedule ?? (work => (taskTail = taskTail.catch(()=>{}).then(work)));
+    const task = enqueue(() => disposed ? undefined : fn())
+      .catch((e) => { if (!disposed) report(e.message); })
       .finally(() => pending.delete(task));
     pending.add(task);
     return task;
@@ -109,6 +112,7 @@ export function mountAuthoringTools({
     return e;
   }
   async function edit(fn) {
+    if (disposed) return;
     const p = getProject();
     if (!p) throw new Error("Open a card first");
     try {
@@ -731,6 +735,67 @@ export function mountAuthoringTools({
         p.manifest.authoring.fields.push(structuredClone(draft));
       });
     });
+    if (n && n.type !== "group") {
+      const maskSide = getSide(), panelKey = maskSide + ":" + n.id,
+        masks = el("details"), disabled = !!n.locked,
+        editMask = (fn) => edit(() => {
+          const project = getProject(), target = flattenNodes(project.scenes.get(project.manifest.faces[maskSide].scene).nodes).find(node=>node.id===n.id);
+          if (!target || target.locked) throw new Error("Choose an unlocked layer to edit its mask");
+          fn(target);
+          if (project.manifest.authoring?.masks) delete project.manifest.authoring.masks[panelKey];
+        });
+      masks.append(el("summary", "Clipping mask properties"));
+      masks.open = expandedMasks.has(panelKey);
+      masks.ontoggle = () => masks.open ? expandedMasks.add(panelKey) : expandedMasks.delete(panelKey);
+      root.append(masks);
+      masks.append(el("p", "Clipping masks limit artwork and text. Polygon coordinates run from 0 to 1 within the layer and follow its transforms. Image masks use alpha coverage. Editing creates a local mask and clears its library reference; saved versions remain unchanged."));
+      input(masks, "Clipping mask source", n.mask?.asset ? "image:" + n.mask.asset : n.mask?.polygon ? "polygon" : "none", (v)=>editMask(target=>{
+        if (v === "none") delete target.mask;
+        else target.mask = v === "polygon" ? {polygon:[[0,0],[1,0],[1,1],[0,1]]} : {asset:v.slice(6)};
+      }), { choices: [{id:"none",name:"No clipping mask"}, {id:"polygon",name:"Polygon"},
+        ...p.manifest.assets.filter(asset=>asset.mediaType.startsWith("image/")).map(asset=>({id:"image:"+asset.id,name:"Image alpha: "+asset.id}))], disabled });
+      if (n.mask) {
+        input(masks, "Invert clipping mask", n.mask.invert ? "yes" : "no", (v)=>editMask(target=>{target.mask.invert = v === "yes";}), {choices:["no","yes"],disabled});
+        button(masks, "Remove clipping mask", ()=>editMask(target=>{delete target.mask;})).disabled = disabled;
+      }
+      if (n.mask?.polygon) {
+        masks.append(el("p", "A polygon has 3 to 64 vertices. Add inserts a midpoint after the selected vertex; remove preserves the minimum vertex count."));
+        for (const [index, point] of n.mask.polygon.entries()) {
+          const row = el("fieldset");
+          row.append(el("legend", "Mask vertex " + (index+1)));
+          masks.append(row);
+          for (const [axis, component] of [["x",0],["y",1]]) {
+            const control = input(row, "Mask vertex " + (index+1) + " " + axis, point[component], v=>editMask(target=>{
+              target.mask.polygon[index][component] = Number(v);
+            }), {type:"number",disabled});
+            control.min = "0"; control.max = "1"; control.step = "any";
+          }
+          button(row, "Insert mask vertex after " + (index+1), ()=>editMask(target=>{
+            const points = target.mask.polygon;
+            if (points.length >= 64) throw new Error("A mask supports at most 64 vertices");
+            const current = points[index], next = points[(index+1)%points.length];
+            points.splice(index+1,0,[(current[0]+next[0])/2,(current[1]+next[1])/2]);
+          })).disabled = disabled || n.mask.polygon.length >= 64;
+          button(row, "Remove mask vertex " + (index+1), ()=>editMask(target=>{
+            if (target.mask.polygon.length <= 3) throw new Error("A mask needs at least 3 vertices");
+            target.mask.polygon.splice(index,1);
+          })).disabled = disabled || n.mask.polygon.length <= 3;
+        }
+      }
+      button(masks, "Upload clipping mask image", ()=>{
+        const file = el("input");
+        file.type = "file"; file.accept = ".png,.jpg,.jpeg,.webp";
+        file.onchange = ()=>run(async()=>{
+          const source = file.files[0];
+          if (!source) return;
+          if (n.locked) throw new Error("Choose an unlocked layer to edit its mask");
+          const project = getProject(), asset = await project.addImage(source,{role:"mask"});
+          if (getProject() !== project) throw new Error("The card changed during mask upload");
+          await editMask(target=>{target.mask={asset:asset.id};});
+        });
+        file.click();
+      }).disabled = disabled;
+    }
     const libraries = el("details");
     libraries.open = true;
     libraries.append(el("summary", "Reusable library"));
@@ -765,18 +830,19 @@ export function mountAuthoringTools({
     });
     if (n)
       button(libraries, "Use rectangle clipping mask", () =>
-        edit(
-          () =>
-            (n.mask = {
+        edit(() => {
+          if (n.locked) throw new Error("Choose an unlocked layer to edit its mask");
+          n.mask = {
               polygon: [
                 [0, 0],
                 [1, 0],
                 [1, 1],
                 [0, 1],
               ],
-            }),
-        ),
-      );
+            };
+          if (p.manifest.authoring?.masks) delete p.manifest.authoring.masks[getSide()+":"+n.id];
+        }),
+      ).disabled = !!n.locked || n.type === "group";
     let filter = "";
     const list = el("div");
     const paintList = () => {

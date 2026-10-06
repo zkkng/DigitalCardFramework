@@ -492,6 +492,8 @@ export function validateScene(scene, manifest) {
       );
     if (n.mask) {
       keys(n.mask, ["asset", "polygon", "invert"]);
+      if (n.mask.invert !== undefined)
+        ensure(typeof n.mask.invert === "boolean", "MASK", "Mask inversion must be boolean");
       ensure(
         !(n.mask.asset && n.mask.polygon),
         "MASK",

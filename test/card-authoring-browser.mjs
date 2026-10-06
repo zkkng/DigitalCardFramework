@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import * as pw from "playwright";
 import { fixture, admin } from "./helpers.js";
-import { fixture as artFixture, build } from "./presentation-fixtures.mjs";
+import { fixture as artFixture, build, pngRGBA } from "./presentation-fixtures.mjs";
 import { testFont } from "./font-fixture.mjs";
 import { createApiHandler } from "../src/http.js";
 import { serveReference } from "../src/static.js";
@@ -80,6 +80,8 @@ try {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 1000 },
   });
+  page.setDefaultTimeout(30000);
+  const idle = () => page.waitForFunction(() => document.querySelector(".dcard-studio")?.getAttribute("aria-busy") !== "true");
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(origin + "/harness");
   await page.evaluate(async () => {
@@ -97,10 +99,12 @@ try {
     await studio.ready;
   });
   await page.getByRole("button", { name: "Add text", exact: true }).click();
+  await idle();
   await page
     .getByLabel("Text content", { exact: true })
     .fill("Collection title");
   await page.getByLabel("Text content", { exact: true }).press("Tab");
+  await idle();
   await page.waitForFunction(() =>
     window.studio
       .getProject()
@@ -108,22 +112,32 @@ try {
       .nodes.some((n) => n.text === "Collection title"),
   );
   await page.getByText("Styled text spans", { exact: true }).click();
+  await idle();
   await page.getByLabel("Span 1 text", { exact: true }).fill("<b>Hello</b>");
   await page.getByLabel("Span 1 text", { exact: true }).press("Tab");
+  await idle();
   await page.getByRole("button", { name: "Add text span", exact: true }).click();
+  await idle();
   await page.getByLabel("Span 2 text", { exact: true }).fill(" World");
   await page.getByLabel("Span 2 text", { exact: true }).press("Tab");
+  await idle();
   const beforeInvalidSpan = await page.evaluate(() => window.studio.getProject().serialize());
   await page.getByLabel("Span 1 weight", { exact: true }).fill("2000");
   await page.getByLabel("Span 1 weight", { exact: true }).press("Tab");
+  await idle();
   await page.waitForFunction(() => document.querySelector(".dcs-status").textContent.includes("Invalid span weight"));
   assert.deepEqual(await page.evaluate(() => window.studio.getProject().serialize()), beforeInvalidSpan);
   await page.getByLabel("Span 1 weight", { exact: true }).fill("700");
   await page.getByLabel("Span 1 weight", { exact: true }).press("Tab");
+  await idle();
   await page.waitForFunction(() => window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.runs)?.runs[0].weight === 700);
   await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await idle();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Span 1 weight"]')?.value === "");
   assert.equal(await page.getByLabel("Span 1 weight", { exact: true }).inputValue(), "");
   await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await idle();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Span 1 weight"]')?.value === "700");
   assert.equal(await page.getByLabel("Span 1 weight", { exact: true }).inputValue(), "700");
   assert.equal(await page.evaluate(async () => {
     const { importPackage } = await import("/src/presentation/package.js"),
@@ -132,12 +146,23 @@ try {
     return restored.scenes.get("scenes/front.json").nodes.find(n=>n.runs).runs[0].weight;
   }), 700);
   await page.getByLabel("Span 1 style", { exact: true }).selectOption("italic");
+  await idle();
   await page.getByLabel("Span 1 color", { exact: true }).fill("#ff0000");
   await page.getByLabel("Span 1 color", { exact: true }).press("Tab");
+  await idle();
   const inlineIcon = await page.evaluate(() => window.studio.getProject().manifest.assets.find(a=>a.mediaType.startsWith("image/")).id);
   await page.getByLabel("Span 1 icon", { exact: true }).selectOption(inlineIcon);
+  await idle();
   await page.getByRole("button", { name: "Move span 1 later", exact: true }).click();
+  await idle();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Span 1 text"]')?.value === " World");
   await page.getByRole("button", { name: "Reset span 2 formatting", exact: true }).click();
+  await idle();
+  await page.waitForFunction(() => {
+    const span = window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.runs)?.runs[1];
+    return span?.text === "<b>Hello</b>" && !Object.hasOwn(span,"weight") && !Object.hasOwn(span,"style") && !Object.hasOwn(span,"color") &&
+      document.querySelector('[aria-label="Span 2 weight"]')?.value === "";
+  });
   const spanSource = await page.evaluate(async () => {
     const p = window.studio.getProject(),
       { importPackage } = await import("/src/presentation/package.js"),
@@ -146,14 +171,26 @@ try {
   });
   assert.deepEqual(spanSource, [{ text: " World" }, { text: "<b>Hello</b>", icon: inlineIcon }]);
   await page.getByRole("button", { name: "Remove span 1", exact: true }).click();
+  await idle();
+  await page.waitForFunction(() => window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.runs)?.runs.length === 1 &&
+    !document.querySelector('[aria-label="Span 2 text"]'));
   await page.screenshot({ path: resolve(output, "styled-spans.png"), fullPage: true });
   await page.getByRole("button", { name: "Convert spans to plain text", exact: true }).click();
+  await idle();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Text content"]')?.value === "<b>Hello</b>" &&
+    !window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.type === "text").runs);
   assert.equal(await page.getByLabel("Text content", { exact: true }).inputValue(), "<b>Hello</b>");
   await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await idle();
+  await page.waitForFunction(expected => document.querySelector('[aria-label="Span 1 icon"]')?.value === expected, inlineIcon);
   assert.equal(await page.getByLabel("Span 1 icon", { exact: true }).inputValue(), inlineIcon);
   await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await idle();
+  await page.waitForFunction(() => !window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.type === "text").runs &&
+    document.querySelector('[aria-label="Span 1 icon"]')?.value === "");
   await page.getByLabel("Text content", { exact: true }).fill("Collection title");
   await page.getByLabel("Text content", { exact: true }).press("Tab");
+  await idle();
   await page.evaluate(async () => {
     const p = window.studio.getProject();
     p.edit(() => { p.scenes.get("scenes/front.json").nodes.find(n=>n.type === "text").runs = Array.from({length:128}, ()=>({text:"x"})); });
@@ -161,95 +198,229 @@ try {
   });
   assert(await page.getByRole("button", { name: "Add text span", exact: true }).isDisabled());
   await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await idle();
   await page.getByText("Arrange layers", { exact: true }).click();
+  await idle();
   await page.getByRole("button", { name: "Lock selected", exact: true }).click();
+  await idle();
   assert(await page.getByLabel("Span 1 text", { exact: true }).isDisabled());
   assert(await page.getByRole("button", { name: "Add text span", exact: true }).isDisabled());
   await page.getByText("Arrange layers", { exact: true }).click();
+  await idle();
   await page.getByRole("button", { name: "Unlock selected", exact: true }).click();
+  await idle();
   checks.push("artist spans, rejected-edit recovery, emphasis/icon/reorder/reset/remove, portable round trip, undo/redo and locked/bounded controls");
   await page.getByText("Define a custom field", { exact: true }).click();
+  await idle();
   for (const [label, value] of [["Field key", "museum.price"], ["Field label", "Museum price"], ["Field help", "Printed ticket price"], ["Field unit", "USD"]]) {
     await page.getByLabel(label, { exact: true }).fill(value);
     await page.getByLabel(label, { exact: true }).press("Tab");
+    await idle();
   }
   await page.getByLabel("Field type", { exact: true }).selectOption("number");
+  await idle();
   await page.getByLabel("Field scope", { exact: true }).selectOption("variant");
+  await idle();
   await page.getByLabel("Allow null", { exact: true }).selectOption("yes");
+  await idle();
   for (const [label, value] of [["Field minimum", "20"], ["Field maximum", "10"], ["Field decimal places", "2"]]) {
     await page.getByLabel(label, { exact: true }).fill(value);
     await page.getByLabel(label, { exact: true }).press("Tab");
+    await idle();
   }
   await page.getByRole("button", { name: "Create field", exact: true }).click();
+  await idle();
   await page.waitForFunction(() => document.querySelector(".dcs-status").textContent.includes("Invalid field range"));
   assert.equal(await page.evaluate(() => window.studio.getProject().manifest.authoring?.fields?.length ?? 0), 0);
   await page.getByLabel("Field minimum", { exact: true }).fill("0");
   await page.getByLabel("Field minimum", { exact: true }).press("Tab");
+  await idle();
   await page.getByLabel("Field maximum", { exact: true }).fill("100");
   await page.getByLabel("Field maximum", { exact: true }).press("Tab");
+  await idle();
   await page.getByRole("button", { name: "Create field", exact: true }).click();
+  await idle();
   await page.getByLabel("Museum price", { exact: true }).fill("12.34");
   await page.getByLabel("Museum price", { exact: true }).press("Tab");
+  await idle();
   await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.variant["museum.price"] === 12.34);
   assert.equal(await page.getByLabel("Museum price", { exact: true }).getAttribute("step"), "0.01");
   await page.getByText("Scope: variant · Source: author · Visibility: public · Unit: USD · Printed ticket price · Range: 0 to 100 · Decimal places: 2", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Set Museum price to null", exact: true }).click();
+  await idle();
   await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.variant["museum.price"] === null);
   await page.getByText("Define a custom field", { exact: true }).click();
+  await idle();
   await page.getByLabel("Field key", { exact: true }).fill("museum.category");
   await page.getByLabel("Field key", { exact: true }).press("Tab");
+  await idle();
   await page.getByLabel("Field label", { exact: true }).fill("Catalog style");
   await page.getByLabel("Field label", { exact: true }).press("Tab");
+  await idle();
   await page.getByLabel("Field type", { exact: true }).selectOption("string");
+  await idle();
   await page.getByLabel("Field visibility", { exact: true }).selectOption("owner");
+  await idle();
   for (const [label, value] of [["Minimum text length", "2"], ["Maximum text length", "10"]]) {
     await page.getByLabel(label, { exact: true }).fill(value);
     await page.getByLabel(label, { exact: true }).press("Tab");
+    await idle();
   }
   await page.getByRole("button", { name: "Add allowed choice", exact: true }).click();
+  await idle();
   await page.getByLabel("Allowed choice 1", { exact: true }).fill("print");
   await page.getByLabel("Allowed choice 1", { exact: true }).press("Tab");
+  await idle();
   await page.getByRole("button", { name: "Add allowed choice", exact: true }).click();
+  await idle();
   await page.getByLabel("Allowed choice 2", { exact: true }).fill("photo");
   await page.getByLabel("Allowed choice 2", { exact: true }).press("Tab");
+  await idle();
   await page.getByRole("button", { name: "Create field", exact: true }).click();
+  await idle();
   await page.getByLabel("Catalog style", { exact: true }).selectOption('"photo"');
+  await idle();
   assert.equal(await page.getByRole("button", { name: "Add Catalog style to card", exact: true }).count(), 0);
   assert(await page.evaluate(async () => !(await window.studio.getProject().export()).manifest.authoring.fields.some(f=>f.key === "museum.category")));
   await page.getByText("Define a custom field", { exact: true }).click();
+  await idle();
   await page.getByLabel("Field key", { exact: true }).fill("museum.tags");
   await page.getByLabel("Field key", { exact: true }).press("Tab");
+  await idle();
   await page.getByLabel("Field label", { exact: true }).fill("Catalog tags");
   await page.getByLabel("Field label", { exact: true }).press("Tab");
+  await idle();
   await page.getByLabel("Field type", { exact: true }).selectOption("array");
+  await idle();
   for (const [label, value] of [["Minimum list items", "1"], ["Maximum list items", "2"]]) {
     await page.getByLabel(label, { exact: true }).fill(value);
     await page.getByLabel(label, { exact: true }).press("Tab");
+    await idle();
   }
   await page.getByRole("button", { name: "Create field", exact: true }).click();
+  await idle();
   await page.getByLabel("Catalog tags", { exact: true }).fill('[]');
   await page.getByLabel("Catalog tags", { exact: true }).press("Tab");
+  await idle();
   await page.getByText("Catalog tags: List length is outside the permitted range", { exact: true }).waitFor();
   await page.getByLabel("Catalog tags", { exact: true }).fill('["featured"]');
   await page.getByLabel("Catalog tags", { exact: true }).press("Tab");
+  await idle();
   await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.card["museum.tags"]?.[0] === "featured");
   await page.getByText("Define a custom field", { exact: true }).click();
+  await idle();
   assert.deepEqual(await page.getByLabel("Field scope", { exact: true }).locator("option").evaluateAll(options=>options.map(o=>o.value)), ["card", "variant"]);
   await page.getByLabel("Field key", { exact: true }).fill("museum.price");
   await page.getByLabel("Field key", { exact: true }).press("Tab");
+  await idle();
   await page.getByLabel("Field label", { exact: true }).fill("Card price");
   await page.getByLabel("Field label", { exact: true }).press("Tab");
+  await idle();
   await page.getByRole("button", { name: "Create field", exact: true }).click();
+  await idle();
   await page.getByLabel("Card price", { exact: true }).fill("0");
   await page.getByLabel("Card price", { exact: true }).press("Tab");
+  await idle();
   await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.card["museum.price"] === 0);
   assert.equal(await page.evaluate(() => window.studio.getProject().manifest.authoring.values.variant["museum.price"]), null);
   await page.screenshot({ path: resolve(output, "custom-fields.png"), fullPage: true });
   checks.push("type-aware numeric ranges/precision/nullability, scope/help/unit, enumerated private field and public-export privacy");
+  await page.getByText("Clipping mask properties", { exact: true }).click();
+  await idle();
+  await page.getByLabel("Clipping mask source", { exact: true }).selectOption("polygon");
+  await idle();
+  await page.getByLabel("Mask vertex 1 x", { exact: true }).fill("2");
+  await page.getByLabel("Mask vertex 1 x", { exact: true }).press("Tab");
+  await idle();
+  await page.waitForFunction(() => document.querySelector(".dcs-status").textContent.includes("range"));
+  assert.equal(await page.getByLabel("Mask vertex 1 x", { exact: true }).inputValue(), "0");
+  await page.getByLabel("Mask vertex 1 x", { exact: true }).fill("0.25");
+  await page.getByLabel("Mask vertex 1 x", { exact: true }).press("Tab");
+  await idle();
+  await page.getByLabel("Invert clipping mask", { exact: true }).selectOption("yes");
+  await idle();
+  await page.getByRole("button", { name: "Insert mask vertex after 1", exact: true }).click();
+  await idle();
+  await page.getByRole("button", { name: "Remove mask vertex 5", exact: true }).click();
+  await idle();
+  await page.getByRole("button", { name: "Remove mask vertex 4", exact: true }).click();
+  await idle();
+  await page.getByLabel("Mask vertex 3 y", {exact:true}).fill("1");
+  await page.getByLabel("Mask vertex 3 y", {exact:true}).press("Tab");
+  await idle();
+  assert(await page.getByRole("button", { name: "Remove mask vertex 1", exact: true }).isDisabled());
+  await page.getByLabel("Library item name", { exact: true }).fill("Triangle window");
+  await page.getByLabel("Library item name", { exact: true }).press("Tab");
+  await idle();
+  await page.getByRole("button", { name: "Save clipping mask", exact: true }).click();
+  await idle();
+  await page.getByRole("button", { name: "Apply Triangle window", exact: true }).click();
+  await idle();
+  await page.waitForFunction(() => Object.keys(window.studio.getProject().manifest.authoring.masks ?? {}).length === 1);
+  const retainedMask = await page.evaluate(async () => {
+    const p = window.studio.getProject(), node = p.scenes.get("scenes/front.json").nodes.find(n=>n.type === "text");
+    window.maskLayerId = node.id;
+    window.retainedMaskPackage = (await p.export({retainSources:true})).archive;
+    return node.mask;
+  });
+  await page.getByLabel("Mask vertex 1 x", { exact: true }).fill("0.75");
+  await page.getByLabel("Mask vertex 1 x", { exact: true }).press("Tab");
+  await idle();
+  assert.equal(await page.evaluate(() => Object.keys(window.studio.getProject().manifest.authoring.masks).length), 0);
+  await page.getByRole("button", { name: "Apply Triangle window", exact: true }).click();
+  await idle();
+  assert.equal(await page.getByLabel("Mask vertex 1 x", { exact: true }).inputValue(), "0.25");
+  assert.deepEqual(await page.evaluate(async () => {
+    const {importPackage} = await import("/src/presentation/package.js"), restored = await importPackage(window.retainedMaskPackage);
+    return restored.scenes.get("scenes/front.json").nodes.find(n=>n.id===window.maskLayerId).mask;
+  }), retainedMask);
+  await page.evaluate(async()=>{
+    const p=window.studio.getProject();
+    p.edit(()=>{p.scenes.get("scenes/front.json").nodes.find(n=>n.id===window.maskLayerId).mask.polygon=Array.from({length:64},(_,i)=>[0.5+0.5*Math.cos(i*Math.PI/32),0.5+0.5*Math.sin(i*Math.PI/32)]);});
+    await window.studio.refreshPolicy();
+  });
+  assert(await page.getByRole("button",{name:"Insert mask vertex after 1",exact:true}).isDisabled());
+  await page.getByRole("button",{name:"Undo",exact:true}).click();
+  await idle();
+  await page.waitForFunction(() => window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.id===window.maskLayerId).mask.polygon.length === 3 &&
+    !document.querySelector('[aria-label="Mask vertex 4 x"]'));
+  const rapidMaskUndo = await page.evaluate(async()=>{
+    const p=window.studio.getProject(), before=p.serialize(), control=document.querySelector('[aria-label="Mask vertex 1 x"]'),
+      undo=[...document.querySelectorAll("button")].find(button=>button.textContent === "Undo");
+    control.value="0.6";
+    const change=control.onchange(), revert=undo.onclick();
+    await Promise.all([change,revert]);
+    return {before,after:p.serialize()};
+  });
+  assert.deepEqual(rapidMaskUndo.after,rapidMaskUndo.before);
+  await page.screenshot({path:resolve(output,"clipping-mask.png"),fullPage:true});
+  const maskChooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Upload clipping mask image", exact: true }).click();
+  await idle();
+  await (await maskChooser).setFiles({name:"alpha-mask.png",mimeType:"image/png",buffer:Buffer.from(
+    pngRGBA(2,2,new Uint8Array([255,255,255,0,255,255,255,255,255,255,255,255,255,255,255,0])))});
+  await page.waitForFunction(() => window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.id===window.maskLayerId).mask?.asset);
+  await page.waitForFunction(() => document.querySelector('[aria-label="Clipping mask source"]')?.value.startsWith("image:"));
+  assert((await page.getByLabel("Clipping mask source", {exact:true}).inputValue()).startsWith("image:"));
+  await page.getByRole("button", {name:"Remove clipping mask",exact:true}).click();
+  await idle();
+  assert.equal(await page.getByLabel("Clipping mask source", {exact:true}).inputValue(),"none");
+  await page.getByText("Arrange layers",{exact:true}).click();
+  await idle();
+  await page.getByRole("button",{name:"Lock selected",exact:true}).click();
+  await idle();
+  assert(await page.getByLabel("Clipping mask source",{exact:true}).isDisabled());
+  assert(await page.getByRole("button",{name:"Upload clipping mask image",exact:true}).isDisabled());
+  await page.getByText("Arrange layers",{exact:true}).click();
+  await idle();
+  await page.getByRole("button",{name:"Unlock selected",exact:true}).click();
+  await idle();
+  checks.push("polygon bounds/inversion/vertex counts, immutable named reuse, local-reference detachment and alpha-image upload/removal");
   const fontChooser = page.waitForEvent("filechooser");
   await page
     .getByRole("button", { name: "Add custom font", exact: true })
     .click();
+    await idle();
   await (
     await fontChooser
   ).setFiles({
@@ -262,6 +433,7 @@ try {
   );
   await page.getByLabel("Font size", { exact: true }).fill("24");
   await page.getByLabel("Font size", { exact: true }).press("Tab");
+  await idle();
   await page.evaluate(async () => {
     const { configureAuthoring, addStatBlock, setStat } =
       await import("/src/presentation/authoring-tools.js");
@@ -283,6 +455,7 @@ try {
     await window.studio.open(await p.export({ retainSources: true }));
   });
   await page.getByRole("button", { name: "Front / back", exact: true }).click();
+  await idle();
   await page.waitForFunction(() =>
     document
       .querySelector('[role="img"]')
@@ -293,6 +466,7 @@ try {
   await page
     .getByRole("spinbutton", { name: "Score", exact: true })
     .press("Tab");
+    await idle();
   await page.waitForFunction(() =>
     document
       .querySelector('[role="img"]')
@@ -317,32 +491,45 @@ try {
   assert.equal(await page.getByLabel("Enabled", { exact: true }).inputValue(), "");
   assert.equal(await page.getByLabel("Category", { exact: true }).inputValue(), "");
   await page.getByLabel("Enabled", { exact: true }).selectOption("false");
+  await idle();
   await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.card.enabled === false);
   await page.getByLabel("Enabled", { exact: true }).selectOption("null");
+  await idle();
   await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.card.enabled === null);
   await page.getByLabel("Enabled", { exact: true }).selectOption("");
+  await idle();
   await page.waitForFunction(() => !Object.hasOwn(window.studio.getProject().manifest.authoring.values.card, "enabled"));
   await page.getByRole("button", { name: "Add Variant score to card", exact: true }).click();
+  await idle();
   await page.getByText("Styled text spans", { exact: true }).click();
+  await idle();
   await page.getByText("Bound text comes from its stat field. Use the stat formatting controls to change its display.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Add text span", exact: true }).count(), 0);
   await page.getByLabel("Stat label", { exact: true }).fill("Edition");
   await page.getByLabel("Stat label", { exact: true }).press("Tab");
+  await idle();
   await page.waitForFunction(() => document.querySelector('[role="img"]')?.getAttribute("aria-label")?.includes("Edition 99"));
   assert.equal(await page.getByLabel("Bound field", { exact: true }).inputValue(), '["variant","score"]');
   await page.getByLabel("Stat appearance", { exact: true }).selectOption("bar");
+  await idle();
   await page.getByLabel("Bar maximum", { exact: true }).fill("200");
   await page.getByLabel("Bar maximum", { exact: true }).press("Tab");
+  await idle();
   await page.waitForFunction(() => window.studio.getProject().scenes.get("scenes/back.json").nodes.some(n => n.stat?.maximum === 200));
   await page.getByRole("button", { name: "Copy text style", exact: true }).click();
+  await idle();
   await page.getByText("Arrange layers", { exact: true }).click();
+  await idle();
   await page.getByRole("button", { name: "Lock selected", exact: true }).click();
+  await idle();
   await page.getByRole("button", { name: "Paste text style", exact: true }).click();
+  await idle();
   await page.waitForFunction(() => document.querySelector(".dcard-studio").textContent.includes("Unlock this layer to edit it"));
   checks.push("unset/false/null stat forms, scoped bindings, artist bar controls and locked-style protection");
   await page
     .getByRole("button", { name: "Save card as template", exact: true })
     .click();
+    await idle();
   await page.waitForFunction(() =>
     document.querySelector(".dcs-authoring").textContent.includes("· template"),
   );
@@ -439,11 +626,15 @@ try {
     await window.studio.refreshPolicy();
   });
   await page.getByText("Card policy", { exact: true }).click();
+  await idle();
   await page.getByRole("button", { name: "foo.bar: Text is below the minimum size", exact: true }).click();
+  await idle();
   await page.getByRole("dialog").getByText("This layer ID is used on multiple faces. Choose the layer to inspect.", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Inspect front / Text", exact: true }).click();
+  await idle();
   assert.equal(await page.getByLabel("Text content", { exact: true }).inputValue(), "Short");
   await page.getByText("Card policy", { exact: true }).click();
+  await idle();
   const overflowId = await page.evaluate(() => window.overflowLayer);
   const overflowIssue = page.getByRole("button", { name: "back / " + overflowId + ": Text overflows its box", exact: true });
   assert.equal(await overflowIssue.count(), 1);
@@ -452,7 +643,9 @@ try {
   await page.getByRole("heading", { name: "Back layers", exact: true }).waitFor();
   assert.equal(await page.getByLabel("Text content", { exact: true }).inputValue(), "A title too long for its box");
   await page.getByText("Card policy", { exact: true }).click();
+  await idle();
   await page.getByRole("button", { name: "card.stats.museum.catalog: Required field is missing", exact: true }).click();
+  await idle();
   const catalogInput = page.getByLabel("Catalog number *", { exact: true });
   assert.equal(await catalogInput.getAttribute("aria-invalid"), "true");
   assert(await catalogInput.evaluate(el => document.activeElement === el));
@@ -476,15 +669,19 @@ try {
   await page
     .getByRole("button", { name: "Open visual card editor", exact: true })
     .click();
+    await idle();
   await page.waitForFunction(() => document.querySelector(".dcard-studio"));
   await page.getByRole("button", { name: "Add text", exact: true }).click();
+  await idle();
   await page
     .getByLabel("Text content", { exact: true })
     .fill("Published design");
   await page.getByLabel("Text content", { exact: true }).press("Tab");
+  await idle();
   await page
     .getByRole("button", { name: "Capture posters", exact: true })
     .click();
+    await idle();
   await page.getByRole("button", { name: "Publish", exact: true }).click();
   await page
     .getByRole("button", { name: "Publish reviewed card", exact: true })
@@ -492,6 +689,7 @@ try {
   await page
     .getByRole("button", { name: "Publish reviewed card", exact: true })
     .click();
+    await idle();
   await page.getByText("Card published.", { exact: true }).waitFor();
   assert(core.operatorCatalog(admin).cards[0].presentation);
   checks.push(
@@ -501,6 +699,7 @@ try {
     .getByText("Administrator card policies", { exact: true })
     .first()
     .click();
+    await idle();
   const policy = {
     schemaVersion: 1,
     id: "browser.policy",
@@ -523,6 +722,7 @@ try {
   await page
     .getByRole("button", { name: "Save policy draft", exact: true })
     .click();
+    await idle();
   await page.getByText("Policy library revision 1", { exact: true }).waitFor();
   await page
     .getByLabel("Policy assignments", { exact: true })
@@ -532,12 +732,14 @@ try {
   await page
     .getByRole("button", { name: "Preview policy impact", exact: true })
     .click();
+    await idle();
   await page
     .getByLabel("I reviewed the policy changes and affected cards.")
     .check();
   await page
     .getByRole("button", { name: "Activate reviewed policy", exact: true })
     .click();
+    await idle();
   await page.getByText("Policy library revision 2", { exact: true }).waitFor();
   checks.push(
     "administrator saves, reviews field-level impact and activates a policy using keyboard-accessible controls",
@@ -547,6 +749,27 @@ try {
     path: resolve(output, "mobile.png"),
     fullPage: true,
   });
+  const disposalQueue = await page.evaluate(async()=>{
+    const {mountStudio}=await import("/src/presentation/studio.js"),
+      {importPackage}=await import("/src/presentation/package.js"),
+      {createMemoryLibrary}=await import("/src/presentation/authoring-tools.js"),
+      root=document.createElement("div");
+    document.body.append(root);
+    const editor=mountStudio(root,{initialPackage:await importPackage(new Uint8Array(await(await fetch("/fixture.dcard")).arrayBuffer())),library:createMemoryLibrary()});
+    await editor.ready;
+    const before=editor.getProject().serialize(), buttons=[...root.querySelectorAll("button")], retainedAdd=buttons.find(button=>button.textContent==="Add text"),
+      add=retainedAdd.onclick(), undo=buttons.find(button=>button.textContent==="Undo").onclick();
+    editor.dispose();
+    await Promise.all([add,undo]);
+    await retainedAdd.onclick();
+    const after=editor.getProject().serialize(),children=root.childElementCount,busy=root.getAttribute("aria-busy");
+    root.remove();
+    return {before,after,children,busy};
+  });
+  assert.deepEqual(disposalQueue.after,disposalQueue.before);
+  assert.equal(disposalQueue.children,0);
+  assert.equal(disposalQueue.busy,null);
+  checks.push("shared authoring/undo queue preserves rapid edits and fences queued work after disposal");
   assert.equal(errors.length, 0, errors.join("\n"));
   await writeFile(
     resolve(output, "results.json"),
@@ -560,6 +783,10 @@ try {
       .screenshot({ path: resolve(output, "failure.png"), fullPage: true })
       .catch(() => {});
     console.error((await page.locator("body").innerText()).slice(-7000));
+    console.error(JSON.stringify(await page.evaluate(()=>({
+      textLayers: window.studio?.getProject()?.scenes.get("scenes/front.json")?.nodes.filter(n=>n.type === "text").map(n=>({id:n.id,text:n.text,runs:n.runs})),
+      spanControls: [...document.querySelectorAll('[aria-label^="Span "]')].map(control=>({label:control.getAttribute("aria-label"),value:control.value})),
+    }))).slice(0,6000));
   }
   throw error;
 } finally {

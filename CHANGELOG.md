@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added Studio controls for polygon and image clipping masks, inversion, vertex editing and immutable saved-mask reuse.
 - Added TypeScript declarations for the trade draft component, with validated inventory responses and persisted draft inputs.
 - Added server-owned command recovery with account-scoped discovery, immutable reviewed inputs and explicit acknowledgement. A fresh browser or admin panel can recover an unconfirmed action after local storage is erased without repeating its debit or issuance.
 - Added typed existing client/admin-controller APIs and checked inventory, trade, administration and command-recovery responses.
@@ -25,6 +26,7 @@
 
 ### Fixed
 
+- Serialized Studio authoring and undo actions, and prevented queued edits from running after disposal. Mask inversion now requires a boolean value.
 - Preserved original purchase inputs and retry keys across remounts and later authentication/rate-limit failures. Admin saves stop before dispatch when their recovery journal cannot be stored safely.
 - Reserved refundable balance headroom so later credits cannot prevent escrow refunds, and fenced disposed controllers against obsolete requests and callbacks.
 - Fixed concurrent SQLite startup snapshot copying and pending purchase pagination after terminal transitions.
