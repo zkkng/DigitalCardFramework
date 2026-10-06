@@ -718,6 +718,8 @@ try {
     .click();
     await idle();
   await page.waitForFunction(() => document.querySelector(".dcard-studio"));
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some(button=>button.textContent === "Open visual card editor" && !button.disabled));
+  assert(await page.locator(".dcard-studio").evaluate(element=>!element.inert && element.getAttribute("aria-busy") !== "true"));
   await page.getByRole("button", { name: "Add text", exact: true }).click();
   await idle();
   await page
@@ -816,6 +818,18 @@ try {
   assert.deepEqual(disposalQueue.after,disposalQueue.before);
   assert.equal(disposalQueue.children,0);
   assert.equal(disposalQueue.busy,null);
+  const visualDisposal=await page.evaluate(async()=>{
+    const {mountVisualStudio}=await import("/src/visual-studio-ui.js"),root=document.createElement("div"),catalog=await window.client.operatorCatalog();
+    document.body.append(root);
+    let finish,catalogCalls=0,policyCalls=0;
+    const pending=new Promise(resolve=>{finish=resolve;}),view=mountVisualStudio(root,{
+      model:{me:{role:"artist"},catalog},client:{operatorCatalog:()=>{catalogCalls++;return pending;},effectiveCardPolicy:()=>{policyCalls++;throw new Error("Policy load after disposal");}},
+    }),launch=[...root.querySelectorAll("button")].find(button=>button.textContent==="Open visual card editor"),opening=launch.onclick();
+    view.dispose();finish(catalog);await opening;await launch.onclick();
+    const children=root.childElementCount;
+    root.remove();return{catalogCalls,policyCalls,children};
+  });
+  assert.deepEqual(visualDisposal,{catalogCalls:1,policyCalls:0,children:0});
   checks.push("shared authoring/undo queue preserves rapid edits and fences queued work after disposal");
   assert.equal(errors.length, 0, errors.join("\n"));
   await writeFile(

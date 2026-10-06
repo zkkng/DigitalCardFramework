@@ -31,6 +31,7 @@
 
 ### Fixed
 
+- Keep the visual editor inactive until its card and policy finish loading, preventing early edits from racing initialization.
 - Validate recovered command results and their original intent before confirming success. Malformed recovery replies preserve the original key for safe retry.
 - Serialized Studio authoring and undo actions, and prevented queued edits from running after disposal. Mask inversion now requires a boolean value.
 - Preserved original purchase inputs and retry keys across remounts and later authentication/rate-limit failures. Admin saves stop before dispatch when their recovery journal cannot be stored safely.

@@ -227,12 +227,17 @@ export function mountVisualStudio(
     });
   }
   async function open(makeNew = false) {
+    if (disposed) return;
     launch.disabled = fresh.disabled = true;
+    canvas.inert = true;
+    canvas.setAttribute("aria-busy", "true");
     try {
-      const catalog = await client.operatorCatalog(),
-        card = catalog.cards.find((c) => c.id === destination),
+      const catalog = await client.operatorCatalog();
+      if (disposed) return;
+      const card = catalog.cards.find((c) => c.id === destination),
         variant = catalog.variants.find((v) => v.id === variantId),
         policy = await destinationPolicy();
+      if (disposed) return;
       const ref = variant?.presentation ?? card?.presentation;
       let initialPackage;
       if (!makeNew && ref)
@@ -242,6 +247,7 @@ export function mountVisualStudio(
         if (!entry) throw new Error("Default template is unavailable");
         initialPackage = await loadTemplate(entry);
       } else initialPackage = await blankPackage();
+      if (disposed) return;
       initialPackage.manifest.title = card?.name ?? "Untitled card";
       studio?.dispose();
       studio = mountStudio(canvas, {
@@ -251,6 +257,7 @@ export function mountVisualStudio(
         onPublish: publish,
       });
       await studio.ready;
+      if (disposed) return;
       configureAuthoring(studio.getProject(), {
         policy: policy.policy,
         policyRevision: policy.revision,
@@ -267,12 +274,17 @@ export function mountVisualStudio(
         };
       });
       await studio.refreshPolicy();
+      if (disposed) return;
       status.textContent =
         "Edit the card, capture its posters, then publish a reviewed revision.";
     } catch (e) {
-      status.textContent = e.message;
+      if (!disposed) status.textContent = e.message;
     } finally {
-      launch.disabled = fresh.disabled = false;
+      if (!disposed) {
+        launch.disabled = fresh.disabled = false;
+        canvas.inert = false;
+        canvas.removeAttribute("aria-busy");
+      }
     }
   }
   launch.onclick = () => open();
