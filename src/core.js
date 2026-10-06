@@ -276,7 +276,7 @@ export class CardFramework {
         tx.put('users',user.id,user);for(const field of ['requests','actionJobs','completionObligations'])for(const [id,value]of Object.entries(state[field]??{}))tx.put(field,id,value);for(const event of state.events)tx.append('events',event);return result;
       }finally{recordContexts.delete(state);}
     },{preferences:true});
-    try{return execute();}catch(error){if(error.code!=='RECORD_MIGRATION_REQUIRED')throw error;this.#store.prepareRecordTransactions();return execute();}
+    try{return execute();}catch(error){if(error.code!=='RECORD_MIGRATION_REQUIRED')throw error;this.#store.read(state=>this.#admission(state));this.#store.prepareRecordTransactions();return execute();}
   }
   #preferencesBody(s,u,{inventoryVisibility,favoriteCopyIds,wishlistCardIds,blockedUserIds}){
       const next=this.#preferences(u);

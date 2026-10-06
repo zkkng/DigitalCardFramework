@@ -40,6 +40,7 @@
 
 ### Fixed
 
+- Reject preferences admission before preparing storage metadata when legacy completion reservations still require migration.
 - Preserve full-image alpha sampling for renderer masks without decoded dimensions, and synchronize the published mask schema.
 - Keep the visual editor inactive until its card and policy finish loading, preventing early edits from racing initialization.
 - Validate recovered command results and their original intent before confirming success. Malformed recovery replies preserve the original key for safe retry.
