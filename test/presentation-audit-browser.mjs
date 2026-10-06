@@ -131,6 +131,19 @@ try {
     external.dispose();
     results.push(check(true, "public cross-origin card metadata and artwork still load"));
     const diagnostics=[],stage = createPlayerStage({ root,onDiagnostic:event=>diagnostics.push(event) });
+    const awaitQuiescence = async () => {
+      const deadline=performance.now()+5000,samples=[];let stableSince=performance.now(),previous=stage.diagnostics().frames;
+      while(performance.now()<deadline){
+        await new Promise(resolve=>setTimeout(resolve,25));
+        const current=stage.diagnostics(),now=performance.now();
+        samples.push({elapsed:Math.round(5000-(deadline-now)),frames:current.frames,scheduledFrames:current.scheduledFrames,pendingJobs:current.pendingJobs});
+        if(samples.length>20)samples.shift();
+        if(current.frames!==previous||current.scheduledFrames!==0||current.pendingJobs!==0)stableSince=now;
+        previous=current.frames;
+        if(now-stableSince>=250)return {current,samples};
+      }
+      throw new Error('Input-driven stage did not become quiescent within 5000ms: '+JSON.stringify({stage:stage.diagnostics(),samples,diagnostics}));
+    };
     let view = stage.mount(root, { resolver });
     const initialReady = await view.ready;
     await settle();
@@ -160,12 +173,14 @@ try {
         stage.diagnostics(),
       ),
     );
-    const before = stage.diagnostics().frames;
-    await settle();
+    const quiescence = await awaitQuiescence(),before = quiescence.current.frames;
+    await new Promise(resolve=>setTimeout(resolve,250));
+    const afterIdle=stage.diagnostics();
     results.push(
       check(
-        stage.diagnostics().frames === before,
+        afterIdle.frames === before && afterIdle.scheduledFrames === 0 && afterIdle.pendingJobs === 0,
         "input-driven idle schedules no continuous frames",
+        {before,afterIdle,quiescence:quiescence.samples,diagnostics},
       ),
     );
     for (let i = 0; i < 20; i++) {
