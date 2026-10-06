@@ -1,15 +1,10 @@
 import { FrameworkError } from "./catalog.js";
+import {actionProtocol as protocol,validateActionDelivery,validateActionAcknowledgment} from './action-contracts.js';
+export {actionProtocol,actionDeliverySchema,validateActionDelivery,validateActionAcknowledgment} from './action-contracts.js';
 
 const fail = (code, message, status = 503) => {
   throw new FrameworkError(code, message, status);
 };
-const protocol = "digital-card-action@1";
-const exact = (value, fields) =>
-  value &&
-  typeof value === "object" &&
-  !Array.isArray(value) &&
-  Object.keys(value).length === fields.length &&
-  fields.every((key) => Object.hasOwn(value, key));
 
 /** Sends already committed jobs to an operator-configured external receiver. */
 export function createRemoteActionHandler({
@@ -69,7 +64,7 @@ export function createRemoteActionHandler({
     )
       fail("PLUGIN_JOB", "Committed job identity required", 400);
     signal?.throwIfAborted();
-    const body = JSON.stringify({
+    const body = JSON.stringify(validateActionDelivery({
       protocol,
       pluginId,
       handlerId,
@@ -77,7 +72,7 @@ export function createRemoteActionHandler({
       beneficiaryId: userId,
       source,
       params,
-    });
+    }));
     if (Buffer.byteLength(body) > maxRequestBytes)
       fail("PLUGIN_LIMIT", "Plugin request too large", 400);
     const deadline = AbortSignal.timeout(timeoutMs);
@@ -132,8 +127,8 @@ export function createRemoteActionHandler({
     } finally {
       reader.releaseLock();
     }
+    validateActionAcknowledgment(result);
     if (
-      !exact(result, ["protocol", "pluginId", "jobId", "status"]) ||
       result.protocol !== protocol ||
       result.pluginId !== pluginId ||
       result.jobId !== idempotencyKey ||

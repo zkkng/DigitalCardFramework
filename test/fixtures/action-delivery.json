@@ -1,0 +1,16 @@
+{
+  "protocol": "digital-card-action@1",
+  "pluginId": "example.receiver",
+  "handlerId": "example.record",
+  "jobId": "golden-delivery",
+  "beneficiaryId": "collector",
+  "source": {"type":"card.opened","copyId":"copy-golden","packId":null},
+  "params": {
+    "label":"雪 • 𝄞 • <badge> • \u2028",
+    "safeInteger":9007199254740991,
+    "fraction":1.25,
+    "decimal":"9223372036854775807",
+    "at":"2026-10-05T00:00:00.000Z",
+    "nested":[null,true,{"雪":"✓","𝄞":"♪"}]
+  }
+}

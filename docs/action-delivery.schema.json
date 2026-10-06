@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://digital-card.invalid/action-delivery/v1",
+  "$ref": "#/$defs/request",
+  "$defs": {
+    "json": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string",
+          "not": {
+            "pattern": "[\\uD800-\\uDFFF]"
+          }
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/json"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "allOf": [
+              {
+                "not": {
+                  "enum": [
+                    "__proto__",
+                    "constructor",
+                    "prototype"
+                  ]
+                }
+              },
+              {
+                "type": "string",
+                "not": {
+                  "pattern": "[\\uD800-\\uDFFF]"
+                }
+              }
+            ]
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          }
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "pluginId",
+        "handlerId",
+        "jobId",
+        "beneficiaryId",
+        "source",
+        "params"
+      ],
+      "properties": {
+        "protocol": {
+          "const": "digital-card-action@1"
+        },
+        "pluginId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$"
+        },
+        "handlerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$"
+        },
+        "jobId": {
+          "type": "string",
+          "not": {
+            "pattern": "[\\uD800-\\uDFFF]"
+          },
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "beneficiaryId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "not": {
+                "pattern": "[\\uD800-\\uDFFF]"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "object",
+          "propertyNames": {
+            "allOf": [
+              {
+                "not": {
+                  "enum": [
+                    "__proto__",
+                    "constructor",
+                    "prototype"
+                  ]
+                }
+              },
+              {
+                "type": "string",
+                "not": {
+                  "pattern": "[\\uD800-\\uDFFF]"
+                }
+              }
+            ]
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          }
+        },
+        "params": {
+          "type": "object",
+          "propertyNames": {
+            "allOf": [
+              {
+                "not": {
+                  "enum": [
+                    "__proto__",
+                    "constructor",
+                    "prototype"
+                  ]
+                }
+              },
+              {
+                "type": "string",
+                "not": {
+                  "pattern": "[\\uD800-\\uDFFF]"
+                }
+              }
+            ]
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          }
+        }
+      }
+    },
+    "acknowledgment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "pluginId",
+        "jobId",
+        "status"
+      ],
+      "properties": {
+        "protocol": {
+          "const": "digital-card-action@1"
+        },
+        "pluginId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$"
+        },
+        "jobId": {
+          "type": "string",
+          "not": {
+            "pattern": "[\\uD800-\\uDFFF]"
+          },
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "const": "completed"
+        }
+      }
+    }
+  }
+}

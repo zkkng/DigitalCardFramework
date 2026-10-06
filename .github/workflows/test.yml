@@ -35,6 +35,27 @@ jobs:
       - run: node examples/shops.mjs
       - run: node examples/raffles.mjs
       - run: docker build --tag digital-card-framework:ci .
+  receivers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.19.0'
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: examples/plugins/go-action-receiver/go.mod
+          cache-dependency-path: examples/plugins/go-action-receiver/go.sum
+      - run: go build -mod=readonly -buildvcs=false -trimpath -o "$RUNNER_TEMP/action-receiver" .
+        working-directory: examples/plugins/go-action-receiver
+      - run: node test/action-receiver-conformance.mjs "$RUNNER_TEMP/action-receiver" python3
   browser:
     runs-on: ubuntu-latest
     strategy:

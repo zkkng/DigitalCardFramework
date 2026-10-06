@@ -1,8 +1,11 @@
+import type {ActionJson} from './action-contracts.js';
+export {actionProtocol,actionDeliverySchema,validateActionDelivery,validateActionAcknowledgment} from './action-contracts.js';
+export type {ActionJson,ActionDelivery,ActionAcknowledgment} from './action-contracts.js';
 export interface CommittedAction {
   idempotencyKey: string;
   userId: string | null;
-  source: Record<string, unknown>;
-  params: Record<string, unknown>;
+  source: Record<string, ActionJson>;
+  params: Record<string, ActionJson>;
   signal?: AbortSignal;
 }
 export interface RemoteActionOptions {

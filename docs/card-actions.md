@@ -83,11 +83,15 @@ Default **Account rewards** shows delivery state and refresh controls. Operators
 
 The Node host can deliver committed action jobs to a separate service using `createRemoteActionHandler`, exported from the framework's `remote-actions` subpath. The receiver can be written in any language that implements the HTTP/JSON contract. A [Python standard-library receiver](../examples/plugins/python-action-receiver.py) and [host configuration](../examples/plugins/remote-host.mjs) demonstrate durable acknowledgment without modifying the core.
 
+The [Go receiver](../examples/plugins/go-action-receiver/main.go) implements the same receipt-recording operation with a pinned pure Go SQLite driver. Build it with Go 1.27.1: enter `examples/plugins/go-action-receiver` and run `go build -mod=readonly -trimpath .`. Set `PLUGIN_TOKEN` securely, then run `./action-receiver deliveries.sqlite 8081` (`.\action-receiver.exe` on Windows). The built receiver needs no Go compiler at deployment. Both examples use the same receipt-table format, so a stopped receiver can be replaced by the other implementation using its existing database.
+
 Set `PLUGIN_TOKEN` securely in the receiver's environment, then run `python examples/plugins/python-action-receiver.py deliveries.sqlite 8081`. The example binds loopback and records deliveries in SQLite. It demonstrates receipt deduplication; replace its record operation with an authoritative provider operation before using it to deliver real rewards. Provider effects and deduplication must commit together, or the provider must supply its own idempotent operation/reconciliation protocol.
 
 Configure the host's `ACTION_PLUGIN_URL` as `http://127.0.0.1:8081/actions`, `ACTION_PLUGIN_TOKEN` to match, and `HOST_MODULE` to the example host module or an equivalent installed module. Declare an opening action with handler `example.record`. The existing durable worker invokes the adapter only after the action job is committed. Remote endpoints require HTTPS; loopback HTTP is permitted. HTTP redirects are rejected.
 
 The request is a POST with JSON content, bearer authentication and an `Idempotency-Key` header matching `jobId`:
+
+The [versioned JSON Schema](action-delivery.schema.json) defines requests and acknowledgments. The existing `remote-actions` export also provides `actionDeliverySchema`, `validateActionDelivery` and `validateActionAcknowledgment`, with declarations for JSON metadata. The adapter checks committed inputs before making a request. Metadata must contain JSON values; executable values, nonfinite numbers, reserved object keys and excessive nesting are rejected. Existing framework metadata budgets apply: 32 KiB, 10,000 values and depth 16 for each of `source` and `params`.
 
 ```json
 {
@@ -103,6 +107,8 @@ The request is a POST with JSON content, bearer authentication and an `Idempoten
 
 The receiver must validate the configured plugin/handler identity, authenticate requests, map the beneficiary through trusted provider configuration, and persist deduplication. Reusing a job ID with different terms must conflict. A retry after restart must return the original outcome. Framework IDs are not automatically account IDs in another system.
 
+The examples compare parsed terms, preserving numeric text with exact decimal parsing rather than collapsing large integers through a floating-point decoder. Equivalent property order and decimal spellings replay the original receipt; booleans and numbers remain distinct. Receipts retain their original payload bytes and digest, including receipts written by the older Python example. SDK callers use JavaScript numbers; use decimal strings for integer quantities beyond JavaScript's safe integer range. Invalid UTF-8, unpaired surrogates, duplicate properties and numeric exponents outside −400 through 400 are rejected by the receivers.
+
 A successful response is HTTP 200 with JSON and exactly these fields:
 
 ```json
@@ -116,6 +122,10 @@ A successful response is HTTP 200 with JSON and exactly these fields:
 
 Wrong identities, versions, pending results and extra fields cannot settle the job. Default limits are a 10-second deadline, 64 KiB request and 8 KiB response; host options can lower them. Aborted, unavailable or rejected deliveries remain subject to the existing durable retry and reconciliation model. Response bodies and credentials are not included in adapter errors.
 
+The receivers default to 10,000 retained receipts and a 64 MiB SQLite database ceiling. `PLUGIN_MAX_RECEIPTS` and `PLUGIN_MAX_DATABASE_BYTES` configure these budgets. New identities receive HTTP 507 when capacity is exhausted; known receipts can still replay after a budget is reduced. Receipts are never deleted to admit new work. Corrupt stored payload digests receive HTTP 503. SQLite commits the example's record operation and deduplication together; this does not make a separate provider effect atomic or qualify machine power loss. The Python receiver serves one request at a time; Go limits accepted connections to eight, admits four concurrent requests and rejects excess request admission with HTTP 429. Both use bounded socket/database deadlines.
+
 This route supports action delivery and configured event subscriptions. It does not supply remote allocation policies, arbitrary framework commands, plugin registration, UI/editor extensions or an OS sandbox. Each of those needs its own contract. The receiver is a privileged installed service; restrict its credentials, filesystem and network access through deployment policy.
 
 The base installation needs no Python runtime. To qualify the Python example locally, set `DC_TEST_PYTHON_PLUGIN=1` and run `node --test test/remote-actions.test.js`; `PYTHON` may name a specific interpreter. Other languages can implement this wire contract, but their implementations require separate qualification.
+
+Run the shared HTTP fixtures with `node test/action-receiver-conformance.mjs PATH_TO_GO_RECEIVER python3`, or use `--python-only` in place of the executable to exercise only Python. These fixtures cover Unicode/numeric golden terms, malformed and forged requests, concurrent duplicates, final receipt capacity, reduced budgets, corruption refusal, committed acknowledgment loss and cross-language database replay. This is receipt-delivery qualification; it does not establish remote policy, scoped-command, registration or browser contribution support.
