@@ -1,4 +1,4 @@
-"""Standard-library transport example for the authenticated readonly plugin protocol."""
+"""Standard-library transport example for authenticated scoped plugin commands."""
 import json
 import os
 import re
@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 
 PROTOCOL = "digital-card-plugin@1"
-COMMANDS = {"inventory.read", "catalog.read"}
+COMMANDS = {"inventory.read", "catalog.read", "purchase.quote", "purchase.register", "purchase.pending", "purchase.execute", "purchase.acknowledge"}
 TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 
 class NoRedirect(HTTPRedirectHandler):
@@ -115,8 +115,25 @@ if __name__ == "__main__":
         client = PluginClient(os.environ["PLUGIN_CONTROL_URL"], os.environ.get("PLUGIN_ID", "example.reader"),
                               os.environ.get("PLUGIN_VERSION", "1.0.0"), os.environ["PLUGIN_TOKEN"], os.environ["PLUGIN_DELEGATION"])
         client.handshake()
-        result = client.command("catalog.read" if "--catalog" in sys.argv else "inventory.read", {} if "--catalog" in sys.argv else {"limit": 1})
-        client.close()
+        try:
+            if "--command-json" in sys.argv:
+                raw = sys.stdin.buffer.read(65537)
+                if len(raw) > 65536:
+                    raise PluginError("PLUGIN_LIMIT", 413)
+                try:
+                    requested = json.loads(raw.decode("utf-8"))
+                    if set(requested) != {"command", "input"}:
+                        raise ValueError()
+                    result = client.command(requested["command"], requested["input"])
+                except (ValueError, TypeError, UnicodeError):
+                    raise PluginError("PLUGIN_CONTRACT", 400) from None
+            else:
+                result = client.command("catalog.read" if "--catalog" in sys.argv else "inventory.read", {} if "--catalog" in sys.argv else {"limit": 1})
+        finally:
+            try:
+                client.close()
+            except PluginError:
+                pass
         print(json.dumps(result, ensure_ascii=False))
     except PluginError as error:
         print(error.code + " HTTP " + str(error.status), file=sys.stderr)

@@ -1077,6 +1077,504 @@
             "type": "boolean"
           }
         }
+      },
+      "QuoteRequest": {
+        "type": "object",
+        "required": [
+          "productId"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "Quote": {
+        "type": "object",
+        "required": [
+          "productId",
+          "quantity",
+          "productRevision",
+          "catalogVersion",
+          "price",
+          "adminRevision"
+        ],
+        "properties": {
+          "productId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "productRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "catalogVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "adminRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "additionalProperties": false
+      },
+      "Money": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "currencyId",
+          "amount"
+        ],
+        "properties": {
+          "currencyId": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "Purchase": {
+        "type": "object",
+        "required": [
+          "key",
+          "productId",
+          "quantity",
+          "productRevision",
+          "catalogVersion"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "productId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "productRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "catalogVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "adminRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Administration revision from the reviewed quote. Stale prices or odds require a new quote.",
+            "maximum": 9007199254740991
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommandIntentId": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
+      "CommandIntent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "userId",
+          "command",
+          "input",
+          "state",
+          "createdAt",
+          "completedAt",
+          "error"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "command": {
+            "enum": [
+              "purchase",
+              "openPack",
+              "convert",
+              "tradeUp",
+              "saveAlbum",
+              "proposeTrade",
+              "acceptTrade",
+              "cancelTrade",
+              "consumeBinding",
+              "counterTrade",
+              "preferences",
+              "readNotifications",
+              "commitImport",
+              "reportCodeUsage",
+              "createShop",
+              "createListing",
+              "buyListing",
+              "cancelListing",
+              "enterRaffle",
+              "openCard",
+              "configureAdmin",
+              "administerCards"
+            ]
+          },
+          "input": {
+            "type": "object",
+            "required": [
+              "key"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "completed",
+              "failed",
+              "acknowledged"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "code",
+                  "message",
+                  "status"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "integer",
+                    "minimum": 400,
+                    "maximum": 599
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "PurchaseResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "packs",
+          "paid"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "packs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackView"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "paid": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "PackView": {
+        "type": "object",
+        "required": [
+          "id",
+          "ownerId",
+          "productId",
+          "productRevision",
+          "lineId",
+          "catalogVersion",
+          "product",
+          "purchaseId",
+          "batchIndex",
+          "metadata",
+          "createdAt",
+          "openedAt",
+          "cardCount"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "productRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "catalogVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "product": {
+            "$ref": "#/components/schemas/PackProductSnapshot"
+          },
+          "purchaseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "batchIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "cardCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "copyIds"
+              ]
+            },
+            {
+              "required": [
+                "receipt"
+              ]
+            }
+          ]
+        }
+      },
+      "PackProductSnapshot": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "count",
+                "pool"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "role": {
+                  "enum": [
+                    "card",
+                    "insert"
+                  ],
+                  "default": "card"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "pool": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "variantId",
+                      "weight"
+                    ],
+                    "properties": {
+                      "variantId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "weight": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 2147483647
+                      }
+                    }
+                  }
+                },
+                "metadata": {
+                  "type": "object"
+                },
+                "probability": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "numerator",
+                    "denominator"
+                  ],
+                  "properties": {
+                    "numerator": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2147483647
+                    },
+                    "denominator": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2147483647
+                    }
+                  },
+                  "description": "Numerator cannot exceed denominator. One draw per slot, not per card."
+                }
+              }
+            }
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "maxQuantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "duplicatePolicy": {
+            "type": "object",
+            "properties": {
+              "scope": {
+                "enum": [
+                  "none",
+                  "pack",
+                  "inventory"
+                ]
+              },
+              "fallback": {
+                "enum": [
+                  "allow",
+                  "reject"
+                ]
+              }
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "adminRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "artwork": {
+            "$ref": "#/components/schemas/PackArtwork"
+          }
+        }
       }
     }
   },
@@ -1134,11 +1632,16 @@
         "commands": {
           "type": "array",
           "uniqueItems": true,
-          "maxItems": 2,
+          "maxItems": 7,
           "items": {
             "enum": [
               "inventory.read",
-              "catalog.read"
+              "catalog.read",
+              "purchase.quote",
+              "purchase.register",
+              "purchase.pending",
+              "purchase.execute",
+              "purchase.acknowledge"
             ]
           }
         },
@@ -1263,6 +1766,159 @@
             "command",
             "input"
           ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "purchase.quote"
+            },
+            "input": {
+              "$ref": "#/components/schemas/QuoteRequest"
+            }
+          },
+          "required": [
+            "protocol",
+            "sessionId",
+            "requestId",
+            "command",
+            "input"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "purchase.register"
+            },
+            "input": {
+              "$ref": "#/components/schemas/Quote"
+            }
+          },
+          "required": [
+            "protocol",
+            "sessionId",
+            "requestId",
+            "command",
+            "input"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "purchase.pending"
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {},
+              "required": []
+            }
+          },
+          "required": [
+            "protocol",
+            "sessionId",
+            "requestId",
+            "command",
+            "input"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "purchase.execute"
+            },
+            "input": {
+              "$ref": "#/components/schemas/CommandIntentId"
+            }
+          },
+          "required": [
+            "protocol",
+            "sessionId",
+            "requestId",
+            "command",
+            "input"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "purchase.acknowledge"
+            },
+            "input": {
+              "$ref": "#/components/schemas/CommandIntentId"
+            }
+          },
+          "required": [
+            "protocol",
+            "sessionId",
+            "requestId",
+            "command",
+            "input"
+          ]
         }
       ]
     },
@@ -1309,6 +1965,207 @@
             },
             "result": {
               "$ref": "#/components/schemas/CatalogManifest"
+            }
+          },
+          "required": [
+            "protocol",
+            "requestId",
+            "command",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "purchase.quote"
+            },
+            "result": {
+              "$ref": "#/components/schemas/Quote"
+            }
+          },
+          "required": [
+            "protocol",
+            "requestId",
+            "command",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "purchase.register"
+            },
+            "result": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/CommandIntent"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "const": "purchase"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "protocol",
+            "requestId",
+            "command",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "purchase.pending"
+            },
+            "result": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "maxItems": 1,
+                  "items": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/CommandIntent"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "command": {
+                            "const": "purchase"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "items"
+              ]
+            }
+          },
+          "required": [
+            "protocol",
+            "requestId",
+            "command",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "purchase.execute"
+            },
+            "result": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "intent": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/CommandIntent"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "command": {
+                          "const": "purchase"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "result": {
+                  "$ref": "#/components/schemas/PurchaseResult"
+                }
+              },
+              "required": [
+                "intent",
+                "result"
+              ]
+            }
+          },
+          "required": [
+            "protocol",
+            "requestId",
+            "command",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "purchase.acknowledge"
+            },
+            "result": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                },
+                "state": {
+                  "const": "acknowledged"
+                }
+              },
+              "required": [
+                "id",
+                "state"
+              ]
             }
           },
           "required": [

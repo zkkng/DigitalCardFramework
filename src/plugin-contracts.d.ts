@@ -1,9 +1,10 @@
 import type {Schemas} from './wire-types.js';
 export declare const pluginProtocol:'digital-card-plugin@1';
-export declare const pluginCommands:readonly ['inventory.read','catalog.read'];
-export type PluginCommand='inventory.read'|'catalog.read';
-export interface PluginInputs {'inventory.read':{limit?:number;after?:string};'catalog.read':Record<string,never>}
-export interface PluginResults {'inventory.read':Schemas['InventoryPage'];'catalog.read':Schemas['CatalogManifest']}
+export declare const pluginCommands:readonly ['inventory.read','catalog.read','purchase.quote','purchase.register','purchase.pending','purchase.execute','purchase.acknowledge'];
+export type PluginCommand='inventory.read'|'catalog.read'|'purchase.quote'|'purchase.register'|'purchase.pending'|'purchase.execute'|'purchase.acknowledge';
+export interface PluginInputs {'inventory.read':{limit?:number;after?:string};'catalog.read':Record<string,never>;'purchase.quote':Schemas['QuoteRequest'];'purchase.register':Schemas['Quote'];'purchase.pending':Record<string,never>;'purchase.execute':Schemas['CommandIntentId'];'purchase.acknowledge':Schemas['CommandIntentId']}
+export type PluginPurchaseIntent=Schemas['CommandIntent'] & {command:'purchase'};
+export interface PluginResults {'inventory.read':Schemas['InventoryPage'];'catalog.read':Schemas['CatalogManifest'];'purchase.quote':Schemas['Quote'];'purchase.register':PluginPurchaseIntent;'purchase.pending':{items:PluginPurchaseIntent[]};'purchase.execute':{intent:PluginPurchaseIntent;result:Schemas['PurchaseResult']};'purchase.acknowledge':{id:string;state:'acknowledged'}}
 export interface PluginHandshake {protocol:'digital-card-plugin@1';pluginId:string;version:string}
 export interface PluginReady extends PluginHandshake {sessionId:string;expiresAt:string;generation:number;commands:PluginCommand[];quotas:{maxRequestBytes:number;maxResponseBytes:number;concurrency:number;timeoutMs:number}}
 export type PluginRequest={[C in PluginCommand]:{protocol:'digital-card-plugin@1';sessionId:string;requestId:string;command:C;input:PluginInputs[C]}}[PluginCommand];

@@ -4,15 +4,18 @@ import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
-import {createPluginHost,pluginProtocol,validatePluginMessage} from '../src/plugin-host.js';
+import {createPluginHost,pluginProtocol,pluginCommands,validatePluginMessage} from '../src/plugin-host.js';
 import {fixture} from './helpers.js';
 const token='public-plugin-control-credential';
 const handshake={protocol:pluginProtocol,pluginId:'example.reader',version:'1.0.0'};
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
+test('malformed installed command configuration produces a bounded config error',()=>{
+  for(const commands of [{purchase:true},[null],['purchase.execute']])assert.throws(()=>createPluginHost({framework:{inventoryPage:()=>({}),operatorCatalog:()=>({})},plugins:[{id:handshake.pluginId,version:handshake.version,token,commands,userIds:['owner']}],resolveActor:()=>null}),error=>error.code==='PLUGIN_CONFIG'&&error.status===400);
+});
 async function setup(options={}){
   const x=fixture();x.open();const actors=new Map([[x.a.id,x.alice],[x.b.id,x.bob]]);
-  const framework={inventoryPage:(...args)=>x.core.inventoryPage(...args),operatorCatalog:(...args)=>x.core.operatorCatalog(...args),...options.framework};
-  const host=createPluginHost({framework,plugins:[{id:handshake.pluginId,version:handshake.version,token,commands:['inventory.read','catalog.read'],userIds:[x.a.id,x.b.id]}],resolveActor:id=>actors.get(id)??null,...options.host});
+  const framework={...Object.fromEntries(['inventoryPage','operatorCatalog','quote','commandIntents','registerCommandIntent','commandIntent','executeCommandIntentAsync','acknowledgeCommandIntent'].map(name=>[name,(...args)=>x.core[name](...args)])),...options.framework};
+  const host=createPluginHost({framework,plugins:[{id:handshake.pluginId,version:handshake.version,token,commands:options.commands??['inventory.read','catalog.read'],userIds:[x.a.id,x.b.id]}],resolveActor:id=>actors.get(id)??null,...options.host});
   const server=createServer({maxHeaderSize:8192},async(request,response)=>{if(!await host.handle(request,response)){response.statusCode=404;response.end();}});
   server.headersTimeout=5000;server.requestTimeout=10000;
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -76,6 +79,21 @@ test('deadline remains enforced while preparing a validated response',async()=>{
 test('native catalog permission is rechecked after an awaited read',async()=>{
   const waiting=deferred(),started=deferred();const x=await setup({framework:{operatorCatalog:async(...args)=>{const result=x.core.operatorCatalog(...args);started.resolve();await waiting.promise;return result;}}});
   try{x.actors.set(x.a.id,{...x.alice,permissions:['catalog.read']});const task=x.command(await x.ready(),x.delegate(['catalog.read']),{command:'catalog.read',input:{}});await started.promise;x.actors.set(x.a.id,x.alice);waiting.resolve();assert.equal((await task).status,403);}finally{waiting.resolve();await x.close();}
+});
+
+test('a purchase committed before revocation remains recoverable without another debit',async()=>{
+  const waiting=deferred(),started=deferred();const x=await setup({commands:[...pluginCommands],framework:{executeCommandIntentAsync:async(...args)=>{const result=await x.core.executeCommandIntentAsync(...args);started.resolve();await waiting.promise;return result;}}});
+  try{const session=await x.ready(),delegation=x.delegate([...pluginCommands]),quote=x.core.quote(x.alice,{productId:'common',quantity:1}),intent=(await x.command(session,delegation,{command:'purchase.register',input:quote})).result.result,start=x.core.wallet(x.alice).credits;
+    const pending=x.command(session,delegation,{command:'purchase.execute',input:{id:intent.id}});await started.promise;x.actors.set(x.a.id,{...x.alice,disabled:true});waiting.resolve();assert.equal((await pending).status,403);assert.equal(x.core.wallet(x.alice).credits,start-10);
+    x.actors.set(x.a.id,x.alice);const recovered=await x.command(session,delegation,{command:'purchase.execute',input:{id:intent.id}});assert.equal(recovered.status,200);assert.equal(recovered.result.result.intent.state,'completed');assert.equal(x.core.wallet(x.alice).credits,start-10);
+  }finally{waiting.resolve();await x.close();}
+});
+
+test('authority is rechecked after intent lookup before entering the purchase mutation',async()=>{
+  const waiting=deferred(),started=deferred();let executes=0;const x=await setup({commands:[...pluginCommands],framework:{commandIntent:async(...args)=>{const result=x.core.commandIntent(...args);started.resolve();await waiting.promise;return result;},executeCommandIntentAsync:(...args)=>{executes++;return x.core.executeCommandIntentAsync(...args);}}});
+  try{const session=await x.ready(),delegation=x.delegate([...pluginCommands]),intent=x.core.registerCommandIntent(x.alice,{command:'purchase',input:x.core.quote(x.alice,{productId:'common',quantity:1})}),start=x.core.wallet(x.alice).credits;
+    const pending=x.command(session,delegation,{command:'purchase.execute',input:{id:intent.id}});await started.promise;x.actors.set(x.a.id,{...x.alice,disabled:true});waiting.resolve();assert.equal((await pending).status,403);assert.equal(executes,0);assert.equal(x.core.wallet(x.alice).credits,start);
+  }finally{waiting.resolve();await x.close();}
 });
 test('Python plugin performs authenticated handshake, actual scoped read and session cleanup',{skip:!process.env.DC_TEST_PYTHON_PLUGIN,timeout:15000},async()=>{
   const x=await setup();try{

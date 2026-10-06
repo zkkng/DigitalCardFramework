@@ -1,6 +1,6 @@
 # Run a delegated plugin command
 
-`@digital-card/framework/plugin-host` provides the `digital-card-plugin@1` control protocol. An operator installs a service identity, exact version, credential, readonly command grants and permitted account IDs. A plugin authenticates, obtains an expiring session, and invokes a command with a separate host-issued delegation. The [JSON Schema](plugin-protocol.schema.json) and package declarations describe the messages.
+`@digital-card/framework/plugin-host` provides the `digital-card-plugin@1` control protocol. An operator installs a service identity, exact version, credential, command grants and permitted account IDs. A plugin authenticates, obtains an expiring session, and invokes a command with a separate host-issued delegation. The [JSON Schema](plugin-protocol.schema.json) and package declarations describe the messages.
 
 The implemented command profile is:
 
@@ -8,8 +8,13 @@ The implemented command profile is:
 | --- | --- | --- |
 | `inventory.read` | `inventoryPage`, default limit 10, maximum 200 | Delegated owner's inventory; no caller-selected owner |
 | `catalog.read` | `operatorCatalog` | Live `catalog.read` permission plus service and delegation grants |
+| `purchase.quote` | `quote` | Current purchase terms for the delegated account |
+| `purchase.register` | `registerCommandIntent` | Persists an exact reviewed quote; the server creates its retry key |
+| `purchase.pending` | `commandIntents` | The delegated account's current purchase recovery head |
+| `purchase.execute` | `commandIntent`, `executeCommandIntentAsync` | Retained account-owned purchase identity; original immutable input and receipt replay |
+| `purchase.acknowledge` | `commandIntent`, `acknowledgeCommandIntent` | Resolves the original purchase head; repeated acknowledgment is safe |
 
-These commands perform reads. Request IDs correlate replies; they are not durable economic receipt keys. Mutating commands and remote strategy evaluation need their own transaction, review, idempotency and recovery contracts. The existing [committed action delivery](card-actions.md) protocol remains a separate route.
+Inventory and catalog commands perform reads. Purchase commands use the durable recovery flow below. Request IDs correlate replies; they are not durable economic receipt keys. Other mutations and remote strategy evaluation require separate contracts. The existing [committed action delivery](card-actions.md) protocol remains a separate route.
 
 ## Install the host handler
 
@@ -79,4 +84,18 @@ Defaults are a 10-second deadline, 64 KiB request, 1 MiB response, four admitted
 
 The registry and tokens are ephemeral: restart requires another handshake and a newly authorized delegation. Session/delegation capacity refuses new grants with HTTP 507 instead of evicting live ones; expired entries are reclaimed. Excess admission returns HTTP 429, an expired or cancelled read returns HTTP 504, and malformed framework output cannot be returned as a successful typed response.
 
-This control profile does not confer an OS sandbox, arbitrary framework dispatch, executable installation or provider authority. Full dependency selection, durable mutable command recovery, upgrade/migration and portable policy/UI extension profiles remain separate contracts.
+This control profile does not confer an OS sandbox, arbitrary framework dispatch, executable installation or provider authority. Full dependency selection, other mutable command profiles, upgrade/migration and portable policy/UI extension profiles remain separate contracts.
+
+## Durable purchase recovery
+
+Purchase grants require all six trusted adapters: `quote`, `commandIntents`, `registerCommandIntent`, `commandIntent`, `executeCommandIntentAsync` and `acknowledgeCommandIntent`. The retained lookup exposes only identity, owner, command and state. The host checks exact purchase ownership before execution or acknowledgment and refreshes live authority after an awaited lookup. It never dispatches a method named by JSON input.
+
+Call `purchase.quote` with `{productId,quantity}`, review the returned product/catalog/admin revisions and integer price, then send that exact quote to `purchase.register`. Caller-selected keys and incomplete review terms are rejected. An existing unacknowledged purchase is returned unchanged, even when the proposed quote differs. Recover or acknowledge that original before proposing another purchase.
+
+Call `purchase.execute` with `{id}`. If the reply is lost, use `purchase.pending`, then execute the retained ID again; the original durable receipt is returned without another debit. Deterministic rejection remains on the failed intent. Acknowledge only after confirming the original outcome; after acknowledgment, discovery is empty and an acknowledgment retry still succeeds through the retained identity lookup. `requestId` correlates a network reply; the server-owned intent key supplies economic deduplication.
+
+Revocation, disconnect and deadline checks suppress late replies. A purchase can already be committed when that happens: cancellation does not roll it back. Reauthorize and recover the durable intent. A new session or host restart does not replace the account's original purchase head.
+
+The Python example accepts `--command-json` with a single `{command,input}` object on stdin. The [Go transport example](../examples/plugins/go-plugin-client/main.go) accepts the same input and environment variables. Both use bounded HTTP requests, refuse credential redirects, correlate replies and close their session. They are transport examples; the host validates domain result contracts. Include the [Go runtime notices](../examples/plugins/go-action-receiver/THIRD_PARTY_NOTICES.txt) with Go source or binary distributions.
+
+Build Go with `go -C examples/plugins/go-plugin-client build -mod=readonly -o /tmp/plugin-client .` and run `node test/plugin-purchase-conformance.mjs /tmp/plugin-client python3`. Use `--python-only` instead of the executable for Python qualification alone. Shared fixtures cover lost registration/execution/acknowledgment replies, retained originals, one debit on replay, account and command isolation, incomplete reviews and failed intent recovery.

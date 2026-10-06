@@ -1,6 +1,7 @@
 import {createHash,randomBytes} from 'node:crypto';
 import {FrameworkError} from './catalog.js';
 import {safeData} from './data.js';
+import {dispatchPluginPurchase} from './plugin-purchase.js';
 import {hasPermission} from './access.js';
 import {pluginProtocol,pluginCommands,validatePluginMessage} from './plugin-contracts.js';
 export {pluginProtocol,pluginCommands,pluginProtocolSchema,validatePluginMessage} from './plugin-contracts.js';
@@ -11,7 +12,7 @@ const opaque=()=>randomBytes(32).toString('base64url');
 const bounded=(value,max)=>Number.isSafeInteger(value)&&value>=1&&value<=max;
 const credential=value=>typeof value==='string'&&value.length>=16&&value.length<=4096&&!/[\r\n]/.test(value);
 const tokenHeader=(request,name)=>{const value=request.headers[name];return typeof value==='string'?value:null;};
-const commandList=commands=>Array.isArray(commands)&&commands.length<=2&&new Set(commands).size===commands.length&&commands.every(command=>pluginCommands.includes(command));
+const commandList=commands=>Array.isArray(commands)&&commands.length<=pluginCommands.length&&new Set(commands).size===commands.length&&commands.every(command=>pluginCommands.includes(command));
 function wireResult(value){
   let nodes=0;const seen=new WeakSet();
   const visit=(value,depth)=>{
@@ -34,6 +35,8 @@ export function createPluginHost({framework,plugins,resolveActor,authorize=()=>t
   for(const configuration of plugins){
     const {id,version,token,commands,userIds}=configuration;
     validatePluginMessage('handshakeRequest',{protocol:pluginProtocol,pluginId:id,version});
+    if(!commandList(commands))fail('PLUGIN_CONFIG','Invalid installed plugin commands',400);
+    if(commands.some(command=>command.startsWith('purchase.'))&&['quote','commandIntents','registerCommandIntent','commandIntent','executeCommandIntentAsync','acknowledgeCommandIntent'].some(name=>typeof framework[name]!=='function'))fail('PLUGIN_CONFIG','Purchase grants require durable purchase adapters',400);
     if(services.has(id)||!credential(token)||credentials.has(hash(token))||!commandList(commands)||!Array.isArray(userIds)||!userIds.length||userIds.length>1000||new Set(userIds).size!==userIds.length||!userIds.every(id=>typeof id==='string'&&id.length>=1&&id.length<=128))fail('PLUGIN_CONFIG','Invalid installed plugin grant',400);
     const service={id,version,commands:new Set(commands),userIds:new Set(userIds),tokenHash:hash(token),generation:1,enabled:true,active:0,requests:0};services.set(id,service);credentials.set(service.tokenHash,service);
   }
@@ -72,7 +75,7 @@ export function createPluginHost({framework,plugins,resolveActor,authorize=()=>t
     const expired=new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new FrameworkError('PLUGIN_DEADLINE','Plugin command deadline exceeded',504));},timeoutMs);});
     const task=Promise.resolve().then(async()=>{
       const actor=await live();fence();
-      const result=await(input.command==='inventory.read'?framework.inventoryPage(actor,{limit:10,...input.input}):framework.operatorCatalog(actor));
+      const result=await(input.command==='inventory.read'?framework.inventoryPage(actor,{limit:10,...input.input}):input.command==='catalog.read'?framework.operatorCatalog(actor):dispatchPluginPurchase(framework,actor,input.command,input.input,fence,live));
       fence();await live();fence();
       const output={protocol:pluginProtocol,requestId:input.requestId,command:input.command,result:wireResult(result)};
       safeData(output,{maxBytes:maxResponseBytes,maxDepth:32,maxNodes:100000});validatePluginMessage('commandResponse',output);return output;

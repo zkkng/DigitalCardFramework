@@ -7,6 +7,13 @@ export interface InstalledPlugin {id:string;version:string;token:string;commands
 export interface PluginHttpRequest extends AsyncIterable<Uint8Array> {url?:string;method?:string;headers:Record<string,string|string[]|undefined>;socket?:{encrypted?:boolean;remoteAddress?:string};destroy(error?:Error):unknown}
 export interface PluginHttpResponse {destroyed:boolean;writableEnded:boolean;statusCode:number;setHeader(name:string,value:string):unknown;end(body?:string):unknown;once(event:'close',listener:()=>void):unknown;removeListener(event:'close',listener:()=>void):unknown}
 export interface PluginFramework {
+  quote?(actor:PluginActor,input:Schemas['QuoteRequest']):Schemas['Quote']|Promise<Schemas['Quote']>;
+  commandIntents?(actor:PluginActor,options:{command:'purchase';operators:false;requireTradeReview:true}):{items:Schemas['CommandIntent'][]}|Promise<{items:Schemas['CommandIntent'][]}>;
+  registerCommandIntent?(actor:PluginActor,input:{command:'purchase';input:Schemas['Quote']},options:{operators:false;requireTradeReview:true}):Schemas['CommandIntent']|Promise<Schemas['CommandIntent']>;
+  commandIntent?(actor:PluginActor,input:{id:string;command:'purchase'},options:{operators:false;requireTradeReview:true}):Pick<Schemas['CommandIntent'],'id'|'userId'|'command'|'state'>|Promise<Pick<Schemas['CommandIntent'],'id'|'userId'|'command'|'state'>>;
+  executeCommandIntentAsync?(actor:PluginActor,input:{id:string},options:{operators:false;requireTradeReview:true}):{intent:Schemas['CommandIntent'];result:Schemas['PurchaseResult']}|Promise<{intent:Schemas['CommandIntent'];result:Schemas['PurchaseResult']}>;
+  acknowledgeCommandIntent?(actor:PluginActor,input:{id:string},options:{operators:false;requireTradeReview:true}):{id:string;state:'acknowledged'}|Promise<{id:string;state:'acknowledged'}>;
+
   inventoryPage(actor:PluginActor,options:{limit?:number;after?:string}):Schemas['InventoryPage']|Promise<Schemas['InventoryPage']>;
   operatorCatalog(actor:PluginActor):Schemas['CatalogManifest']|Promise<Schemas['CatalogManifest']>;
 }
