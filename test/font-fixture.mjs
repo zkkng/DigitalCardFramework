@@ -1,5 +1,5 @@
 /** Generates a minimal two-glyph TrueType fixture; no bundled font asset. */
-export function testFont() {
+export function testFont({weight,style} = {}) {
   const tables = new Map(),
     put = (name, length) => {
       const b = new Uint8Array(length);
@@ -80,6 +80,11 @@ export function testFont() {
   }
   v = put("post", 32);
   v.setUint32(0, 0x00030000);
+  if (weight !== undefined || style !== undefined) {
+    v = put("OS/2",78);
+    v.setUint16(4,weight ?? 400);
+    v.setUint16(62,style === "oblique" ? 512 : style === "italic" ? 1 : 64);
+  }
   const size =
       12 +
       tables.size * 16 +

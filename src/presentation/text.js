@@ -63,6 +63,10 @@ export function inspectFont(bytes, type) {
       glyphs: font.numGlyphs,
       axes: font.variationAxes ?? {},
       codepoints: font.characterSet,
+      weight: font["OS/2"]?.usWeightClass,
+      style: font["OS/2"]?.fsSelection?.oblique ? "oblique" :
+        font["OS/2"]?.fsSelection?.italic || font.italicAngle !== 0 ? "italic" : "normal",
+      italicAngle: font.italicAngle,
     },
   };
 }

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added embedded-font asset diagnostics, editable declared usage terms and sample glyph-coverage checks. Font uploads preserve locked text-layer assignments.
 - Added versioned capability profiles with independent pack acquisition, direct sales, trading and resale controls, plus account-specific availability and recovery hints.
 - Added Studio controls for polygon and image clipping masks, inversion, vertex editing and immutable saved-mask reuse.
 - Added TypeScript declarations for the trade draft component, with validated inventory responses and persisted draft inputs.

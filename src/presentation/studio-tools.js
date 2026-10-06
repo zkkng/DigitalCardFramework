@@ -62,6 +62,8 @@ export function mountAuthoringTools({
   status.setAttribute("role", "status");
   const pending = new Set();
   let taskTail = Promise.resolve();
+  let fontsExpanded = false;
+  const fontSamples = new Map();
   const expandedSpans = new Set();
   const expandedMasks = new Set();
   let mountedPanels = [];
@@ -170,18 +172,34 @@ export function mountAuthoringTools({
       run(async () => {
         const file = f.files[0];
         if (!file) return;
-        const a = await getProject().addFont(file);
-        const n = flattenNodes(
-          getProject().scenes.get(getProject().manifest.faces[getSide()].scene)
-            .nodes,
-        ).find((n) => n.id === getSelected());
-        if (n?.type === "text" && !n.locked)
-          getProject().edit(() => {
-            n.typography ??= {};
-            n.typography.fontAsset = a.id;
+        const project = getProject(), face = getSide(), selected = getSelected(), dialog = el("dialog");
+        dialog.append(el("h3", "Embed custom font"), el("p", file.name + " · " + file.size + " bytes"),
+          el("p", "Record the permitted usage terms or license identifier supplied with this font. The editor stores this declaration; it does not verify rights."));
+        let license = "";
+        const terms = input(dialog, "Font usage terms", "", (v)=>{
+          license = v.trim();
+          save.disabled = !license;
+        }, {type:"textarea"});
+        terms.maxLength = 2000;
+        const save = button(dialog, "Embed font with declared terms", async()=>{
+          if (!license || license.length > 2000) throw new Error("Enter font usage terms within 2000 characters");
+          if (getProject() !== project) throw new Error("The card changed during font upload");
+          const asset = await project.addFont(file,{license});
+          if (disposed || getProject() !== project) return;
+          const node = flattenNodes(project.scenes.get(project.manifest.faces[face].scene).nodes).find(n=>n.id===selected);
+          if (node?.type === "text" && !node.locked) project.edit(()=>{
+            node.typography ??= {};
+            node.typography.fontAsset = asset.id;
           });
-        await rebuild();
-        report("Font added: " + a.font.family);
+          dialog.close(); dialog.remove();
+          await rebuild();
+          report("Font added: " + asset.font.family + (node?.locked ? " · Locked layer kept its existing font." : ""));
+        });
+        save.disabled = true;
+        button(dialog, "Cancel font upload", ()=>{dialog.close();dialog.remove();});
+        root.append(dialog);
+        dialog.showModal();
+        terms.focus();
       });
     f.click();
   });
@@ -202,6 +220,7 @@ export function mountAuthoringTools({
       root.append(el("p", "Open a card to edit."));
       return;
     }
+    const fontCache = new Map();
     const nodes = flattenNodes(
         p.scenes.get(p.manifest.faces[getSide()].scene).nodes,
       ),
@@ -496,6 +515,47 @@ export function mountAuthoringTools({
         ]) input(box, label, n.stat[key] ?? fallback, (v) => editText(() => {
           n.stat[key] = typeof fallback === "number" ? Number(v) : v;
         }), { type: typeof fallback === "number" ? "number" : "text", disabled });
+      }
+    }
+    const fonts = el("details");
+    fonts.append(el("summary", "Embedded font assets"));
+    fonts.open = fontsExpanded;
+    fonts.ontoggle = ()=>{fontsExpanded=fonts.open;};
+    root.append(fonts);
+    const fontAssets = p.manifest.assets.filter(asset=>asset.role === "font");
+    if (!fontAssets.length) fonts.append(el("p", "Add custom font to embed a reproducible face."));
+    for (const asset of fontAssets) {
+      const row = el("fieldset");
+      row.append(el("legend", asset.font.family + " · " + asset.font.face));
+      fonts.append(row);
+      row.append(el("p", "Asset: " + asset.id + " · Digest: sha256:" + asset.sha256));
+      input(row, "Usage terms for " + asset.id, asset.font.license, (v)=>edit(()=>{
+        const current = getProject().manifest.assets.find(a=>a.id===asset.id);
+        if (!v.trim() || v.length > 2000) throw new Error("Enter font usage terms within 2000 characters");
+        current.font.license = v.trim();
+      }), {type:"textarea"}).maxLength = 2000;
+      try {
+        const {font,info} = inspectFont(p.assets.get(asset.path),asset.mediaType);
+        fontCache.set(asset.id,font);
+        row.append(el("p", "Decoded family: " + info.family + " · Face: " + info.face + " · Style: " + info.style +
+          " · Weight: " + (info.weight ?? "unavailable") + " · Italic angle: " + info.italicAngle));
+        row.append(el("p", "Glyphs: " + info.glyphs + " · Character-map entries: " + info.codepoints.length + " · Units per em: " + info.unitsPerEm));
+        const axes = Object.entries(info.axes);
+        row.append(el("p", axes.length ? "Variable axes: " + axes.map(([key,range])=>key+" ("+range.name+"): "+range.min+"–"+range.max+", default "+range.default).join("; ") : "Variable axes: none"));
+        let sample = fontSamples.get(asset.sha256) ?? (n?.type === "text" ? textValue(n,p.manifest) : p.manifest.title);
+        const updateCoverage = (v)=>{
+          sample = v;
+          fontSamples.set(asset.sha256,sample);
+          const missing = [...new Set(Array.from(sample).filter(character=>!/[\r\n]/.test(character) && !font.hasGlyphForCodePoint(character.codePointAt(0))))];
+          coverage.textContent = missing.length ? "Missing code points: " + missing.slice(0,32).map(character=>"U+"+character.codePointAt(0).toString(16).toUpperCase()).join(", ") + (missing.length>32?" …":"") : "All sample code points are mapped. This does not prove shaping quality.";
+        };
+        input(row, "Glyph coverage sample for " + asset.id, sample, updateCoverage).maxLength = 10000;
+        const coverage = el("p");
+        coverage.setAttribute("role","status");
+        row.append(coverage);
+        updateCoverage(sample);
+      } catch (error) {
+        row.append(el("p", "Font diagnostic: " + error.message));
       }
     }
     const stats = el("details");
@@ -953,7 +1013,7 @@ export function mountAuthoringTools({
         });
       file.click();
     });
-    const layouts = {}, textDiagnostics = [], fontCache = new Map();
+    const layouts = {}, textDiagnostics = [];
     for (const [face, definition] of Object.entries(p.manifest.faces)) {
       for (const node of flattenNodes(p.scenes.get(definition.scene).nodes).filter(n=>n.type === "text")) {
         const asset = p.manifest.assets.find(a=>a.id === node.typography?.fontAsset);

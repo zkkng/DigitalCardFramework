@@ -428,9 +428,56 @@ try {
     mimeType: "font/ttf",
     buffer: Buffer.from(testFont()),
   });
+  await page.getByRole("dialog").waitFor();
+  assert(await page.getByRole("button",{name:"Embed font with declared terms",exact:true}).isDisabled());
+  await page.getByLabel("Font usage terms",{exact:true}).fill("Test fixture: permitted embedding and redistribution");
+  await page.getByLabel("Font usage terms",{exact:true}).press("Tab");
+  await idle();
+  await page.getByRole("button",{name:"Embed font with declared terms",exact:true}).click();
+  await idle();
   await page.waitForFunction(() =>
     window.studio.getProject().manifest.assets.some((a) => a.role === "font"),
   );
+  await page.getByText("Embedded font assets",{exact:true}).click();
+  const embeddedFontId=await page.evaluate(()=>window.studio.getProject().manifest.assets.find(a=>a.role==="font").id);
+  assert.equal(await page.getByLabel("Usage terms for "+embeddedFontId,{exact:true}).inputValue(),"Test fixture: permitted embedding and redistribution");
+  await page.getByText("Decoded family: Test Sans · Face: Regular · Style: normal · Weight: unavailable · Italic angle: 0",{exact:true}).waitFor();
+  await page.getByText("Glyphs: 2 · Character-map entries: 256 · Units per em: 1000",{exact:true}).waitFor();
+  await page.getByText("Variable axes: none",{exact:true}).waitFor();
+  await page.getByLabel("Glyph coverage sample for "+embeddedFontId,{exact:true}).fill("A🙂");
+  await page.getByLabel("Glyph coverage sample for "+embeddedFontId,{exact:true}).press("Tab");
+  await idle();
+  await page.getByText("Missing code points: U+1F642",{exact:true}).waitFor();
+  await page.getByLabel("Usage terms for "+embeddedFontId,{exact:true}).fill("");
+  await page.getByLabel("Usage terms for "+embeddedFontId,{exact:true}).press("Tab");
+  await idle();
+  assert.equal(await page.getByLabel("Usage terms for "+embeddedFontId,{exact:true}).inputValue(),"Test fixture: permitted embedding and redistribution");
+  await page.getByLabel("Usage terms for "+embeddedFontId,{exact:true}).fill("Updated fixture embedding terms");
+  await page.getByLabel("Usage terms for "+embeddedFontId,{exact:true}).press("Tab");
+  await idle();
+  assert.equal(await page.evaluate(()=>window.studio.getProject().manifest.assets.find(a=>a.role==="font").font.license),"Updated fixture embedding terms");
+  assert.equal(await page.getByLabel("Glyph coverage sample for "+embeddedFontId,{exact:true}).inputValue(),"A🙂");
+  await page.getByText("Missing code points: U+1F642",{exact:true}).waitFor();
+  await page.screenshot({path:resolve(output,"font-assets.png"),fullPage:true});
+  await page.getByText("Arrange layers",{exact:true}).click();
+  await idle();
+  await page.getByRole("button",{name:"Lock selected",exact:true}).click();
+  await idle();
+  const lockedFontChooser=page.waitForEvent("filechooser");
+  await page.getByRole("button",{name:"Add custom font",exact:true}).click();
+  await idle();
+  await(await lockedFontChooser).setFiles({name:"Second.ttf",mimeType:"font/ttf",buffer:Buffer.from(testFont())});
+  await page.getByLabel("Font usage terms",{exact:true}).fill("Second fixture: permitted embedding");
+  await page.getByLabel("Font usage terms",{exact:true}).press("Tab");
+  await idle();
+  await page.getByRole("button",{name:"Embed font with declared terms",exact:true}).click();
+  await idle();
+  assert.equal(await page.evaluate(()=>window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.type==="text").typography.fontAsset),embeddedFontId);
+  await page.getByText("Arrange layers",{exact:true}).click();
+  await idle();
+  await page.getByRole("button",{name:"Unlock selected",exact:true}).click();
+  await idle();
+  checks.push("explicit font upload terms, editable declaration, exact decoded metrics/digest and missing-glyph sample");
   await page.getByLabel("Font size", { exact: true }).fill("24");
   await page.getByLabel("Font size", { exact: true }).press("Tab");
   await idle();

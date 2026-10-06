@@ -10,7 +10,26 @@ import { fixture, admin } from "./helpers.js";
 import { validateCatalog } from "../src/index.js";
 import { createProject } from "../src/presentation/project.js";
 import { addStatBlock, configureAuthoring, setStat } from "../src/presentation/authoring-tools.js";
-import { textValue } from "../src/presentation/text.js";
+import { textValue, inspectFont } from "../src/presentation/text.js";
+import { testFont } from "./font-fixture.mjs";
+
+test("font inspection reports decoded face metrics and declared terms survive export", async () => {
+  const plain = inspectFont(testFont(),"font/ttf").info;
+  assert.equal(plain.weight,undefined);
+  assert.equal(plain.style,"normal");
+  for (const style of ["italic","oblique"]) {
+    const info = inspectFont(testFont({weight:700,style}),"font/ttf").info;
+    assert.equal(info.weight,700);
+    assert.equal(info.style,style);
+    assert.equal(info.glyphs,2);
+    assert.equal(info.codepoints.length,256);
+  }
+  const project = createProject(await build(presentationFixture())),
+    asset = await project.addFont(new Blob([testFont()],{type:"font/ttf"}),{license:"Fixture embedding terms"});
+  const restored = await importPackage((await project.export({retainSources:true})).archive);
+  assert.equal(restored.manifest.assets.find(a=>a.id===asset.id).font.license,"Fixture embedding terms");
+  assert.equal(restored.manifest.assets.find(a=>a.id===asset.id).sha256,asset.sha256);
+});
 
 test("mask inversion rejects truthy strings and preserves the previous mask", async () => {
   const project = createProject(await build(presentationFixture())),
