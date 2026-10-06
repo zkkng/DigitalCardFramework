@@ -222,6 +222,7 @@ export class SQLiteStore {
         for(let i=0;i<24;i++){
           const added=summarizeRecords(partial);check(added.missingCompletions===0,'COMPLETION_MIGRATION_REQUIRED','New obligations require completion reservations',503);
           for(const key of ['ordinaryRequests','ordinaryJobs','ordinaryEvents'])summary[key]=previousSummary[key]+added[key]-oldPart[key];
+          for(const key of Object.keys(summary.workers))summary.workers[key]=previousSummary.workers[key]+added.workers[key]-oldPart.workers[key];
           for(const key of Object.keys(summary.completion))summary.completion[key]=previousSummary.completion[key]+added.completion[key]-oldPart.completion[key];
           const used=previousSummary.usedBytes+delta-accountingBytes+encodedRecordBytes(this.#codec,recordAccountingField,null,JSON.stringify(summary));
           const consumed=completionRow?priorUsed+Math.max(0,used-previousSummary.usedBytes):0;

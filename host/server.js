@@ -38,6 +38,7 @@ framework.backfillCompletionReservations({role:'admin'});
 framework.backfillProvenance({role:'admin'});
 const codeGateway=extension.codeProviders?createCodeGateway({framework,providers:extension.codeProviders}):undefined;
 const audit=framework.audit({role:'admin'});if(!audit.ok||!store.integrity())throw new Error('Database verification failed; restore a verified backup');
+try{store.prepareRecordTransactions();}catch(error){if(!['STORAGE_CAPACITY','COMPLETION_CAPACITY'].includes(error.code))throw error;process.stderr.write('Record accounting migration deferred; worker planning uses compatibility summaries\n');}
 const sessions=new SessionStore(dbPath,{encryptionKey,maxSessions:extension.sessionOptions?.maxSessions}),rateLimit=extension.rateLimiter??createRateLimiter(extension.rateLimits);
 if(!extension.identityProvider&&(!issuer?.startsWith('https://')||!clientId))throw new Error('Configure OIDC or a host identityProvider');
 const provider=extension.identityProvider??await createOIDCProvider({issuer,clientId,clientSecret:await secret('OIDC_CLIENT_SECRET'),origin});

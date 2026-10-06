@@ -7,6 +7,7 @@ export function validRecordAccounting(summary,revision){
   return summary?.version===1&&summary.revision===revision&&count(summary.usedBytes)
     &&summary.counts!==null&&typeof summary.counts==='object'&&!Array.isArray(summary.counts)&&Object.values(summary.counts).every(count)
     &&['ordinaryRequests','ordinaryJobs','ordinaryEvents','missingCompletions','legacyPurchases','externalReservedBytes'].every(key=>count(summary[key]))
+    &&['actions','trades','listings'].every(key=>count(summary.workers?.[key]))
     &&['obligations','requests','jobs','events','storedBytes','reservedBytes'].every(key=>count(summary.completion?.[key]));
 }
 export function summarizeRecords(state){
@@ -17,6 +18,7 @@ export function summarizeRecords(state){
     ordinaryRequests:ordinaryRequestCount(state),ordinaryJobs:Object.values(state.actionJobs??{}).filter(row=>!row.completionId).length,
     ordinaryEvents:(state.events??[]).filter(row=>!row.completionId).length,missingCompletions:missingCompletions(state).length,
     legacyPurchases:Object.values(state.externalPurchases??{}).filter(row=>row.legacy?.purchaseKey).length,
+    workers:{actions:Object.values(state.actionJobs??{}).filter(row=>['pending','running'].includes(row.status)).length,trades:Object.values(state.trades??{}).filter(row=>row.status==='pending').length,listings:Object.values(state.listings??{}).filter(row=>row.status==='active').length},
     completion:{obligations:obligations.length,requests:requests.filter(row=>row.completionId).length+pending.length,
       jobs:Object.values(state.actionJobs??{}).filter(row=>row.completionId).length+pending.reduce((n,row)=>n+row.jobs,0),
       events:(state.events??[]).filter(row=>row.completionId).length+pending.reduce((n,row)=>n+row.events,0),

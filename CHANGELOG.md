@@ -26,6 +26,7 @@
 
 ### Changed
 
+- Production worker scheduling now uses revision-bound pending-work summaries instead of loading installation state after every request, while retaining recovery planning when accounting migration is capacity-limited.
 - Code-free pack opening now uses bounded record completion when accounting and reservations are prepared, preserving issued snapshots, new-card history, receipt replay and capacity-safe delivery.
 - Preference updates now use bounded account and referenced-record transactions with atomic receipt and event delivery, preserving original replay and account identity.
 - Pack quotes now read only the requesting account and selected configuration, avoiding inventory and receipt-history materialization while retaining reviewed pricing rules.

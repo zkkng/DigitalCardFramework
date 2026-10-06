@@ -32,7 +32,7 @@ function fingerprint(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
 export class CardFramework {
-  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce; #cardPolicies; #administration; #externalPurchases;#commandIntents;
+  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce; #cardPolicies; #administration; #externalPurchases;#commandIntents;#workerPlanCache;
   constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={},codeGenerators={},actionHandlers={},actionOptions={},eventSubscriptions=[],raffleRandom=randomInt,externalPurchaseProviders={},externalPurchaseLimits={}}={}) {
     this.#store=store; this.#clock=clock; this.#random=random;
     this.#cardPolicies=new CardPolicyService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),clock});
@@ -217,8 +217,13 @@ export class CardFramework {
   }
   workerPlan(actor) {
     this.#admin(actor,'maintenance.run');
-    return this.#store.read(s=>({actions:Object.values(s.actionJobs??{}).some(job=>['pending','running'].includes(job.status)),
-      maintenance:Object.values(s.trades??{}).some(trade=>trade.status==='pending')||Object.values(s.listings??{}).some(listing=>listing.status==='active')}));
+    return this.#query(q=>{
+      const revision=q.value('revision');if(this.#workerPlanCache?.revision===revision)return this.#workerPlanCache.value;
+      let accounting;try{accounting=JSON.parse(q.value(recordAccountingField));}catch{}
+      const value=validRecordAccounting(accounting,revision)?{actions:accounting.workers.actions>0,maintenance:accounting.workers.trades+accounting.workers.listings>0}
+        :{actions:Object.values(q.value('actionJobs')??{}).some(job=>['pending','running'].includes(job.status)),maintenance:Object.values(q.value('trades')??{}).some(trade=>trade.status==='pending')||Object.values(q.value('listings')??{}).some(listing=>listing.status==='active')};
+      this.#workerPlanCache={revision,value};return value;
+    });
   }
   #event(s,type,data,at=this.#clock()) {
     this.#admission(s);

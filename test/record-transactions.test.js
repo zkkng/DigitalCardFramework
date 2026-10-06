@@ -11,6 +11,15 @@ import {randomBytes} from 'node:crypto';
 import {summarizeRecords} from '../src/record-accounting.js';
 
 for(const Store of [MemoryStore,SQLiteStore]){
+ test(Store.name+' worker aggregates drain accepted work after admission is disabled',async()=>{
+  const store=new Store(),x=fixture({store,eventSubscriptions:[{id:'preferences',events:['preferences.updated'],handler:'preferences'}],actionHandlers:{preferences:async()=>({ok:true})}});try{
+   store.prepareRecordTransactions();x.core.setPreferences(x.alice,{key:'preferences',inventoryVisibility:'public'});const trade=x.core.proposeTrade(x.alice,{key:'offer',toUserId:x.bob.userId,give:{copyIds:[],currencies:[{currencyId:'credits',amount:5}]},receive:{copyIds:[],currencies:[]}});
+   const catalog=x.core.operatorCatalog(admin);catalog.version++;catalog.capabilities={version:1,primitives:{issuance:true,transfer:true,settlement:true}};x.core.publishCatalog(admin,catalog);
+   const read=store.read.bind(store),plan=()=>{store.read=()=>{throw new Error('Worker planning cannot materialize installation state');};try{return x.core.workerPlan(admin);}finally{store.read=read;}};
+   const before=store.diagnostics?.(),first=plan();assert.deepEqual(first,{actions:true,maintenance:true});if(before)assert(store.diagnostics().decodedQueryRecords-before.decodedQueryRecords<=2);first.actions=false;assert.equal(plan().actions,true);assert.throws(()=>x.core.workerPlan(x.alice),code('FORBIDDEN'));
+   await x.core.dispatchActions(admin);assert.deepEqual(plan(),{actions:false,maintenance:true});x.core.cancelTrade(x.alice,{key:'cancel',tradeId:trade.id});assert.deepEqual(plan(),{actions:false,maintenance:false});assert.equal(x.core.audit(admin).ok,true);
+  }finally{x.core.close();}
+ });
  test(Store.name+' bounded preferences preserve identity, replay and one delivery',async()=>{
   let deliveries=0;const store=new Store(),x=fixture({store,eventSubscriptions:[{id:'preferences',events:['preferences.updated'],handler:'preferences'}],actionHandlers:{preferences:async()=>{deliveries++;}}});try{
    const owned=x.open()[0];store.prepareRecordTransactions();const identity=store.query(q=>q.get('users',x.alice.userId)),before=store.diagnostics?.(),request={key:'preferences',inventoryVisibility:'public',favoriteCopyIds:[owned.id],wishlistCardIds:['dawn'],blockedUserIds:[x.bob.userId]};
