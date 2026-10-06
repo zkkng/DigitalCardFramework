@@ -123,7 +123,7 @@ try {
     await external.asset("art");
     external.dispose();
     results.push(check(true, "public cross-origin card metadata and artwork still load"));
-    const stage = createPlayerStage({ root });
+    const diagnostics=[],stage = createPlayerStage({ root,onDiagnostic:event=>diagnostics.push(event) });
     let view = stage.mount(root, { resolver });
     const initialReady = await view.ready;
     await settle();
@@ -131,7 +131,7 @@ try {
       check(
         stage.diagnostics().activeViews === 1,
         "initial synthetic activation",
-        { initialReady, ...stage.diagnostics() },
+        { initialReady, diagnostics, requiredCapabilities:resolver.manifest.capabilities.required, ...stage.diagnostics() },
       ),
     );
     for (let i = 0; i < 100; i++) {

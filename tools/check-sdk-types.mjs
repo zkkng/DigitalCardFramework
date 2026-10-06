@@ -4,11 +4,11 @@ import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 const compiler=process.env.DC_TYPESCRIPT_COMPILER??fileURLToPath(new URL('./lib/tsc.js',import.meta.resolve('typescript/package.json')));
-const result=spawnSync(process.execPath,[compiler,'--strict','--noUncheckedIndexedAccess','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','--lib','ES2022,DOM','--noEmit','src/admin-client.ts','src/client.ts','src/wire-client.ts','src/trade-client.ts','test/sdk-consumer.ts','test/client-consumer.ts','test/trade-client-consumer.ts','test/capability-consumer.ts','test/admin-consumer.ts','test/mask-consumer.ts','test/action-consumer.ts','test/group-consumer.ts','test/pack-artwork-consumer.ts'],{stdio:'inherit',cwd:fileURLToPath(new URL('../',import.meta.url))});
+const result=spawnSync(process.execPath,[compiler,'--strict','--noUncheckedIndexedAccess','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','--lib','ES2022,DOM','--noEmit','src/admin-client.ts','src/client.ts','src/wire-client.ts','src/trade-client.ts','test/sdk-consumer.ts','test/client-consumer.ts','test/trade-client-consumer.ts','test/capability-consumer.ts','test/admin-consumer.ts','test/mask-consumer.ts','test/action-consumer.ts','test/group-consumer.ts','test/pack-artwork-consumer.ts','test/plugin-consumer.ts'],{stdio:'inherit',cwd:fileURLToPath(new URL('../',import.meta.url))});
 if(result.error)throw result.error;
 if(result.status!==0)process.exitCode=result.status??1;
 else{
-  for(const generator of ['generate-wire-types.mjs','generate-wire-validators.mjs','generate-action-contracts.mjs']){
+  for(const generator of ['generate-wire-types.mjs','generate-wire-validators.mjs','generate-action-contracts.mjs','generate-plugin-contracts.mjs']){
     const checked=spawnSync(process.execPath,[fileURLToPath(new URL(generator,import.meta.url)),'--check'],{stdio:'inherit'});
     if(checked.status!==0)throw new Error('Generated contract drift');
   }

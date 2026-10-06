@@ -81,6 +81,10 @@
       "types": "./src/remote-actions.d.ts",
       "default": "./src/remote-actions.js"
     },
+    "./plugin-host": {
+      "types": "./src/plugin-host.d.ts",
+      "default": "./src/plugin-host.js"
+    },
     "./card-policy": "./src/card-policy.js",
     "./card-policy-schema": "./src/card-policy-schema.js",
     "./card-policy-ui": "./src/card-policy-ui.js",

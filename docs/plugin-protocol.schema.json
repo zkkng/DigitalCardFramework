@@ -1,0 +1,1401 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://digital-card.invalid/plugin/v1",
+  "components": {
+    "schemas": {
+      "InventoryPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "next"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryCopy"
+            },
+            "maxItems": 200
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "next": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "InventoryCopy": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Copy"
+          },
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "version",
+              "createdAt",
+              "acquiredAt",
+              "tradable",
+              "untradableReason"
+            ],
+            "properties": {
+              "state": {
+                "const": "owned"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "acquiredAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "tradable": {
+                "type": "boolean"
+              },
+              "untradableReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
+      "Copy": {
+        "type": "object",
+        "required": [
+          "id",
+          "ownerId",
+          "cardId",
+          "variantId",
+          "lineId",
+          "rarityId",
+          "state",
+          "definition",
+          "variant",
+          "bindings",
+          "metadata"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ownerId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "variantId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lineId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rarityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "sealed",
+              "owned",
+              "consumed"
+            ]
+          },
+          "serialNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "editionTotal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "openedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/CardDefinitionView"
+          },
+          "variant": {
+            "$ref": "#/components/schemas/CardVariantView"
+          },
+          "bindings": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CardBindingView"
+            }
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeSummary"
+            }
+          },
+          "provenance": {
+            "type": "object",
+            "description": "Immutable source, definition hashes and pack/slot snapshots. Legacy reconstruction explicitly marks unknown historical fields."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "acquiredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openedByName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CardDefinitionView": {
+        "type": "object",
+        "required": [
+          "id",
+          "lineId",
+          "name",
+          "type",
+          "tags",
+          "behavior",
+          "metadata"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lineId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "behavior": {
+            "type": "object",
+            "required": [
+              "collectionDefault",
+              "albumDefault",
+              "albumEligible",
+              "tradable",
+              "tradeUp"
+            ],
+            "properties": {
+              "collectionDefault": {
+                "type": "boolean"
+              },
+              "albumDefault": {
+                "type": "boolean"
+              },
+              "albumEligible": {
+                "type": "boolean"
+              },
+              "tradable": {
+                "type": "boolean"
+              },
+              "tradeUp": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "stats": {
+            "type": "object"
+          },
+          "presentation": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CardVariantView": {
+        "type": "object",
+        "required": [
+          "id",
+          "cardId",
+          "rarityId",
+          "metadata"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rarityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "supplyLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "stats": {
+            "type": "object"
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeAttachment"
+            }
+          },
+          "onOpen": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpeningAction"
+            }
+          },
+          "presentation": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CodeAttachment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "poolId"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "poolId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "reveal": {
+            "enum": [
+              "open",
+              "scratch",
+              "peel"
+            ],
+            "default": "scratch"
+          },
+          "transfer": {
+            "enum": [
+              "retain",
+              "follow-unrevealed",
+              "block"
+            ],
+            "default": "retain"
+          }
+        }
+      },
+      "OpeningAction": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "handler"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "params": {
+            "type": "object",
+            "description": "Public bounded parameters for a server-installed handler; never source code or credentials."
+          }
+        }
+      },
+      "CardBindingView": {
+        "type": "object",
+        "required": [
+          "visibility",
+          "transfer",
+          "holderId",
+          "state",
+          "data"
+        ],
+        "properties": {
+          "visibility": {
+            "enum": [
+              "public",
+              "owner"
+            ]
+          },
+          "transfer": {
+            "enum": [
+              "follow",
+              "retain",
+              "block"
+            ]
+          },
+          "holderId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "enum": [
+              "active",
+              "used"
+            ]
+          },
+          "data": {
+            "type": "object"
+          },
+          "usedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CodeSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "providerId",
+          "status",
+          "canReveal"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "copyId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "status": {
+            "enum": [
+              "available",
+              "allocated",
+              "expired",
+              "redeemed",
+              "revoked"
+            ]
+          },
+          "revealed": {
+            "type": "boolean"
+          },
+          "reportedUsed": {
+            "type": "boolean"
+          },
+          "canReveal": {
+            "type": "boolean"
+          },
+          "reveal": {
+            "enum": [
+              "open",
+              "scratch",
+              "peel"
+            ]
+          },
+          "transfer": {
+            "enum": [
+              "retain",
+              "follow-unrevealed",
+              "block"
+            ]
+          },
+          "provenance": {
+            "type": "object"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "CatalogManifest": {
+        "type": "object",
+        "required": [
+          "version",
+          "currencies",
+          "lines",
+          "rarities",
+          "cards",
+          "variants",
+          "products"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "features": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "currencies": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "lines": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "rarities": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "cards": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "default": "collectible",
+                  "description": "Built-in type or declared namespaced custom type."
+                },
+                "behavior": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "collectionDefault": {
+                      "type": "boolean"
+                    },
+                    "albumDefault": {
+                      "type": "boolean"
+                    },
+                    "albumEligible": {
+                      "type": "boolean"
+                    },
+                    "tradable": {
+                      "type": "boolean"
+                    },
+                    "tradeUp": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "variants": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "codes": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "$ref": "#/components/schemas/CodeAttachment"
+                  }
+                },
+                "onOpen": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "$ref": "#/components/schemas/OpeningAction"
+                  }
+                }
+              }
+            }
+          },
+          "products": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "slots": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/components/schemas/PackSlot"
+                  }
+                },
+                "artwork": {
+                  "$ref": "#/components/schemas/PackArtwork"
+                }
+              }
+            }
+          },
+          "recipes": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "combinations": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "displayFields": {
+            "type": "array",
+            "maxItems": 20000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "metadataSchemas": {
+            "type": "object",
+            "description": "Bounded local schema subset for card metadata, variant metadata and stats; no external refs, regex or executable tags."
+          },
+          "cardTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardType"
+            }
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CapabilityProfile"
+          }
+        }
+      },
+      "PackSlot": {
+        "type": "object",
+        "required": [
+          "count",
+          "pool"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "role": {
+            "enum": [
+              "card",
+              "insert"
+            ],
+            "default": "card"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pool": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "variantId",
+                "weight"
+              ],
+              "properties": {
+                "variantId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "weight": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "probability": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "numerator",
+              "denominator"
+            ],
+            "properties": {
+              "numerator": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "denominator": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              }
+            },
+            "description": "Numerator cannot exceed denominator. One draw per slot, not per card."
+          }
+        }
+      },
+      "PackArtwork": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "front": {
+            "type": "string",
+            "maxLength": 2000,
+            "format": "dc-asset-reference"
+          },
+          "back": {
+            "type": "string",
+            "maxLength": 2000,
+            "format": "dc-asset-reference"
+          },
+          "reveal": {
+            "type": "string",
+            "maxLength": 2000,
+            "format": "dc-asset-reference"
+          },
+          "alt": {
+            "type": "string",
+            "maxLength": 200,
+            "format": "dc-pack-description"
+          },
+          "design": {
+            "$ref": "#/components/schemas/PresentationReference"
+          }
+        }
+      },
+      "PresentationReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "digest",
+          "baseURL"
+        ],
+        "properties": {
+          "contract": {
+            "const": "digital-card@0.1"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "baseURL": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "dc-presentation-location"
+          }
+        }
+      },
+      "CardType": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "name": {
+            "type": "string"
+          },
+          "defaults": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "collectionDefault": {
+                "type": "boolean"
+              },
+              "albumDefault": {
+                "type": "boolean"
+              },
+              "albumEligible": {
+                "type": "boolean"
+              },
+              "tradable": {
+                "type": "boolean"
+              },
+              "tradeUp": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "CapabilityProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "workflows",
+          "primitives"
+        ],
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "workflows": {
+            "$ref": "#/components/schemas/CapabilityWorkflows"
+          },
+          "primitives": {
+            "$ref": "#/components/schemas/CapabilityPrimitives"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "workflows": {
+                  "properties": {
+                    "packs": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "primitives"
+              ],
+              "properties": {
+                "primitives": {
+                  "required": [
+                    "issuance"
+                  ],
+                  "properties": {
+                    "issuance": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "workflows": {
+                  "properties": {
+                    "directSales": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "primitives"
+              ],
+              "properties": {
+                "primitives": {
+                  "required": [
+                    "issuance",
+                    "settlement"
+                  ],
+                  "properties": {
+                    "issuance": {
+                      "const": true
+                    },
+                    "settlement": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "workflows": {
+                  "properties": {
+                    "trading": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "primitives"
+              ],
+              "properties": {
+                "primitives": {
+                  "required": [
+                    "transfer"
+                  ],
+                  "properties": {
+                    "transfer": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "workflows": {
+                  "properties": {
+                    "resale": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "primitives"
+              ],
+              "properties": {
+                "primitives": {
+                  "required": [
+                    "transfer",
+                    "settlement"
+                  ],
+                  "properties": {
+                    "transfer": {
+                      "const": true
+                    },
+                    "settlement": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "CapabilityWorkflows": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "packs",
+          "directSales",
+          "trading",
+          "resale"
+        ],
+        "properties": {
+          "packs": {
+            "type": "boolean"
+          },
+          "directSales": {
+            "type": "boolean"
+          },
+          "trading": {
+            "type": "boolean"
+          },
+          "resale": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CapabilityPrimitives": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issuance",
+          "transfer",
+          "settlement"
+        ],
+        "properties": {
+          "issuance": {
+            "type": "boolean"
+          },
+          "transfer": {
+            "type": "boolean"
+          },
+          "settlement": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "handshakeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "const": "digital-card-plugin@1"
+        },
+        "pluginId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]{1,8}\\.[0-9]{1,8}\\.[0-9]{1,8}$"
+        }
+      },
+      "required": [
+        "protocol",
+        "pluginId",
+        "version"
+      ]
+    },
+    "handshakeResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "const": "digital-card-plugin@1"
+        },
+        "pluginId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]{1,8}\\.[0-9]{1,8}\\.[0-9]{1,8}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "commands": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 2,
+          "items": {
+            "enum": [
+              "inventory.read",
+              "catalog.read"
+            ]
+          }
+        },
+        "quotas": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxRequestBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1048576
+            },
+            "maxResponseBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 33554432
+            },
+            "concurrency": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300000
+            }
+          },
+          "required": [
+            "maxRequestBytes",
+            "maxResponseBytes",
+            "concurrency",
+            "timeoutMs"
+          ]
+        }
+      },
+      "required": [
+        "protocol",
+        "pluginId",
+        "version",
+        "sessionId",
+        "expiresAt",
+        "generation",
+        "commands",
+        "quotas"
+      ]
+    },
+    "commandRequest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "inventory.read"
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200
+                },
+                "after": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                }
+              },
+              "required": []
+            }
+          },
+          "required": [
+            "protocol",
+            "sessionId",
+            "requestId",
+            "command",
+            "input"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "catalog.read"
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {},
+              "required": []
+            }
+          },
+          "required": [
+            "protocol",
+            "sessionId",
+            "requestId",
+            "command",
+            "input"
+          ]
+        }
+      ]
+    },
+    "commandResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "inventory.read"
+            },
+            "result": {
+              "$ref": "#/components/schemas/InventoryPage"
+            }
+          },
+          "required": [
+            "protocol",
+            "requestId",
+            "command",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {
+              "const": "digital-card-plugin@1"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "command": {
+              "const": "catalog.read"
+            },
+            "result": {
+              "$ref": "#/components/schemas/CatalogManifest"
+            }
+          },
+          "required": [
+            "protocol",
+            "requestId",
+            "command",
+            "result"
+          ]
+        }
+      ]
+    },
+    "closeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "const": "digital-card-plugin@1"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      },
+      "required": [
+        "protocol",
+        "sessionId"
+      ]
+    },
+    "closeResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "const": "digital-card-plugin@1"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "status": {
+          "const": "closed"
+        }
+      },
+      "required": [
+        "protocol",
+        "sessionId",
+        "status"
+      ]
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "const": "digital-card-plugin@1"
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "retryable": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "retryable"
+          ]
+        }
+      },
+      "required": [
+        "protocol",
+        "error"
+      ]
+    }
+  }
+}
