@@ -86,3 +86,12 @@ Products define line, revision, price/currency and weighted slots. Pool weights 
 Optional product `availableFrom`/`availableUntil` are validated date strings; use ISO 8601 UTC timestamps for consistent publication. Optional `pity:{after,rarityId}` guarantees that rarity rank or better in the first slot when the threshold is reached; the first pool must contain an eligible outcome. Pity counts purchased allocations, including sealed packs, per collector/product and resets on qualifying outcomes. Retries do not advance it twice. Exhaustion still rejects atomically.
 
 Recipes define input count, matching criteria and weighted outputs; they are optional and remain framework data. Binding factories and transfer policies are trusted host code. External redemption/delivery requires an explicit host adapter.
+## Album cover, spine and pages
+
+In **Albums**, open **Cover, spine & pages**. Enter HTTP(S) or relative image URLs and descriptions for the cover and spine. Add pages, give them titles and background images, and set **Cards per album page** from 1 to 100. Choose cards, then use each card's page selector to place it on a named page or in automatic order. Preview the book and navigate with the page controls or arrow keys while the book has focus.
+
+Reordering pages preserves cards on their original page through stable page IDs. Removing a populated page is blocked until its cards are moved to another page or explicitly returned to automatic order. Export and import retain custom layout and placement data; unknown page assignments reject before replacing the draft. Albums without artwork or page size continue to use the original gallery.
+
+Artists with catalog publication access can choose **Design album cover**, **Design album spine**, or **Design page** to open the portable visual editor. Canvas dimensions are editable from 200 to 4096 pixels. Capture posters, then publish the artwork to add its poster and pinned editable design reference to the album draft. **Save album** is a separate action. Opening the design again restores its editable package.
+
+Artwork publication registers public files. A private album protects its layout and cards, but does not make image URLs or published design packages private. Use artwork suitable for public distribution; the editor starts a generic artwork canvas and does not automatically include private album names or card contents.

@@ -84,6 +84,10 @@ jobs:
         env:
           HEADED: '1'
           BROWSER_ENGINE: ${{ matrix.engine }}
+      - run: xvfb-run --auto-servernum node test/album-artist-browser.mjs test-results/album-artist
+        env:
+          HEADED: '1'
+          BROWSER_ENGINE: ${{ matrix.engine }}
       - run: node test/codes-browser.mjs test-results/codes
         env:
           BROWSER_ENGINE: ${{ matrix.engine }}

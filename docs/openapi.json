@@ -509,7 +509,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AlbumRecord"
                 }
               }
             }
@@ -571,7 +571,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object"
+                    "$ref": "#/components/schemas/AlbumRecord"
                   }
                 }
               }
@@ -1440,7 +1440,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AlbumView"
                 }
               }
             }
@@ -10522,8 +10522,7 @@
             "default": "private"
           },
           "layout": {
-            "type": "object",
-            "additionalProperties": true
+            "$ref": "#/components/schemas/AlbumLayout"
           },
           "placements": {
             "type": "array",
@@ -10550,7 +10549,45 @@
               }
             }
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "layout"
+              ],
+              "properties": {
+                "layout": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "artwork"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "pageSize"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "placements": {
+                  "items": {
+                    "properties": {
+                      "data": {
+                        "$ref": "#/components/schemas/AlbumPageAssignment"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
       },
       "UseBinding": {
         "type": "object",
@@ -15657,6 +15694,251 @@
           }
         }
       },
+      "AlbumImage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "src"
+        ],
+        "properties": {
+          "src": {
+            "type": "string",
+            "format": "dc-asset-reference"
+          },
+          "alt": {
+            "type": "string",
+            "format": "dc-pack-description"
+          },
+          "design": {
+            "$ref": "#/components/schemas/PresentationReference"
+          }
+        }
+      },
+      "AlbumPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "src": {
+            "type": "string",
+            "format": "dc-asset-reference"
+          },
+          "alt": {
+            "type": "string",
+            "format": "dc-pack-description"
+          },
+          "design": {
+            "$ref": "#/components/schemas/PresentationReference"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$"
+          },
+          "title": {
+            "type": "string",
+            "format": "dc-album-title"
+          }
+        }
+      },
+      "AlbumArtwork": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cover": {
+            "$ref": "#/components/schemas/AlbumImage"
+          },
+          "spine": {
+            "$ref": "#/components/schemas/AlbumImage"
+          },
+          "pages": {
+            "type": "array",
+            "maxItems": 100,
+            "dcUniquePageIds": true,
+            "description": "Page IDs must be unique, including pages with different artwork.",
+            "items": {
+              "$ref": "#/components/schemas/AlbumPage"
+            }
+          }
+        }
+      },
+      "AlbumLayout": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "artwork": {
+            "$ref": "#/components/schemas/AlbumArtwork"
+          }
+        }
+      },
+      "AlbumPageAssignment": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "pageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$",
+            "description": "Existing artwork page ID or null for automatic order. Omitted assignments also use automatic order."
+          }
+        }
+      },
+      "AlbumPlacement": {
+        "type": "object",
+        "required": [
+          "copyId",
+          "position",
+          "data"
+        ],
+        "properties": {
+          "copyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "AlbumRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "ownerId",
+          "name",
+          "visibility",
+          "layout",
+          "placements",
+          "version",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "public"
+            ]
+          },
+          "layout": {
+            "$ref": "#/components/schemas/AlbumLayout"
+          },
+          "placements": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "$ref": "#/components/schemas/AlbumPlacement"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AlbumView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "ownerId",
+          "name",
+          "visibility",
+          "layout",
+          "placements",
+          "version",
+          "updatedAt",
+          "ownerName",
+          "cards"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "public"
+            ]
+          },
+          "layout": {
+            "$ref": "#/components/schemas/AlbumLayout"
+          },
+          "placements": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "$ref": "#/components/schemas/AlbumPlacement"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "cards": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "placement",
+                "copy"
+              ],
+              "properties": {
+                "placement": {
+                  "$ref": "#/components/schemas/AlbumPlacement"
+                },
+                "copy": {
+                  "$ref": "#/components/schemas/Copy"
+                }
+              }
+            }
+          }
+        }
+      },
       "PackArtwork": {
         "type": "object",
         "additionalProperties": false,
@@ -17141,8 +17423,7 @@
                     "default": "private"
                   },
                   "layout": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/AlbumLayout"
                   },
                   "placements": {
                     "type": "array",
@@ -17169,7 +17450,45 @@
                       }
                     }
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "required": [
+                        "layout"
+                      ],
+                      "properties": {
+                        "layout": {
+                          "anyOf": [
+                            {
+                              "required": [
+                                "artwork"
+                              ]
+                            },
+                            {
+                              "required": [
+                                "pageSize"
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "placements": {
+                          "items": {
+                            "properties": {
+                              "data": {
+                                "$ref": "#/components/schemas/AlbumPageAssignment"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
               }
             }
           },
@@ -18454,7 +18773,7 @@
                 ]
               },
               "result": {
-                "type": "object"
+                "$ref": "#/components/schemas/AlbumRecord"
               }
             }
           },

@@ -135,3 +135,28 @@ In the album editor, open **Album appearance & layout JSON**, enter these fields
 Historical `layout.css` is retained as data. The default renderer migrates supported solid colors and bounded pixel declarations from exact `.dc-album` rules; explicit appearance fields override those values. It never inserts historical CSS as a stylesheet. Other selectors, positioning, transforms, URLs, imports and unbounded dimensions are ignored. Saving from the editor writes the normalized appearance and preserves additional layout/placement data. Invalid historical appearance falls back to reference styling.
 
 Each default album uses its own shadow root and a clipped paint boundary. Trusted host `layouts[id]` or `albumRenderer` replacements are privileged application code and are responsible for their own containment and resource cleanup. Imported album data cannot register those replacements.
+
+The default book renderer also recognizes `layout.pageSize` (1–100) and `layout.artwork`. Cover and spine accept `{src,alt?,design?}`; pages accept `{id,title?,src?,alt?,design?}`. Pages are ordered, have unique stable IDs, and are limited to 100. Descriptions allow 200 UTF-16 code units and titles 100. Image URLs allow HTTP(S) or relative paths without credentials; `design` is a pinned `PresentationReference`.
+
+```js
+const book = renderAlbum({
+  name: 'Field guide',
+  layout: {
+    pageSize: 9,
+    artwork: {
+      cover: {src: '/art/cover.png', alt: 'Field guide cover'},
+      spine: {src: '/art/spine.png'},
+      pages: [{id: 'forest', title: 'Forest', src: '/art/forest.png'}]
+    }
+  },
+  cards: [{copy: ownedCopy, placement: {data: {pageId: 'forest'}}}]
+});
+container.append(book);
+book.setPage(0);
+// When replacing or unmounting this instance:
+book.dispose();
+```
+
+In book mode, a placement's string `data.pageId` must name an existing page. Omitted or null values use the card's ordinal position and page size. Legacy gallery albums preserve arbitrary placement extensions. The server validates page references on save. The artist editor materializes stable assignments when pages are reordered and blocks deletion of an occupied page.
+
+Default books support independent page controls, keyboard navigation and image failure captions. `renderAlbum` returns a DOM node with `dispose()` and, in book mode, `setPage(index)`. Custom `albumRenderer` implementations may return a DOM node or `{node,dispose}`; the album editor disposes both draft and public previews when replaced or unmounted. Trusted `layouts` replacements retain responsibility for implementing book features they need.

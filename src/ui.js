@@ -2,7 +2,7 @@ import {createCardRenderer} from './presentation/card-view.js';
 const portableRenderers=new Map();
 import {createRevealController,createCommandRunner} from './client.js';
 import {defaultCSS} from './styles.js';
-import {albumAppearance,applyAlbumAppearance} from './album-appearance.js';
+import {albumAppearance,applyAlbumAppearance,albumArtwork,validateAlbumPageSize} from './album-appearance.js';
 export {albumAppearance,validateAlbumAppearance} from './album-appearance.js';
 import {render3DInspector,renderComparison} from './inspector-ui.js';
 import {renderCollection,renderAlbums} from './collection-ui.js';
@@ -134,11 +134,51 @@ export function renderAlbum(model,{cardRenderer=renderCard,onSelect,layouts={}}=
   const node=element('div','dc-album');if(model.layout?.id==='panorama')node.classList.add('dc-panorama');
   const columns=Number(model.layout?.columns??3);if(Number.isInteger(columns)&&columns>=1&&columns<=12)node.style.setProperty('--dc-album-columns',String(columns));
   const gap=Number(model.layout?.gap??18);if(Number.isFinite(gap)&&gap>=0&&gap<=100)node.style.setProperty('--dc-album-gap',gap+'px');
-  for(const {copy} of model.cards)node.append(cardRenderer(copy,{onSelect}));
   const host=element('div','dc-album-host'),shadow=host.attachShadow({mode:'open'}),wrap=element('div','dc-root dc-album-isolated'),style=element('style');
+  const abort=new AbortController(),images=new Set();let disposed=false,pageAbort,cardNodes=[];
   Object.assign(host.style,{position:'relative',contain:'layout paint',isolation:'isolate',overflow:'hidden',maxWidth:'100%',minWidth:'0'});
   style.textContent=defaultCSS+'\n.dc-root.dc-album-isolated{padding:0;border:0;background:transparent;'+themes.map(name=>name+':inherit').join(';')+'}';
-  applyAlbumAppearance(node,albumAppearance(model.layout));wrap.append(node);shadow.append(style,wrap);return host;
+  applyAlbumAppearance(node,albumAppearance(model.layout));
+  const artwork=albumArtwork(model.layout),bookMode=model.layout?.artwork!==undefined||model.layout?.pageSize!==undefined;
+  function imageSurface(image,label,container,signal=abort.signal){
+    if(!image?.src)return;
+    const figure=element('figure'),img=element('img'),caption=element('figcaption','dc-muted');
+    figure.style.margin='0';img.src=assetURL(image.src);img.alt=image.alt??label;img.style.maxWidth='100%';img.style.maxHeight='240px';img.style.objectFit='contain';
+    img.addEventListener('error',()=>{if(disposed)return;img.hidden=true;caption.textContent=(image.alt??label)+' · artwork unavailable';},{once:true,signal});
+    images.add(img);figure.append(img,caption);container.append(figure);return img;
+  }
+  if(!bookMode){for(const {copy} of model.cards){const card=cardRenderer(copy,{onSelect});cardNodes.push(card);node.append(card);}wrap.append(node);}
+  else{
+    let pageSize;try{pageSize=validateAlbumPageSize(model.layout.pageSize??12);}catch{pageSize=12;}
+    const pages=artwork.pages??[],known=new Set(pages.map(page=>page.id)),automatic=model.cards.map((item,index)=>({item,index})).filter(({item})=>!known.has(item.placement?.data?.pageId)),
+      pageCount=Math.max(1,pages.length,Math.ceil(((automatic.at(-1)?.index??-1)+1)/pageSize)),book=element('section','dc-album-book'),jacket=element('div'),content=element('div'),controls=element('div','dc-row'),heading=element('h3'),previous=button('Previous album page',()=>setPage(current-1)),next=button('Next album page',()=>setPage(current+1)),pageSelect=element('select');
+    let current=0;
+    book.tabIndex=0;book.setAttribute('aria-label',model.name??'Album book');Object.assign(book.style,{maxWidth:'100%',minWidth:'0'});
+    Object.assign(jacket.style,{display:'flex',gap:'12px',alignItems:'stretch',overflow:'hidden'});
+    const spine=element('div'),cover=element('div');spine.style.maxWidth='64px';spine.style.flex='0 0 48px';cover.style.minWidth='0';cover.style.flex='1';
+    if(artwork.spine)imageSurface(artwork.spine,'Album spine',spine);if(artwork.cover)imageSurface(artwork.cover,'Album cover',cover);
+    if(artwork.spine)jacket.append(spine);if(artwork.cover)jacket.append(cover);book.append(jacket,heading,controls,content);
+    pageSelect.setAttribute('aria-label','Album page');for(let index=0;index<pageCount;index++){const option=element('option','',pages[index]?.title??'Page '+(index+1));option.value=String(index);pageSelect.append(option);}
+    pageSelect.addEventListener('change',()=>setPage(Number(pageSelect.value)),{signal:abort.signal});
+    book.addEventListener('keydown',event=>{if(event.target!==book)return;if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();setPage(current+(event.key==='ArrowRight'?1:-1));}},{signal:abort.signal});
+    controls.append(previous,pageSelect,next);applyAlbumAppearance(book,albumAppearance(model.layout));wrap.append(book);
+    function setPage(index){
+      if(disposed)return;current=Math.max(0,Math.min(pageCount-1,index));pageAbort?.abort();for(const card of cardNodes)card.dispose?.();cardNodes=[];
+      for(const img of [...images])if(content.contains(img)){img.removeAttribute('src');images.delete(img);}
+      content.replaceChildren();pageAbort=new AbortController();
+      const page=pages[current],background=element('div');Object.assign(background.style,{position:'relative',minHeight:'240px',overflow:'hidden'});
+      const pageImage=imageSurface(page,'Album page '+(current+1),background,pageAbort.signal);
+      if(pageImage)Object.assign(pageImage.style,{position:'absolute',inset:'0',width:'100%',height:'100%',maxHeight:'none',objectFit:'cover',pointerEvents:'none'});
+      const gallery=node.cloneNode(false);Object.assign(gallery.style,{position:'relative',minHeight:'240px'});if(pageImage)gallery.style.backgroundColor='transparent';
+      const automaticPage=new Set(automatic.filter(({index})=>Math.floor(index/pageSize)===current).map(({item})=>item));
+      for(const item of model.cards)if((page&&item.placement?.data?.pageId===page.id)||automaticPage.has(item)){const card=cardRenderer(item.copy,{onSelect});cardNodes.push(card);gallery.append(card);}
+      background.append(gallery);content.append(background);heading.textContent=(page?.title??'Page '+(current+1))+' · '+(current+1)+' of '+pageCount;
+      pageSelect.value=String(current);previous.disabled=current===0;next.disabled=current===pageCount-1;
+    }
+    host.setPage=setPage;setPage(0);
+  }
+  host.dispose=()=>{if(disposed)return;disposed=true;abort.abort();pageAbort?.abort();for(const image of images)image.removeAttribute('src');images.clear();for(const card of cardNodes)card.dispose?.();shadow.replaceChildren();};
+  shadow.append(style,wrap);return host;
 }
 export function mountOpener(root,{controller,cardRenderer=renderCard,view,onSelect,packArtwork}={}) {
   let cleanup;

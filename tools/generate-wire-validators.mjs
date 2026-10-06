@@ -18,6 +18,7 @@ const formatCode=new _Code('({"date-time":'+dateTime.toString()+','+Object.entri
 const ajv=new Ajv2020({strict:false,allErrors:true,inlineRefs:false,code:{source:true,esm:true,formats:formatCode}});
 ajv.addFormat('date-time',dateTime);
 for(const [key,format]of Object.entries(assetFormats))ajv.addFormat(key,format);
+ajv.addKeyword({keyword:'dcUniquePageIds',type:'array',schemaType:'boolean',code(context){if(context.schema)context.fail(new _Code(`new Set(${context.data}.map(page=>page?.id)).size !== ${context.data}.length`));}});
 const root='https://digital-card.invalid/wire';
 ajv.addSchema({$id:root,components:openapi.components});
 const exports={},entries={};

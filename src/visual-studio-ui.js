@@ -10,6 +10,21 @@ import {
 } from "./presentation/authoring-tools.js";
 import { mountCardPolicyAdmin } from "./card-policy-ui.js";
 
+export async function publishArtworkPackage(pkg,{principal,signal,active=()=>true}={}) {
+  const request=async(url,options={})=>{
+    if(!active())throw new Error("Artwork editor closed");
+    const response=await fetch(url,{credentials:"same-origin",signal,...options}),result=await response.json();
+    if(!response.ok)throw new Error(result.message??result.code??"Presentation request failed");return result;
+  };
+  let job=await request("/presentations/imports",{method:"POST",headers:{"X-DC-Principal":principal,"Content-Type":"application/zip","Idempotency-Key":pkg.digest},body:pkg.archive});
+  for(let attempt=0;!["ready","published","rejected","cancelled"].includes(job.state)&&attempt<120;attempt++){
+    await new Promise(resolve=>setTimeout(resolve,500));job=await request("/presentations/imports/"+job.id);
+  }
+  if(!["ready","published"].includes(job.state))throw new Error(job.error?.message??"Presentation is not ready");
+  await request("/presentations/imports/"+job.id+"/publish",{method:"POST",headers:{"X-DC-Principal":principal}});
+  return {contract:"digital-card@0.1",digest:pkg.digest,baseURL:location.origin+"/presentations/"+pkg.digest+"/files/"};
+}
+
 export function mountVisualStudio(
   root,
   { client, model, onCatalogChange = () => {} },
@@ -111,19 +126,6 @@ export function mountVisualStudio(
       ...(target.variantId ? { variantId:target.variantId } : {}),
     });
   const destinationPolicy=()=>getDestinationPolicy({kind:kind.value,id:destination,variantId});
-  async function json(url, options = {}) {
-    const response = await fetch(url, {
-      credentials: "same-origin",
-      signal: abort.signal,
-      ...options,
-    });
-    const result = await response.json();
-    if (!response.ok)
-      throw new Error(
-        result.message ?? result.code ?? "Presentation request failed",
-      );
-    return result;
-  }
   async function download(digest) {
     const response = await fetch("/presentations/" + digest + "/download", {
       credentials: "same-origin",
@@ -136,32 +138,7 @@ export function mountVisualStudio(
     return new Uint8Array(await response.arrayBuffer());
   }
   async function upload(pkg) {
-    const headers = {
-      "X-DC-Principal": model.me.userId,
-      "Content-Type": "application/zip",
-      "Idempotency-Key": pkg.digest,
-    };
-    let job = await json("/presentations/imports", {
-      method: "POST",
-      headers,
-      body: pkg.archive,
-    });
-    for (
-      let n = 0;
-      !["ready", "published", "rejected", "cancelled"].includes(job.state) &&
-      n < 120;
-      n++
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      if (disposed) throw new Error("Editor closed");
-      job = await json("/presentations/imports/" + job.id);
-    }
-    if (!["ready", "published"].includes(job.state))
-      throw new Error(job.error?.message ?? "Presentation is not ready");
-    await json("/presentations/imports/" + job.id + "/publish", {
-      method: "POST",
-      headers: { "X-DC-Principal": model.me.userId },
-    });
+    return publishArtworkPackage(pkg,{principal:model.me.userId,signal:abort.signal,active:()=>!disposed});
   }
   const shared = createSharedLibrary({
     client: {

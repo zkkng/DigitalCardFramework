@@ -102,6 +102,24 @@ test('album layout imports preserve custom placement data, preview CSS is isolat
 
 test('collection selection inspects actual copies together and supports stat search',()=>{const x=setup();try{const view=x.mount(renderCollection(x.model,x.context)),checks=[...view.querySelectorAll('input[type="checkbox"]')];checks.forEach(c=>{c.checked=true;c.dispatchEvent(new x.window.Event('change'));});click(view,'Inspect together');assert.equal(x.calls[0][1].length,2);assert(x.calls[0][1].every(c=>c.ownerId===x.alice.userId));const search=field(view,'Search collection');search.value='NO_MATCH';search.dispatchEvent(new x.window.Event('input'));assert.match(view.textContent,/0 matching copies/);}finally{x.close();}});
 
+test('album page reorder preserves card assignments and invalid imports leave the draft intact',async()=>{
+  const x=setup();try{
+    const copies=x.model.inventory,doc={name:'Book',layout:{pageSize:1,artwork:{pages:[{id:'a',title:'First'},{id:'b',title:'Second'}]}},placements:copies.map((c,position)=>({copyId:c.id,position,data:{custom:position}}))};
+    const mounted=renderAlbums(x.model,x.context),view=x.mount(mounted),input=field(view,'Album document JSON');input.value=JSON.stringify(doc);click(view,'Load layout into editor');click(view,'Move page 1 later');
+    click(view,'Remove page 1');assert.match(view.querySelector('.dc-error').textContent,/Move the 1 cards/);
+    input.value=JSON.stringify({...doc,name:'Invalid',placements:[{copyId:copies[0].id,data:{pageId:'missing'}}]});click(view,'Load layout into editor');assert.match(view.querySelector('.dc-error').textContent,/unknown page/);assert.equal(field(view,'Album name').value,'Book');
+    click(view,'Save album');await settle();const saved=x.calls[0][1];assert.deepEqual(saved.layout.artwork.pages.map(p=>p.id),['b','a']);assert.deepEqual(saved.placements.map(p=>p.data),[{custom:0,pageId:'a'},{custom:1,pageId:'b'}]);mounted.dispose();
+  }finally{x.close();}
+});
+
+test('public and draft album previews dispose custom renderers exactly once',async()=>{
+  const x=setup();try{
+    let renders=0,disposes=0;x.client.publicAlbums=async()=>[{id:'public',name:'Shared',ownerName:'Artist'}];x.client.viewAlbum=async()=>({name:'Shared',ownerName:'Artist',cards:[],layout:{}});
+    const mounted=renderAlbums(x.model,{...x.context,albumRenderer:()=>{renders++;return {node:document.createElement('div'),dispose(){disposes++;}};}}),view=x.mount(mounted);
+    click(view,'Preview album');click(view,'Explore');await settle();click(view,'Shared · Artist');await settle();assert.equal(disposes,1);click(view,'Preview album');assert.equal(disposes,2);mounted.dispose();assert.equal(disposes,renders);click(view,'Preview album');assert.equal(disposes,renders);
+  }finally{x.close();}
+});
+
 test('studio ignores stale previews and invalidates review when content changes',async()=>{const x=setup();try{let finish;const base=x.core.previewImport({role:'admin'},{source:JSON.stringify({cards:[{...x.model.catalog.cards[0],description:'Changed description'}]}),expectedVersion:x.model.catalog.version});x.client.previewImport=()=>new Promise(r=>finish=r);const mounted=renderStudio(x.model,x.context),view=x.mount(mounted);click(view,'Validate & preview');const source=field(view,'Import content');source.value='changed';source.dispatchEvent(new x.window.Event('input'));finish(base);await settle();assert(!view.querySelector('.dc-import-preview').children.length);assert([...view.querySelectorAll('button')].find(b=>b.textContent==='Publish reviewed revision').disabled);
     x.client.previewImport=async()=>base;click(view,'Validate & preview');await settle();assert.match(view.querySelector('.dc-change-grid').textContent,/1 updated/);const review=view.querySelector('.dc-review-check input');review.checked=true;review.dispatchEvent(new x.window.Event('change'));assert(![...view.querySelectorAll('button')].find(b=>b.textContent==='Publish reviewed revision').disabled);source.dispatchEvent(new x.window.Event('input'));assert.equal(review.checked,false);mounted.dispose();
   }finally{x.close();}});

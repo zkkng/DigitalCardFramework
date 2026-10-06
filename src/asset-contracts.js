@@ -7,4 +7,5 @@ export function presentationLocation(value){
   try{const url=new URL(value,'https://local.invalid/');return ['https:','http:'].includes(url.protocol)&&!url.username&&!url.password&&!url.search&&!url.hash;}catch{return false;}
 }
 export function packDescription(value){return typeof value==='string'&&!!value.trim()&&value.length<=200;}
-export const assetFormats={'dc-asset-reference':assetReference,'dc-presentation-location':presentationLocation,'dc-pack-description':packDescription};
+export function albumTitle(value){return typeof value==='string'&&!!value.trim()&&value.length<=100;}
+export const assetFormats={'dc-asset-reference':assetReference,'dc-presentation-location':presentationLocation,'dc-pack-description':packDescription,'dc-album-title':albumTitle};

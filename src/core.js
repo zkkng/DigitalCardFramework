@@ -1,4 +1,5 @@
 import {hasPermission} from './access.js';
+import {validateAlbumArtwork,validateAlbumPageSize,validateAlbumPageAssignments} from './album-appearance.js';
 import {recordContexts} from './record-context.js';
 import {validRecordAccounting,recordAccountingField,summarizeRecords} from './record-accounting.js';
 import {resolveCapabilities,admitWorkflow,transitionCapabilities,workflowRequirements} from './capability-policy.js';
@@ -996,6 +997,7 @@ export class CardFramework {
     text(name,'album name',100); check(['private','public'].includes(visibility),'INVALID_INPUT','Invalid album visibility');
     check(Array.isArray(placements) && placements.length<=1000,'INVALID_INPUT','Album placements must be an array of at most 1000 items');
     jsonObject(layout,'album layout');
+    try{if(layout.artwork!==undefined)validateAlbumArtwork(layout.artwork);if(layout.pageSize!==undefined)validateAlbumPageSize(layout.pageSize);validateAlbumPageAssignments(layout,placements);}catch(error){check(false,'INVALID_INPUT',error.message);}
     return this.#command(actor,key,'album.saved',{albumId,name,visibility,layout,placements,expectedVersion},(s,user)=>{
       if(visibility==='public') this.#feature(s,'publicAlbums');
       const existing=albumId?s.albums[albumId]:null;
