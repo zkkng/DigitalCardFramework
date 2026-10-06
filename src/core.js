@@ -1,4 +1,5 @@
 import {hasPermission} from './access.js';
+import {resolveCapabilities,admitWorkflow,transitionCapabilities,workflowRequirements} from './capability-policy.js';
 import {CommandIntentService} from './command-intents.js';
 import {completionContext,completionDefaults,completionCapacity,ordinaryRequestCount,reserveCompletion,withCompletion,missingCompletions,reserveDelivery,accountReservationMetadata} from './completion.js';
 import {ExternalPurchaseService} from './external-purchases.js';
@@ -51,9 +52,10 @@ export class CardFramework {
       mint:(...args)=>this.#mint(...args),allocatePacks:(...args)=>this.#allocatePacks(...args),
       adjust:(...args)=>this.#adjust(...args),event:(...args)=>this.#event(...args),notify:(...args)=>this.#notify(...args),
       complete:(s,kind,entityId,fn)=>this.#complete(s,kind,entityId,fn),
+      workflow:(s,name,paid=false)=>this.#workflow(s,name,paid),
       copyView:(...args)=>this.#copyView(...args),packView:p=>this.#packView(p),
-      transferAllowed:(s,c,from,to,channel,ignoreLock)=>{this.#feature(s,'cardTrading');const reason=this.#tradeReason(c,from,s,{channel,toUserId:to,ignoreLock});check(!reason,'TRANSFER_BLOCKED',reason,409);},
-      checkResale:(s,from,to,units,price)=>{if(price.amount>0){this.#feature(s,'currencyTrading');check(this.#currency(s,price.currencyId).tradable===true,'TRANSFER_BLOCKED','Resale currency is not tradable',403);}const copyIds=units.flatMap(unit=>unit.kind==='copy'?[unit.copyId]:s.packs[unit.packId].copyIds);this.#checkTrade(s,{channel:'sale',fromUserId:from,toUserId:to,give:{copyIds,currencies:[]},receive:{copyIds:[],currencies:price.amount>0?[price]:[]}});s.users[from].lastTradeAt=this.#clock();s.users[to].lastTradeAt=this.#clock();},
+      transferAllowed:(s,c,from,to,channel,ignoreLock)=>{const reason=this.#tradeReason(c,from,s,{channel,toUserId:to,ignoreLock});check(!reason,'TRANSFER_BLOCKED',reason,409);},
+      checkResale:(s,from,to,units,price)=>{if(price.amount>0)check(this.#currency(s,price.currencyId).tradable===true,'TRANSFER_BLOCKED','Resale currency is not tradable',403);const copyIds=units.flatMap(unit=>unit.kind==='copy'?[unit.copyId]:s.packs[unit.packId].copyIds);this.#checkTrade(s,{channel:'sale',fromUserId:from,toUserId:to,give:{copyIds,currencies:[]},receive:{copyIds:[],currencies:price.amount>0?[price]:[]}});s.users[from].lastTradeAt=this.#clock();s.users[to].lastTradeAt=this.#clock();},
       deliverCopy:(...args)=>this.#deliverCopy(...args),deliverPack:(...args)=>this.#deliverPack(...args),
       canList:policies.canList,canPurchase:policies.canPurchase,
     },{random:raffleRandom});
@@ -181,6 +183,40 @@ export class CardFramework {
   }
   #catalog(s) {check(s.catalog,'NO_CATALOG','Publish a catalog first',409); return s.catalog;}
   #feature(s,name) {check(this.#catalog(s).features[name],'FEATURE_DISABLED',name+' is disabled',403);}
+  #workflow(s,name,paid=false) {
+    const config=this.#catalog(s).capabilities;
+    check(config,'CAPABILITY_MIGRATION_REQUIRED','Publish an explicit version 1 capability profile before admitting new workflow operations',503);
+    if(Array.isArray(name))name=name.find(candidate=>config.workflows[candidate])??name[0];
+    const decision=admitWorkflow(config,name,{permitted:true,eligible:true,paid,ready:{issuance:true,transfer:true,settlement:true}});
+    check(decision.allowed,decision.reason==='disabled'?'FEATURE_DISABLED':'CAPABILITY_UNAVAILABLE',name+' is unavailable: '+decision.reason,403);
+  }
+  #obligations(s,userId=null) {
+    const rows=[],add=(id,workflow,principal,requirements)=>rows.push({id,workflow,principal,state:'pending',recoveryRequirements:requirements});
+    for(const p of Object.values(s.packs??{}))if(!p.receipt&&(!userId||p.ownerId===userId))add(p.id,'packs',p.ownerId,['issuance']);
+    for(const t of Object.values(s.trades??{}))if(t.status==='pending'&&(!userId||[t.fromUserId,t.toUserId].includes(userId)))add(t.id,'trading',t.fromUserId,workflowRequirements('trading',!!(t.give.currencies.length+t.receive.currencies.length)));
+    for(const l of Object.values(s.listings??{}))if(l.status==='active'&&(!userId||l.sellerId===userId||l.entries?.[userId])){const workflow=l.kind==='mint-pack'?'packs':['mint-card','action'].includes(l.kind)?'directSales':'resale';add(l.id,workflow,l.sellerId,workflowRequirements(workflow,l.price.amount>0));}
+    for(const p of Object.values(s.externalPurchases??{}))if(['prepared','refund_required','quarantined'].includes(p.state)&&(!userId||p.terms.userId===userId))add(p.preparationId,'packs',p.terms.userId,['issuance','settlement']);
+    return rows;
+  }
+  #transitionCapabilities(next,s){try{return transitionCapabilities(next,this.#obligations(s));}catch(error){check(false,'CAPABILITY_OBLIGATION',error.message,409);}}
+  capabilities(actor) {
+    return this.#store.read(s=>{
+      const user=this.#user(s,actor),configured=this.#catalog(s).capabilities??resolveCapabilities(),migrationRequired=!this.#catalog(s).capabilities;
+      const site=adminSite(s),restrictions=adminRestrictions(s,user.id),commerce=s.commerceSettings?.settings?.enabled!==false;
+      const available={packs:configured.workflows.packs&&!site.packPurchasesPaused&&!restrictions.buyingBlocked,
+        directSales:configured.workflows.directSales&&commerce&&!restrictions.buyingBlocked,
+        trading:configured.workflows.trading&&!site.tradingPaused&&!restrictions.tradingBlocked,
+        resale:configured.workflows.resale&&commerce&&!site.playerShopsPaused&&(!restrictions.buyingBlocked||!restrictions.sellingBlocked)};
+      const draining=[...new Set(this.#obligations(s,user.id).map(row=>row.workflow).filter(name=>!available[name]))];
+      const history={codes:Object.values(s.codes??{}).some(row=>s.copies[row.copyId]?.state!=='sealed'&&(row.holderId===user.id||row.holderHistory?.includes(user.id))),rewards:Object.values(s.actionJobs??{}).some(row=>row.userId===user.id)};
+      return {version:1,configured:configured.workflows,available,draining,migrationRequired,history};
+    });
+  }
+  workerPlan(actor) {
+    this.#admin(actor,'maintenance.run');
+    return this.#store.read(s=>({actions:Object.values(s.actionJobs??{}).some(job=>['pending','running'].includes(job.status)),
+      maintenance:Object.values(s.trades??{}).some(trade=>trade.status==='pending')||Object.values(s.listings??{}).some(listing=>listing.status==='active')}));
+  }
   #event(s,type,data,at=this.#clock()) {
     this.#admission(s);
     const completion=completionContext(s),event={id:id(),sequence:s.events.length+1,type,data,at,...(completion?{completionId:completion.id}:{})};s.events.push(event);
@@ -290,7 +326,9 @@ export class CardFramework {
   publishCatalog(actor,manifest) {
     this.#admin(actor,'catalog.publish'); const catalog=validateCatalog(manifest);
     return this.#store.transact(s=>{
+      check(!s.catalog||s.catalog.capabilities||Object.hasOwn(manifest,'capabilities'),'CAPABILITY_MIGRATION_REQUIRED','Include an explicit version 1 capability profile when migrating an installed catalog',503);
       this.#validateRevision(catalog,s.catalog);
+      this.#transitionCapabilities(catalog.capabilities,s);
       s.cardValidation={...s.cardValidation,...validateGovernedCatalog(s,catalog,{actor})};
       if(s.catalog)invalidateAdminReview(s);s.catalog=catalog;for(const product of catalog.products)effectiveProduct(s,product); this.#event(s,'catalog.published',{version:catalog.version});
       return this.#publicCatalog(catalog,s);
@@ -307,7 +345,7 @@ export class CardFramework {
       check((s.catalog?.version??0)===expectedVersion,'STALE_IMPORT','Catalog changed; preview again',409);
       check((s.cardAuthoring?.revision??0)===(policyRevision??0),'POLICY_CHANGED','Card policy changed; preview again',409);
       const catalog=validateCatalog(manifest);check(contentDigest(catalog)===digest,'IMPORT_CHANGED','Preview differs from the submitted catalog',409);
-      this.#validateRevision(catalog,s.catalog);s.cardValidation={...s.cardValidation,...validateGovernedCatalog(s,catalog,{actor})};if(s.catalog)invalidateAdminReview(s);s.catalog=catalog;for(const product of catalog.products)effectiveProduct(s,product);
+      this.#validateRevision(catalog,s.catalog);this.#transitionCapabilities(catalog.capabilities,s);s.cardValidation={...s.cardValidation,...validateGovernedCatalog(s,catalog,{actor})};if(s.catalog)invalidateAdminReview(s);s.catalog=catalog;for(const product of catalog.products)effectiveProduct(s,product);
       this.#event(s,'catalog.imported',{version:catalog.version,userId:actor.userId??null,digest});
       const result={version:catalog.version,digest,importedAt:this.#clock()};s.operatorRequests[token]={hash:inputHash,result};return result;
     });
@@ -379,10 +417,11 @@ export class CardFramework {
   pendingExternalPurchases(actor,input){return this.#externalPurchases.pending(actor,input);}
   reconcileLegacyExternalPurchase(actor,input){return this.#externalPurchases.legacy(actor,input);}
   resolveLegacyExternalPurchase(actor,input){return this.#externalPurchases.resolveLegacy(actor,input);}
-  #captureExternalPurchase(s,user,quote){
+  #captureExternalPurchase(s,user,quote,{recovery=false}={}){
     const catalog=this.#catalog(s),base=lookup(catalog.products,quote.productId);
     check(base&&base.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
     assertAdminPurchase(s,user.id,base);const product=effectiveProduct(s,base);this.#productTime(product);
+    if(!recovery)this.#workflow(s,'packs',product.price.amount>0);
     check(quote.quantity<=product.maxQuantity,'INVALID_INPUT','Quantity exceeds product limit');
     const expected={productId:product.id,quantity:quote.quantity,productRevision:product.revision,catalogVersion:catalog.version,adminRevision:adminRevision(s),price:{currencyId:product.price.currencyId,amount:product.price.amount*quote.quantity}};
     check(fingerprint(expected)===fingerprint(quote),'STALE_QUOTE','Get a fresh quote before buying',409);
@@ -471,7 +510,7 @@ export class CardFramework {
       this.#adjust(s,terms.userId,quote.price.currencyId,-quote.price.amount,'external-credit-reversed',row.preparationId);
       row.legacy.reversedCredit=true;
     }
-    try{return {snapshot:this.#captureExternalPurchase(s,this.#user(s,{userId:terms.userId}),quote)};}catch(error){return {failure:error.code??'LEGACY_TERMS_UNAVAILABLE'};}
+    try{return {snapshot:this.#captureExternalPurchase(s,this.#user(s,{userId:terms.userId}),quote,{recovery:true})};}catch(error){return {failure:error.code??'LEGACY_TERMS_UNAVAILABLE'};}
   }
   #resolveLegacyPurchase(s,row,purchaseKey){
     check(Object.hasOwn(s.requests,row.terms.userId+':'+purchaseKey),'LEGACY_RESOLUTION_REJECTED','Existing purchase receipt required',409);
@@ -555,6 +594,7 @@ export class CardFramework {
       const user=this.#user(s,actor),c=this.#catalog(s),base=lookup(c.products,productId);
       check(base && base.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
       assertAdminPurchase(s,user.id,base);const product=effectiveProduct(s,base);
+      this.#workflow(s,'packs',product.price.amount>0);
       this.#productTime(product);
       check(quantity<=product.maxQuantity,'INVALID_INPUT','Quantity exceeds product limit');
       const total=product.price.amount*quantity; integer(total,'total price');
@@ -570,6 +610,7 @@ export class CardFramework {
       const c=this.#catalog(s),base=lookup(c.products,productId);
       check(base && base.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
       assertAdminPurchase(s,user.id,base);const product=effectiveProduct(s,base);
+      this.#workflow(s,'packs',product.price.amount>0);
       this.#productTime(product);
       check(product.revision===productRevision && c.version===catalogVersion && adminRevision(s)===(quotedAdminRevision??0),'STALE_QUOTE','Get a fresh quote before buying',409);
       check(quantity<=product.maxQuantity,'INVALID_INPUT','Quantity exceeds product limit');
@@ -704,12 +745,12 @@ export class CardFramework {
       return this.#copyView(s,output,user.id);
     });
   }
-  #offer(s,userId,offer,toUserId=null) {
+  #offer(s,userId,offer,toUserId=null,recovery=false) {
     check(offer && Array.isArray(offer.copyIds) && Array.isArray(offer.currencies),'INVALID_INPUT','Trade offers need copyIds and currencies arrays');
     check(offer.copyIds.length<=1000 && offer.currencies.length<=100,'INVALID_INPUT','Trade offer too large');
     check(new Set(offer.copyIds).size===offer.copyIds.length,'INVALID_INPUT','Duplicate copy in offer');
-    if(offer.copyIds.length) this.#feature(s,'cardTrading');
-    if(offer.currencies.length) this.#feature(s,'currencyTrading');
+    if(!recovery&&offer.copyIds.length) this.#feature(s,'cardTrading');
+    if(!recovery&&offer.currencies.length) this.#feature(s,'currencyTrading');
     for(const copyId of offer.copyIds) {
       const copy=s.copies[copyId]; check(copy && copy.ownerId===userId && copy.state==='owned','NOT_OWNED','Trade card not owned',403);
       check(!copy.lockedBy,'CARD_LOCKED','Trade card already reserved',409);
@@ -727,6 +768,7 @@ export class CardFramework {
   }
   #tradeDigest(trade){return contentDigest({id:trade.id,fromUserId:trade.fromUserId,toUserId:trade.toUserId,give:trade.give,receive:trade.receive,createdAt:trade.createdAt,expiresAt:trade.expiresAt,message:trade.message??'',snapshots:trade.snapshots??null});}
   #createTrade(s,user,{toUserId,give,receive,expiresInSeconds=Math.min(86400,(s.tradingPolicy?.policy??tradingDefaults).maxExpirySeconds),message='',versions={},parentTradeId=null}){
+    this.#workflow(s,'trading',!!(give?.currencies?.length||receive?.currencies?.length));
     integer(expiresInSeconds,'expiry seconds',1,604800);
     check(typeof message==='string'&&message.length<=500,'INVALID_INPUT','Trade message must be at most 500 characters');jsonObject(versions,'card versions');
       check(toUserId!==user.id && s.users[toUserId],'INVALID_INPUT','Choose another registered user');
@@ -801,9 +843,7 @@ export class CardFramework {
       check(!this.#blocked(s,trade.fromUserId,trade.toUserId),'TRADE_BLOCKED','Trading between these accounts is blocked',403);
       for(const [copyId,snapshot]of Object.entries(trade.snapshots??{}))check(s.copies[copyId]?.version===snapshot.version,'STALE_INVENTORY','A card changed after this offer; request a new offer',409);
       this.#checkTrade(s,{fromUserId:trade.fromUserId,toUserId:trade.toUserId,give:trade.give,receive:trade.receive});
-      // Current switches and policies apply even when an offer predates a catalog update.
-      if(trade.give.copyIds.length) this.#feature(s,'cardTrading');
-      if(trade.give.currencies.length) this.#feature(s,'currencyTrading');
+      // Accepted escrow can drain after workflow disable; current transfer policies still apply.
       for(const copyId of trade.give.copyIds) {
         const copy=s.copies[copyId];
         check(copy.ownerId===trade.fromUserId && copy.state==='owned' && copy.lockedBy===trade.id,'TRADE_CONFLICT','Escrow changed',409);
@@ -811,7 +851,7 @@ export class CardFramework {
         check(!Object.values(copy.bindings).some(b=>b.transfer==='block'),'TRANSFER_BLOCKED','Binding blocks transfer',409);
       }
       for(const money of trade.give.currencies) check(this.#currency(s,money.currencyId).tradable===true,'TRANSFER_BLOCKED','Currency trading disabled',403);
-      this.#offer(s,user.id,trade.receive,trade.fromUserId);
+      this.#offer(s,user.id,trade.receive,trade.fromUserId,true);
       trade.status='accepted'; trade.completedAt=this.#clock();
       for(const money of trade.receive.currencies) {
         this.#adjust(s,user.id,money.currencyId,-money.amount,'trade',trade.id);

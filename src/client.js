@@ -14,6 +14,7 @@ export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={})
     return data;
   }
   return {
+    capabilities:()=>wire('capabilities'),
     commandIntents:options=>wire('commandIntents',undefined,{query:options}),
     registerCommandIntent:input=>wire('registerCommandIntent',input),
     executeCommandIntent:input=>wire('executeCommandIntent',input),

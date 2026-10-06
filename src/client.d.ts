@@ -13,6 +13,7 @@ export interface QueryOptions {
   [key:string]:string|number|boolean|null|undefined;
 }
 export interface Client extends DirectMethods,QueryMethods {
+  capabilities():Promise<Schemas['CapabilityAvailability']>;
   commandIntents(options?:{command?:DurableCommand}):Promise<Operations['commandIntents']['response']>;
   adminUser(options:QueryOptions&{userId:string}):Promise<Schemas['AdminUserDetail']>;
   inventory():Promise<Schemas['InventoryCopy'][]>;

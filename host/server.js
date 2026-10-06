@@ -44,7 +44,7 @@ const provider=extension.identityProvider??await createOIDCProvider({issuer,clie
 const auth=createAuthHost({framework,sessions,provider,origin,adminSubjects,resolveAccess:extension.resolveAccess,rateLimit});
 const currencyGateway=extension.currencyProviders?createCurrencyGateway({framework,providers:extension.currencyProviders}):undefined;
 const api=createApiHandler({framework,currencyGateway,codeGateway,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,exposeOperators:true,requireTradeReview:true,requirePrincipal:true,rateLimit,
-  onRequest:event=>process.stdout.write(JSON.stringify({kind:'request',...event})+'\n')});
+  onRequest:event=>{process.stdout.write(JSON.stringify({kind:'request',...event})+'\n');if(event.method==='POST')syncWorkers();}});
 const presentations=process.env.PRESENTATION_ROOT?await createPresentationStore({root:resolve(process.env.PRESENTATION_ROOT),...extension.presentationOptions,authorize:authorizePresentation,validatePublication:async(actor,input)=>{await framework.registerCardPresentation(actor,input.archive);await extension.presentationOptions?.validatePublication?.(actor,input);}}):null;
 const presentationHTTP=presentations?createPresentationHandler({store:presentations,resolveIdentity:auth.resolveIdentity,allowedOrigin:origin,rateLimit}):null;
 const assetOrigins=(process.env.ASSET_ORIGINS??'').split(',').filter(Boolean);for(const value of assetOrigins)if(new URL(value).origin!==value||!value.startsWith('https://'))throw new Error('ASSET_ORIGINS requires exact HTTPS origins');
@@ -59,9 +59,17 @@ const server=createServer({requestTimeout:15000,headersTimeout:10000,maxHeaderSi
   }catch{res.statusCode=500;res.end('Request could not be completed');}
 });
 server.maxRequestsPerSocket=1000;server.keepAliveTimeout=5000;
-let dispatching=null;const workerAbort=new AbortController();
-const actionWorker=extension.actionWorker!==false&&Object.keys(extension.actionHandlers??{}).length?setInterval(()=>{if(!dispatching){dispatching=framework.dispatchActions({permissions:['actions.dispatch']},{limit:10,signal:workerAbort.signal}).catch(()=>process.stderr.write('Action delivery cycle failed\n')).finally(()=>{dispatching=null;});}},1000):null;actionWorker?.unref();
-const maintenance=setInterval(()=>{try{framework.sweepExpiredTrades({role:'admin'});framework.expireListings({role:'admin'});framework.drawDueRaffles({role:'admin'});}catch{process.stderr.write('Scheduled maintenance failed\n');}},60000);maintenance.unref();
+let dispatching=null,actionWorker=null,maintenance=null;const workerAbort=new AbortController();
+function syncWorkers(){
+  if(workerAbort.signal.aborted)return;
+  const plan=framework.workerPlan({role:'admin'});
+  const actions=plan.actions&&extension.actionWorker!==false&&Object.keys(extension.actionHandlers??{}).length;
+  if(actions&&!actionWorker){actionWorker=setInterval(()=>{if(!dispatching){dispatching=framework.dispatchActions({permissions:['actions.dispatch']},{limit:10,signal:workerAbort.signal}).catch(()=>process.stderr.write('Action delivery cycle failed\n')).finally(()=>{dispatching=null;syncWorkers();});}},1000);actionWorker.unref();}
+  if(!actions&&actionWorker){clearInterval(actionWorker);actionWorker=null;}
+  if(plan.maintenance&&!maintenance){maintenance=setInterval(()=>{try{framework.sweepExpiredTrades({role:'admin'});framework.expireListings({role:'admin'});framework.drawDueRaffles({role:'admin'});}catch{process.stderr.write('Scheduled maintenance failed\n');}finally{syncWorkers();}},60000);maintenance.unref();}
+  if(!plan.maintenance&&maintenance){clearInterval(maintenance);maintenance=null;}
+}
+syncWorkers();
 server.listen(Number(process.env.PORT??8080),process.env.BIND_ADDRESS??'127.0.0.1',()=>console.log('Framework production host ready on '+origin));
 let closing=false;function shutdown(){if(closing)return;closing=true;clearInterval(maintenance);clearInterval(actionWorker);workerAbort.abort();server.close(async()=>{await dispatching;await presentations?.close();sessions.close();framework.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();}
 process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);

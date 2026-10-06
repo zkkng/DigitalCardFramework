@@ -179,6 +179,8 @@ export class CommerceService {
       "shop.created",
       { name, kind, ownerId, metadata },
       (s, u) => {
+        check(config(s).enabled,'SHOP_DISABLED','Shop creation is disabled',409);
+        this.#b.workflow(s,kind==='player'?'resale':['directSales','packs','resale']);
         initialize(s);
         const manage = hasPermission(actor, "commerce.manage");
         check(
@@ -384,6 +386,8 @@ export class CommerceService {
       (s, u) => {
         initialize(s);
         const shop = this.#own(s, actor, shopId);
+        check(config(s).enabled,'SHOP_DISABLED','Listing creation is disabled',409);
+        this.#b.workflow(s,items.kind==='mint-pack'?'packs':['mint-card','action'].includes(items.kind)?'directSales':'resale',price.amount>0);
         check(shop.enabled, "SHOP_DISABLED", "Shop is disabled", 409);
         assertAdminShop(s,shop);
         this.#currency(s, shop, price);
@@ -623,9 +627,11 @@ export class CommerceService {
   #eligible(s, l, u) {
     const shop = s.shops[l.shopId],
       at = this.#b.now();
+    const claim=l.draw?.winners.some(w=>w.userId===u.id&&!w.orderId);
+    if(!claim)this.#b.workflow(s,l.kind==='mint-pack'?'packs':['mint-card','action'].includes(l.kind)?'directSales':'resale',l.price.amount>0);
     if(shop)assertAdminShop(s,shop,u.id,l);
     check(
-      config(s).enabled &&
+      (config(s).enabled || claim) &&
         shop?.enabled &&
         (shop.kind === "admin" || config(s).playerShops),
       "SHOP_DISABLED",

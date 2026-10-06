@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added versioned capability profiles with independent pack acquisition, direct sales, trading and resale controls, plus account-specific availability and recovery hints.
 - Added Studio controls for polygon and image clipping masks, inversion, vertex editing and immutable saved-mask reuse.
 - Added TypeScript declarations for the trade draft component, with validated inventory responses and persisted draft inputs.
 - Added server-owned command recovery with account-scoped discovery, immutable reviewed inputs and explicit acknowledgement. A fresh browser or admin panel can recover an unconfirmed action after local storage is erased without repeating its debit or issuance.
@@ -20,6 +21,8 @@
 
 ### Changed
 
+- New catalogs default to collection-only. The reference frontend loads optional views and data according to enabled workflows and retained recovery needs; the example catalog explicitly selects the demo profile.
+- Resale no longer requires enabling user-to-user trade offers. Disabling admission preserves accepted work and original receipt replay.
 - Encrypted storage schema 3 adds indexed current/former code-holder history alongside identity and collection queries. Migration preserves existing encrypted records and authentication sessions.
 - Trade, listing, pack and action delivery workflows reserve completion capacity separately from new admissions. Legacy pending work receives an atomic reservation backfill before the production host admits traffic.
 - Strengthened wallet, receipt, delivery and code audits, and routed code lifecycle events through durable subscriptions. Unchanged command replay does not rewrite state.
@@ -34,6 +37,7 @@
 
 ### Upgrade notes
 
+- Existing catalogs without a capability profile require an explicit profile publication before new pack, trade or commerce operations. Follow the [capability migration guide](docs/capabilities.md), retaining primitives needed by pending work.
 - Commands registered after upgrade use the server recovery journal. Older commands whose browser identity was already lost still require host reconciliation. Plan the retained-intent limit; unresolved records are not automatically discarded.
 - Back up the database and required keys before upgrading. Follow [production operations](docs/production.md) for schema migration and completion limits. Custom hosts must backfill legacy completion reservations before accepting new commands.
 - New completion budgets are separate from the ordinary payload budget; configure the framework and SQLite limits consistently. Existing receipts and unresolved recovery records are retained.

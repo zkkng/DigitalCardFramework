@@ -4,6 +4,8 @@ Version 0.2.0 supports one small installation with local framework currencies, e
 
 ## Configure and start
 
+Choose an explicit [capability profile](capabilities.md) in the catalog. New installations default to collection-only; the sample catalog explicitly enables the demo workflows. For an existing database without a versioned profile, publish a reviewed profile through catalog import before admitting new pack, trade or commerce operations. Retain primitives required by pending work during disable or migration.
+
 Use Node 24.14+ (verified with 24.19) and pnpm 11.19.0. Install with `pnpm install --frozen-lockfile`. Copy `.env.example` to an ignored `.env` and supply:
 
 | Setting | Meaning |

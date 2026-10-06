@@ -6,10 +6,13 @@ For a balance owned by another service, use the [external purchase workflow](ext
 
 ## Catalog
 
+New catalogs omit optional workflows by default. Configure independent packs, direct sales, trading and resale through the versioned [capability profile](capabilities.md). `capabilities(actor)` and `client.capabilities()` expose effective availability and accepted work that must drain. Existing persisted catalogs require explicit profile migration before new workflow admission.
+
 publishCatalog(operator, manifest) validates and persists a complete JSON catalog. version increases for each publication. Variants, products and recipes can be disabled through enabled:false; published IDs are retained. Card line identity and variant card/rarity/supplyLimit are immutable. Use a new variant ID for another edition. Modified pack products increment revision. Each acquired copy retains its definition/variant snapshot.
 
 | Field | Meaning |
 | --- | --- |
+| capabilities | version:1, optional named preset, workflow flags and explicit primitive flags; omission selects the minimal collection profile |
 | currencies | id, name, value:{numerator,denominator}; tradable explicitly true to permit transfers; convertible:false blocks conversions |
 | lines | id, name and host presentation metadata |
 | rarities | id, name, rank; rank defines recipe progression, not a fixed pack chance |

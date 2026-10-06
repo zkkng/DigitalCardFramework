@@ -422,7 +422,7 @@ test("purchase previews redact legacy private variant bindings and preserve publ
   x.core.close();
 });
 
-test("secondary sales enforce account age, live cooldown and global currency trading", () => {
+test("secondary sales enforce account age and cooldown independently of currency trading", () => {
   let now = "2026-10-01T00:00:00Z";
   const x = fixture({ clock: () => now }),
     s = shop(x),
@@ -443,11 +443,8 @@ test("secondary sales enforce account age, live cooldown and global currency tra
   x.c.version = 2;
   x.c.features.currencyTrading = false;
   x.core.publishCatalog(admin, x.c);
-  assert.throws(
-    () => buy(x, l.id, x.bob, "disabled"),
-    code("FEATURE_DISABLED"),
-  );
-  assert.equal(x.core.wallet(x.bob).credits, 9980);
+  buy(x, l.id, x.bob, "independent");
+  assert.equal(x.core.wallet(x.bob).credits, 9960);
   assert.equal(x.core.audit(admin).ok, true);
   x.core.close();
 });

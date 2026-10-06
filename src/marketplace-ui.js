@@ -5,6 +5,8 @@ export function renderMarketplace(
   model,
   { client, cardRenderer, listingRenderer, refresh, mutate, storage } = {},
 ) {
+  const enabled=name=>!model.capabilities||model.capabilities.available[name];
+  const workflow=kind=>kind==='mint-pack'?'packs':['mint-card','action'].includes(kind)?'directSales':'resale';
   const button=(label,callback,...options)=>baseButton(label,(...args)=>{if(disposed)return;return callback(...args)},...options);
   const node = section(
       "Marketplace",
@@ -146,7 +148,7 @@ export function renderMarketplace(
           "dc-quiet",
         ),
       );
-      if (l.phase === "entries-open")
+      if (l.phase === "entries-open" && enabled(workflow(l.kind)))
         card.append(
           button("Enter raffle", () =>
             action(async () => {
@@ -155,7 +157,7 @@ export function renderMarketplace(
             }),
           ),
         );
-    } else if (l.phase === "live")
+    } else if (l.phase === "live" && enabled(workflow(l.kind)))
       card.append(button("Review purchase", () => purchase(l)));
     return card;
   }
@@ -197,6 +199,7 @@ export function renderMarketplace(
   node.append(more);
   async function compose() {
     if(disposed)return;
+    if(!['packs','directSales','resale'].some(enabled))return;
     try {
       const [shops, settings] = await Promise.all([
         client.shops({ limit: 200 }),
@@ -207,7 +210,7 @@ export function renderMarketplace(
           model.me.role === "admin" ||
           model.me.permissions?.includes("commerce.manage"),
         own = shops.items.filter((s) => s.mine);
-      if (((settings.effectiveSettings?.playerShops ?? settings.settings.playerShops) && !model.me.adminStatus?.restrictions?.sellingBlocked) || admin) {
+      if ((enabled('resale') && (settings.effectiveSettings?.playerShops ?? settings.settings.playerShops) && !model.me.adminStatus?.restrictions?.sellingBlocked) || admin) {
         const box = el("details", "dc-form-panel");
         box.append(el("summary", "", "Create a shop"));
         const name = field(box, "Shop name"),
@@ -217,7 +220,7 @@ export function renderMarketplace(
             admin
               ? [
                   { id: "admin", name: "Admin shop" },
-                  { id: "player", name: "Player shop" },
+                  ...(enabled('resale')?[{ id: "player", name: "Player shop" }]:[]),
                 ]
               : [{ id: "player", name: "Player shop" }],
           );
@@ -234,7 +237,7 @@ export function renderMarketplace(
         );
         node.append(box);
       }
-      if (own.length) {
+      if (own.length && (admin||enabled('resale'))) {
         const box = el("details", "dc-form-panel");
         box.append(el("summary", "", "List stock for sale"));
         const shop = select(
@@ -246,8 +249,8 @@ export function renderMarketplace(
           currency = select(box, "Currency", model.catalog.currencies),
           amount = field(box, "Unit price", { type: "number", value: "1" }),
           kind = select(box, "Stock source", [
-            { id: "copies", name: "Owned card" },
-            ...(settings.settings.packResale
+            ...(enabled('resale')?[{ id: "copies", name: "Owned card" }]:[]),
+            ...(enabled('resale')&&settings.settings.packResale
               ? [{ id: "packs", name: "Owned sealed pack" }]
               : []),
             ...(admin
@@ -257,7 +260,7 @@ export function renderMarketplace(
                   { id: "action", name: "Custom action item" },
                 ]
               : []),
-          ]),
+          ].filter(item=>enabled(workflow(item.id)))),
           target = select(box, "Stock item", []),
           quantity = field(box, "Stock quantity (new stock)", {
             type: "number",

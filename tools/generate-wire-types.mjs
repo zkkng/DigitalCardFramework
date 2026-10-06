@@ -7,7 +7,10 @@ function type(schema={}) {
   if(schema.const!==undefined)return JSON.stringify(schema.const);
   if(schema.enum)return schema.enum.map(value=>JSON.stringify(value)).join(' | ');
   if(schema.oneOf||schema.anyOf)return (schema.oneOf??schema.anyOf).map(type).join(' | ');
-  if(schema.allOf)return schema.allOf.map(type).join(' & ');
+  if(schema.allOf){
+    const {allOf,...base}=schema;
+    return [type(base),...allOf.map(type)].filter(value=>value!=='unknown').join(' & ')||'unknown';
+  }
   if(Array.isArray(schema.type))return schema.type.map(value=>type({...schema,type:value})).join(' | ');
   if(schema.type==='null')return 'null';
   if(schema.type==='string')return 'string';

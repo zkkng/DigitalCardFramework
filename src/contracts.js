@@ -1722,6 +1722,28 @@ Object.assign(openapi.paths,{
   '/command-intents/acknowledge':route('post','acknowledgeCommandIntent',{type:'object',additionalProperties:false,required:['id','state'],properties:{id:str,state:{const:'acknowledged'}}},{requestSchema:ref('CommandIntentId'),description:'Acknowledges a resolved original intent before registering a new command of the same kind.'})
 });
 for(const path of ['/command-intents','/command-intents/execute','/command-intents/acknowledge'])for(const operation of Object.values(openapi.paths[path]))Object.assign(operation.responses,{'404':{description:'Account-owned intent or command resource is unavailable'},'503':{description:'Command recovery storage is unavailable'}});
+const workflows=['packs','directSales','trading','resale'],primitives=['issuance','transfer','settlement'];
+const capabilityFlags=(names,required=names)=>({type:'object',additionalProperties:false,required,properties:Object.fromEntries(names.map(name=>[name,{type:'boolean'}]))});
+const dependencies={packs:['issuance'],directSales:['issuance','settlement'],trading:['transfer'],resale:['transfer','settlement']};
+schemas.CapabilityWorkflows=capabilityFlags(workflows);
+schemas.CapabilityPrimitives=capabilityFlags(primitives);
+const requiresPrimitives=names=>({required:['primitives'],properties:{primitives:{required:names,properties:Object.fromEntries(names.map(name=>[name,{const:true}]))}}});
+schemas.CapabilityProfile={type:'object',additionalProperties:false,required:['version','workflows','primitives'],properties:{version:{const:1},workflows:ref('CapabilityWorkflows'),primitives:ref('CapabilityPrimitives')},allOf:workflows.map(workflow=>({if:{properties:{workflows:{properties:{[workflow]:{const:true}}}}},then:requiresPrimitives(dependencies[workflow])}))};
+const presets={packs:['packCollection','demo'],directSales:['storefront','demo'],trading:['demo'],resale:['demo']};
+schemas.CapabilityInput={type:'object',additionalProperties:false,properties:{version:{const:1},preset:{enum:['minimal','storefront','packCollection','demo']},workflows:capabilityFlags(workflows,[]),primitives:capabilityFlags(primitives,[])},allOf:workflows.map(workflow=>({if:{anyOf:[{required:['workflows'],properties:{workflows:{required:[workflow],properties:{[workflow]:{const:true}}}}},{required:['preset'],properties:{preset:{enum:presets[workflow]},workflows:{not:{required:[workflow]}}}}]},then:requiresPrimitives(dependencies[workflow])}))};
+schemas.CapabilityAvailability={
+  type:'object',additionalProperties:false,required:['version','configured','available','draining','history','migrationRequired'],
+  properties:{version:{const:1},configured:ref('CapabilityWorkflows'),available:ref('CapabilityWorkflows'),draining:{type:'array',maxItems:4,uniqueItems:true,items:{type:'string',enum:workflows}},history:{type:'object',additionalProperties:false,required:['codes','rewards'],properties:{codes:{type:'boolean'},rewards:{type:'boolean'}}},migrationRequired:{type:'boolean'}},
+  allOf:workflows.map(workflow=>({
+    if:{properties:{available:{properties:{[workflow]:{const:true}}}}},
+    then:{properties:{configured:{properties:{[workflow]:{const:true}}}}}
+  }))
+};
+schemas.CatalogManifest.properties.capabilities=ref('CapabilityProfile');
+schemas.PublicCatalog={...schemas.CatalogManifest,required:[...schemas.CatalogManifest.required,'features']};
+openapi.paths['/catalog'].get.responses['200'].content['application/json'].schema=ref('PublicCatalog');
+schemas.ImportPreviewRequest.properties.source.oneOf[1]={type:'object',properties:{capabilities:ref('CapabilityInput')}};
+openapi.paths['/capabilities']=route('get','capabilities',ref('CapabilityAvailability'),{description:'Authenticated workflow hints for the current account. Configured workflows and current coarse availability are distinct; resource checks remain authoritative. Draining names identify only this account\'s accepted pending work.'});
 // All documented failure statuses use the same JSON envelope.
 for(const item of Object.values(openapi.paths))for(const operation of Object.values(item)){
   for(const [status,response]of Object.entries(operation.responses??{}))if(Number(status)>=400)response.content={'application/json':{schema:ref('Error')}};

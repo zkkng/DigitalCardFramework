@@ -56,6 +56,7 @@ export function createApiHandler({framework,currencyGateway,codeGateway,resolveI
           '/api/operator/admin/user':()=>framework.adminUser(actor,{...options,userId:url.searchParams.get('userId')}),
           '/api/operator/admin/history':()=>framework.adminHistory(actor,options),
           '/api/trading-policy':()=>framework.tradingPolicy(),'/api/commerce-settings':()=>framework.commerceSettings(),'/api/shops':()=>framework.shops(actor,options),'/api/listings':()=>framework.listings(actor,{...options,...(url.searchParams.has('shopId')?{shopId:url.searchParams.get('shopId')}:{})}),'/api/orders':()=>framework.orders(actor,options),'/api/fulfillments':()=>framework.fulfillments(actor,options),'/api/operator/actions':()=>framework.actionJobs(actor,options),
+          '/api/capabilities':()=>framework.capabilities(actor),
           '/api/catalog':()=>framework.catalog(), '/api/me':()=>({...framework.me(actor),role:actor.role==='admin'?'admin':'player',permissions:publicPermissions(actor)}),
           '/api/availability':()=>framework.availability(),'/api/pity':()=>framework.pityProgress(actor),
           '/api/wallet':()=>framework.wallet(actor), '/api/history':()=>framework.history(actor),

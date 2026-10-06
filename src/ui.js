@@ -151,6 +151,7 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
   root.append(dashboard,nav,status,content,inspector);
   let disposed=false,model=null,openerDispose=null,viewDisposers=[],refreshGeneration=0,mutate=null,commandPrincipal=null,busy=false;
   let active=sections.includes('shop')?'shop':sections[0],viewLeave=null;
+  let effectiveSections=sections;
   const renderer=(copy,options={})=>cardRenderer(copy,{backRenderer,...options});
   const currencyName=id=>model.catalog.currencies.find(c=>c.id===id)?.name??id;
   const lineName=id=>model.catalog.lines.find(l=>l.id===id)?.name??id;
@@ -189,6 +190,7 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
   function section(title,description) {const node=element('section','dc-section');node.append(element('h2','',title));if(description)node.append(element('p','dc-section-intro',description));return node;}
   function empty(node,title,description,cta,go) {const box=element('div','dc-empty');box.append(element('span','dc-empty-symbol','◇'),element('h3','',title),element('p','dc-muted',description));if(cta)box.append(button(cta,()=>navigate(go)));node.append(box);}
   function navigate(name,approved=false) {
+    if(!effectiveSections.includes(name))return;
     if(active==='admin'&&name!==active&&viewLeave&&!approved){viewLeave(()=>navigate(name,true));return;}
     const refreshAfterAdmin=active==='admin' && name!=='admin';
     active=name;status.textContent='';renderView();
@@ -269,26 +271,35 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
     root.classList.toggle('dc-with-nav',navigation==='tabs');
     if(navigation==='tabs'){
       const heading=element('div','dc-dashboard-heading');heading.append(element('span','dc-eyebrow','YOUR ACCOUNT'),element('strong','',model.me.displayName??userName(model.me.userId)));dashboard.append(heading);
-      const balances=element('div','dc-wallet-strip');for(const c of model.catalog.currencies){const balance=element('div');balance.append(element('strong','',num(model.wallet[c.id]??0)),element('span','dc-muted',c.name));balances.append(balance);}dashboard.append(balances);
-      const stats=element('div','dc-account-stats');stats.append(element('span','',model.inventory.length+' cards'),element('span','',model.packs.filter(p=>!p.openedAt).length+' sealed packs'));dashboard.append(stats);
-      for(const name of sections){if(typeof name!=='string'||!views[name])continue;const item=button(labels[name]??name,()=>navigate(name));item.className='dc-nav-item';item.dataset.view=name;item.setAttribute('aria-current',active===name?'page':'false');if(name==='packs'){const count=model.packs.filter(p=>!p.openedAt).length;if(count)item.append(element('span','dc-nav-count',count));}nav.append(item);}
+      if(effectiveSections.includes('wallet')){const balances=element('div','dc-wallet-strip');for(const c of model.catalog.currencies){const balance=element('div');balance.append(element('strong','',num(model.wallet[c.id]??0)),element('span','dc-muted',c.name));balances.append(balance);}dashboard.append(balances);}
+      const stats=element('div','dc-account-stats');stats.append(element('span','',model.inventory.length+' cards'));if(effectiveSections.includes('packs'))stats.append(element('span','',model.packs.filter(p=>!p.openedAt).length+' sealed packs'));dashboard.append(stats);
+      for(const name of effectiveSections){if(typeof name!=='string'||!views[name])continue;const item=button(labels[name]??name,()=>navigate(name));item.className='dc-nav-item';item.dataset.view=name;item.setAttribute('aria-current',active===name?'page':'false');if(name==='packs'){const count=model.packs.filter(p=>!p.openedAt).length;if(count)item.append(element('span','dc-nav-count',count));}nav.append(item);}
     }
     if(model.recoverable?.length){
       const recovery=element('section','dc-panel');recovery.setAttribute('aria-label','Unconfirmed changes');recovery.append(element('h2','','Unconfirmed changes'),element('p','','Recover these previously reviewed changes before starting another. Recovery uses the original request.'));
       const names={purchase:'pack purchase',openPack:'pack opening',buyListing:'marketplace purchase',configureAdmin:'settings change',administerCards:'card administration',convert:'currency conversion',tradeUp:'trade-up',saveAlbum:'album change',proposeTrade:'trade offer',acceptTrade:'trade acceptance',cancelTrade:'trade cancellation',counterTrade:'counteroffer',preferences:'preferences',readNotifications:'notification update',commitImport:'catalog import',reportCodeUsage:'code usage report',createShop:'shop creation',createListing:'listing creation',cancelListing:'listing cancellation',enterRaffle:'raffle entry',openCard:'card opening',consumeBinding:'attached action'};
       for(const intent of model.recoverable){const label=names[intent.command]??'saved change',row=element('div');row.append(element('strong','',label));if(intent.input.productId)row.append(element('p','',String(intent.input.quantity??1)+' × '+(model.catalog.products.find(product=>product.id===intent.input.productId)?.name??intent.input.productId)));row.append(button('Recover '+label,()=>action(()=>mutate.resume(intent),{message:'Original result recovered.'})));recovery.append(row);}content.append(recovery);
     }
-    for(const name of (navigation==='tabs'?[active]:sections)){const view=typeof name==='function'?()=>name(model,{client,inspect,inspectTogether,refresh,mutate,action,navigate,cardRenderer:renderer}):views[name];if(view){const result=view();content.append(result.node??result);if(result.dispose)viewDisposers.push(result.dispose);if(result.requestLeave)viewLeave=result.requestLeave;}}
+    for(const name of (navigation==='tabs'?[active]:effectiveSections)){const view=typeof name==='function'?()=>name(model,{client,inspect,inspectTogether,refresh,mutate,action,navigate,cardRenderer:renderer}):views[name];if(view){const result=view();content.append(result.node??result);if(result.dispose)viewDisposers.push(result.dispose);if(result.requestLeave)viewLeave=result.requestLeave;}}
   }
   async function refresh() {
     if(disposed)return;
     const generation=++refreshGeneration;
-    const [catalog,me,walletData,packData,inventory,albumData,tradeData,availability,pity]=await Promise.all([client.catalog(),client.me(),client.wallet(),client.packs(),client.inventory(),client.albums(),client.trades(),client.availability?.()??null,client.pity?.()??{}]);
+    const [catalog,me,capabilities]=await Promise.all([client.catalog(),client.me(),client.capabilities?.()??null]);
+    if(disposed||generation!==refreshGeneration)return;
+    const enabled=name=>!capabilities||capabilities.available[name]||capabilities.draining.includes(name);
+    const commerce=enabled('directSales')||enabled('resale')||enabled('packs'),packsEnabled=enabled('packs'),trading=enabled('trading');
+    const sectionEnabled={shop:!capabilities||capabilities.available.packs,packs:packsEnabled,marketplace:commerce,rewards:commerce||capabilities?.history?.rewards,codes:commerce||packsEnabled||capabilities?.history?.codes,trades:trading,tradingControls:trading,wallet:commerce||packsEnabled||trading,albums:!capabilities||catalog.features.publicAlbums};
+    effectiveSections=sections.filter(name=>sectionEnabled[name]!==false);
+    if(!effectiveSections.includes(active))active=effectiveSections.includes('collection')?'collection':effectiveSections[0];
+    const [walletData,packData,inventory,albumData,tradeData,availability,pity]=await Promise.all([
+      sectionEnabled.wallet?client.wallet():{},packsEnabled?client.packs():[],client.inventory(),sectionEnabled.albums?client.albums():[],trading?client.trades():[],
+      packsEnabled?(client.availability?.()??null):null,packsEnabled?(client.pity?.()??{}):{}]);
     if(disposed||generation!==refreshGeneration)return;
     if(commandPrincipal!==me.userId){mutate?.dispose();commandPrincipal=me.userId;mutate=createCommandRunner({client,namespace:me.userId});}
     const recovery=await mutate.recoverable();if(disposed||generation!==refreshGeneration)return;
     const recoverable=recovery.items.filter(intent=>!(mutate.pending(intent.command)?._confirmed&&mutate.pending(intent.command)?.key===intent.input.key));
-    model={catalog,me,wallet:walletData,packs:packData,inventory,albums:albumData,trades:tradeData,availability,pity,recoverable};renderView();
+    model={catalog,me,capabilities,wallet:walletData,packs:packData,inventory,albums:albumData,trades:tradeData,availability,pity,recoverable};renderView();
   }
   const ready=refresh().catch(error=>{if(disposed)return;status.className='dc-status dc-error';status.textContent=error.message;throw error;});
   return {ready,refresh,inspect,inspectTogether,dispose(){disposed=true;mutate?.dispose();openerDispose?.();viewDisposers.forEach(fn=>fn());controller.dispose();inspector.close();removeStyles();root.replaceChildren();}};

@@ -1,6 +1,7 @@
 // Fictional content; no copyrighted art or host-specific currency. Asset URLs are optional.
 export const sampleCatalog = {
   version:3,
+  capabilities:{version:1,preset:'demo',primitives:{issuance:true,transfer:true,settlement:true}},
   features:{cardTrading:true,currencyTrading:true,conversion:true,tradeUps:true,publicAlbums:true},
   currencies:[
     {id:'credits',name:'Credits',value:{numerator:1,denominator:1},tradable:true},

@@ -1,4 +1,5 @@
 import Ajv from 'ajv';
+import {resolveCapabilities} from './capability-policy.js';
 import {validatePresentationReference} from './presentation/integration.js';
 import {safeData} from './data.js';
 import {cardTypeDefaults} from './card-types.js';
@@ -51,6 +52,7 @@ function validateActions(actions){
 export function validateCatalog(input) {
   check(input && typeof input==='object' && !Array.isArray(input),'INVALID_CATALOG','Catalog must be an object');
   const c=safeData(input);
+  try{c.capabilities=resolveCapabilities(c.capabilities);}catch(error){check(false,'INVALID_CAPABILITY_CONFIG',error.message,400);}
   integer(c.version,'catalog version');
   const currencies=index(c.currencies,'currencies'), lines=index(c.lines,'lines');
   const rarities=index(c.rarities,'rarities'), cards=index(c.cards,'cards');
