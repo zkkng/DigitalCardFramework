@@ -236,9 +236,9 @@ export function transformSelection(project, side, ids, command, value) {
     if (command === "ungroup") {
       for (const n of nodes) {
         ensure(
-          n.type === "group" && !(n.rotation || n.scaleX || n.scaleY),
+          n.type === "group" && !n.isolate && !(n.rotation || n.scaleX || n.scaleY),
           "GROUP",
-          "Reset group rotation and scale before ungrouping",
+          "Disable isolation and reset group rotation and scale before ungrouping",
         );
         const list = parentList(scene.nodes, n.id),
           children = n.children.map((c) => ({

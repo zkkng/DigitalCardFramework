@@ -100,7 +100,18 @@ try {
       effect=draw(undefined,{kind:"bloom",radius:0,mask:{polygon:[[0,0],[1,0],[1,1],[0,1]],transform:{x:1}}}),
       legacy=draw(undefined,{kind:"spot",radius:0.8,intensity:0.7,mode:"overlay",maskAsset:"mask"}),
       identity=draw(undefined,{kind:"spot",radius:0.8,intensity:0.7,mode:"overlay",mask:{asset:"mask"}});
-    gpu.dispose();return {full,cropped,shifted,inverted,polygon,effect,legacy,identity};
+    const pixel=(x,y)=>{const p=new Uint8Array(4);gpu.gl.readPixels(x,y,1,1,gpu.gl.RGBA,gpu.gl.UNSIGNED_BYTE,p);return [...p];},
+      child=()=>gpu.draw({width:100,height:100},art,[1,0,0,1,0,0],[0,0,100,100]),
+      composite=(surface,node={})=>gpu.draw({width:100,height:100,...node},surface,[1,0,0,1,0,0],[0,0,100,100]);
+    gpu.begin(100,100);gpu.beginIsolation(100,100,100000);child();child();const surface=gpu.endIsolation();composite(surface,{opacity:0.5});const overlap=pixel(50,50);
+    gpu.begin(100,100);gpu.beginIsolation(100,100,100000);gpu.beginIsolation(100,100,100000);child();child();const inner=gpu.endIsolation();composite(inner,{opacity:0.5});const outer=gpu.endIsolation();composite(outer,{opacity:0.5});const nested=pixel(50,50),pooled=gpu.diagnostics();
+    gpu.begin(100,100);gpu.beginIsolation(100,100,100000);child();const masked=gpu.endIsolation();composite(masked,{mask:{polygon:[[0,0],[1,0],[1,1],[0,1]],transform:{x:0.5}}});const maskLeft=pixel(25,50),maskRight=pixel(75,50);
+    const colors=document.createElement("canvas");colors.width=2;colors.height=2;const cc=colors.getContext("2d");cc.fillStyle="red";cc.fillRect(0,0,2,1);cc.fillStyle="blue";cc.fillRect(0,1,2,1);
+    gpu.begin(100,100);gpu.beginIsolation(100,100,100000);gpu.draw({width:100,height:100},{texture:gpu.texture(colors),width:2,height:2},[1,0,0,1,0,0],[0,0,100,100]);const oriented=gpu.endIsolation();composite(oriented);const top=pixel(50,85),bottom=pixel(50,15);
+    gpu.clearSurfaces();let budgetRejected=false,depthRejected=false;try{gpu.beginIsolation(100,100,39999);}catch(e){budgetRejected=e.code==="BUDGET";}
+    for(let i=0;i<16;i++)gpu.beginIsolation(1,1,64);try{gpu.beginIsolation(1,1,64);}catch(e){depthRejected=e.code==="LIMIT";}finally{for(let i=0;i<16;i++)gpu.endIsolation();}
+    gpu.begin(101,100);const resized=gpu.diagnostics();gpu.clearSurfaces();const cleared=gpu.diagnostics();
+    gpu.dispose();return {full,cropped,shifted,inverted,polygon,effect,legacy,identity,overlap,nested,pooled,maskLeft,maskRight,top,bottom,budgetRejected,depthRejected,resized,cleared};
   });
   assert(coverage.cropped[3]>=126 && coverage.cropped[3]<=129);
   assert(coverage.full[3]<coverage.cropped[3]);
@@ -108,7 +119,41 @@ try {
   assert.equal(coverage.inverted[3],255);assert.equal(coverage.effect[3],255);
   assert.deepEqual(coverage.legacy,coverage.identity);
   assert(coverage.legacy[3]>0 && coverage.legacy[3]<126);
+  assert(coverage.overlap.every(value=>Math.abs(value-128)<=1));assert(coverage.nested.every(value=>Math.abs(value-64)<=1));
+  assert.equal(coverage.pooled.surfaceBytes,80000);assert.equal(coverage.pooled.groupSurfaces,2);
+  assert.equal(coverage.maskLeft[3],0);assert.equal(coverage.maskRight[3],255);
+  assert(coverage.top[0]>240&&coverage.top[2]<15&&coverage.bottom[2]>240&&coverage.bottom[0]<15);
+  assert(coverage.budgetRejected&&coverage.depthRejected);assert.equal(coverage.resized.surfaceBytes,0);assert.equal(coverage.cleared.groupSurfaces,0);
+  checks.push("isolated nested overlap alpha, group mask transform, framebuffer orientation, pooled live bytes, depth/budget rejection and resize cleanup");
   checks.push("GPU atlas alpha crop, independent image/polygon transforms, inversion and structured effect coverage");
+  const groupStage = await page.evaluate(async () => {
+    const {importPackage,browserResolver}=await import("/src/presentation/package.js"),{createPlayerStage}=await import("/src/presentation/player.js"),
+      pkg=await importPackage(new Uint8Array(await(await fetch("/fixture.dcard")).arrayBuffer()));
+    pkg.manifest.canvas={width:100,height:100};pkg.manifest.capabilities.required.push("dc.group-isolation@0.2");
+    const image={id:"a",type:"image",asset:"art",width:100,height:100},
+      group={id:"outer",type:"group",isolate:true,width:100,height:100,opacity:0.5,children:[{id:"inner",type:"group",isolate:true,width:100,height:100,opacity:0.5,children:[image,{...image,id:"b"}]}]};
+    pkg.scenes.get(pkg.manifest.faces.front.scene).nodes=[group];
+    const root=document.createElement("div");Object.assign(root.style,{position:"absolute",top:"0",left:"0",width:"100px",height:"100px"});document.body.append(root);
+    const resolver=browserResolver(pkg),events=[],stage=createPlayerStage({root}),view=stage.mount(root,{resolver},{onEvent:event=>events.push(event)});await view.ready;
+    const sample=()=>new Promise(resolve=>requestAnimationFrame(()=>{const canvas=root.querySelector("canvas"),gl=canvas.getContext("webgl2"),pixel=new Uint8Array(4);gl.readPixels(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);resolve({pixel:[...pixel],...stage.diagnostics()});}));
+    const rendered=await sample(),canvas=root.querySelector("canvas"),extension=canvas.getContext("webgl2").getExtension("WEBGL_lose_context");
+    if(!extension)throw new Error("Context loss test unavailable");
+    const lost=new Promise(resolve=>canvas.addEventListener("webglcontextlost",resolve,{once:true}));extension.loseContext();await lost;
+    const contextLost=stage.diagnostics();
+    const restoredEvent=new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(new Error("Group graphics context did not restore")),3000);canvas.addEventListener("webglcontextrestored",()=>{clearTimeout(timeout);resolve();},{once:true});});
+    await new Promise(resolve=>setTimeout(resolve,80));extension.restoreContext();await restoredEvent;
+    for(let i=0;i<200&&stage.diagnostics().activeViews!==1;i++)await new Promise(resolve=>setTimeout(resolve,20));
+    view.setInputs({angle:0.2});const restored=await sample();
+    await stage.setBudget({estimatedGpuBytes:1024});await sample();const fallback={...stage.diagnostics(),posterVisible:!root.querySelector("img").hidden,events:events.filter(e=>e.type==="fallback").map(e=>e.reason)};
+    view.dispose();const disposed=stage.diagnostics();stage.dispose();resolver.dispose();root.remove();return {rendered,contextLost,restored,fallback,disposed};
+  });
+  assert(Math.abs(groupStage.rendered.pixel[3]-64)<=1);
+  assert.equal(groupStage.rendered.groupSurfaces,2);assert(groupStage.rendered.surfaceBytes>0);
+  assert.equal(groupStage.contextLost.surfaceBytes,0);assert.equal(groupStage.contextLost.activeViews,0);
+  assert.equal(groupStage.restored.activeViews,1);assert(Math.abs(groupStage.restored.pixel[3]-64)<=1);
+  assert(groupStage.fallback.posterVisible&&groupStage.fallback.events.some(reason=>reason.includes("Group isolation")),JSON.stringify(groupStage.fallback));
+  assert.equal(groupStage.fallback.surfaceBytes,0);assert.equal(groupStage.disposed.groupSurfaces,0);
+  checks.push("player nested group compositing and total stage budget poster fallback release pooled surfaces");
   await page.evaluate(async () => {
     const { mountStudio } = await import("/src/presentation/studio.js"),
       { importPackage } = await import("/src/presentation/package.js"),
@@ -123,6 +168,22 @@ try {
     });
     await studio.ready;
   });
+  await page.getByText("Arrange layers",{exact:true}).click();
+  await page.getByRole("button",{name:"Group selected",exact:true}).click();await idle();
+  await page.locator(".dcs-layers").getByRole("button",{name:"Group",exact:true}).click();await idle();
+  await page.getByLabel("Isolate group",{exact:true}).selectOption("yes");await idle();
+  assert(await page.evaluate(()=>window.studio.getProject().manifest.capabilities.required.includes("dc.group-isolation@0.2")));
+  await page.getByLabel("width",{exact:true}).fill("0");await page.getByLabel("width",{exact:true}).press("Tab");await idle();
+  assert(Number(await page.getByLabel("width",{exact:true}).inputValue())>0);
+  await page.getByText("Clipping mask properties",{exact:true}).click();
+  await page.getByLabel("Clipping mask source",{exact:true}).selectOption("polygon");await idle();
+  await page.getByLabel("Isolate group",{exact:true}).selectOption("no");await idle();
+  assert.equal(await page.getByLabel("Isolate group",{exact:true}).inputValue(),"yes");
+  await page.getByText("Arrange layers",{exact:true}).click();
+  await page.getByRole("button",{name:"Lock selected",exact:true}).click();await idle();
+  assert(await page.getByLabel("Isolate group",{exact:true}).isDisabled());assert(await page.getByLabel("Clipping mask source",{exact:true}).isDisabled());
+  await page.evaluate(async()=>{const {importPackage}=await import("/src/presentation/package.js");await window.studio.open(await importPackage(new Uint8Array(await(await fetch("/fixture.dcard")).arrayBuffer())));});
+  checks.push("artist isolated group creation/bounds/capability, rejected downgrade recovery and locked mask controls");
   await page.getByRole("button", { name: "Add text", exact: true }).click();
   await idle();
   await page

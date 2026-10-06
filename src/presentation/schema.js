@@ -225,6 +225,7 @@ const node = object(
       ["progress", "frames"],
     ),
     children: array({ $ref: "#/$defs/node" }),
+    isolate: {const:true},
     text: { type: "string", maxLength: 10000 },
     typography: policyDefinitions.CardTypography,
     runs: array(
@@ -278,6 +279,10 @@ const node = object(
   },
   ["id", "type"],
 );
+node.allOf = [{
+  if:{properties:{isolate:{const:true}},required:["isolate"]},
+  then:{properties:{type:{const:"group"},width:{type:"number",minimum:0.001,maximum:20000},height:{type:"number",minimum:0.001,maximum:20000}},required:["type","width","height"]},
+}];
 export const sceneSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://digital-card.invalid/schema/scene2d-0.1.json",

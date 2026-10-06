@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added opt-in isolated groups with nested compositing, combined masks and effects, explicit bounds, pooled GPU surfaces and poster fallback when resource limits are exceeded.
 - Added a versioned action-delivery schema and Python/Go receipt receiver examples with shared authenticated HTTP conformance, durable replay, exact numeric comparison and bounded receipt storage.
 - Added independent clipping and effect-mask crops, transforms and inversion, with saved-library round trips and explicit player capability negotiation.
 - Added opt-in incremental acquisition storage with bounded record transactions and revision-bound capacity accounting. Supported acquisitions avoid materializing unrelated installation records; other workflows retain their existing storage paths.

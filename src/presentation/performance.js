@@ -94,6 +94,7 @@ export function analyzePerformance({ manifest, scenes }, overrides = {}) {
       own = [],
       summary = {
         estimatedTextureBytes: 0,
+        estimatedGroupSurfaceBytes: 0,
         drawLayers: 0,
         fullCanvasPasses: 0,
         decoders: 0,
@@ -103,7 +104,7 @@ export function analyzePerformance({ manifest, scenes }, overrides = {}) {
         const path = parent + "/" + n.id;
         if (n.children) {
           visit(n.children, path);
-          continue;
+          if (!n.isolate) continue;
         }
         const ids = [
           ...new Set(
@@ -130,6 +131,11 @@ export function analyzePerformance({ manifest, scenes }, overrides = {}) {
           estimatedTextureBytes: values.reduce((s, a) => s + a.bytes, 0),
           downloadBytes: values.reduce((s, a) => s + a.download, 0),
         };
+        if (n.isolate) {
+          const ratio=Math.min(1,edge/Math.max(n.width,n.height)),surfaceBytes=Math.ceil(n.width*ratio)*Math.ceil(n.height*ratio)*4;
+          layer.estimatedGroupSurfaceBytes=surfaceBytes;layer.estimatedTextureBytes+=surfaceBytes;
+          summary.estimatedGroupSurfaceBytes+=surfaceBytes;summary.estimatedTextureBytes+=surfaceBytes;
+        }
         if (n.type === "text") {
           const ratio = Math.min(
             1,
@@ -245,7 +251,7 @@ export function analyzePerformance({ manifest, scenes }, overrides = {}) {
     faces,
     accepted: policy.mode !== "reject" || issues.length === 0,
     caveat:
-      "Estimates exclude driver overhead, framebuffer allocation and unknown adapter internals. These are configurable heuristics, not an iPhone benchmark.",
+      "Estimates exclude driver overhead and unknown adapter internals. Group surfaces use conservative per-group quality estimates; the stage accounts actual pooled live allocations. These are configurable heuristics, not a device benchmark.",
   };
 }
 

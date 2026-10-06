@@ -12,6 +12,7 @@ export const CAPABILITIES = [
   "dc.text@0.1",
   "dc.text@0.2",
   "dc.mask-layout@0.2",
+  "dc.group-isolation@0.2",
   "dc.audio@0.1",
 ];
 const id = (value) =>
@@ -359,6 +360,7 @@ const nodeFields = [
   "bindings",
   "animation",
   "children",
+  "isolate",
   "text",
   "typography",
   "runs",
@@ -480,11 +482,16 @@ export function validateScene(scene, manifest) {
       if (n[f] !== undefined) number(n[f]);
     for (const f of ["width", "height"])
       if (!["group", "audio"].includes(n.type)) number(n[f], 0.001, 20000);
-    if (n.type === "group")
+    if (n.isolate !== undefined) {
+      ensure(n.type === "group" && n.isolate === true,"GROUP_COMPOSITING","Only groups can opt into isolation");
+      number(n.width,0.001,20000);number(n.height,0.001,20000);
+      ensure(manifest.capabilities.required.includes("dc.group-isolation@0.2"),"CAPABILITY","Group isolation requires dc.group-isolation@0.2");
+    }
+    if (n.type === "group" && !n.isolate)
       ensure(
         !n.mask && !n.material && (!n.blend || n.blend === "normal"),
         "GROUP_COMPOSITING",
-        "Isolated group masks/materials/blends require a prebaked image or a host adapter",
+        "Group masks/materials/blends require explicit isolation",
       );
     if (n.opacity !== undefined) number(n.opacity, 0, 1);
     if (n.brightness !== undefined) number(n.brightness, 0, 10);

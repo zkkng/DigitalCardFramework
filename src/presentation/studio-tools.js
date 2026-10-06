@@ -795,7 +795,19 @@ export function mountAuthoringTools({
         p.manifest.authoring.fields.push(structuredClone(draft));
       });
     });
-    if (n && n.type !== "group") {
+    if (n?.type === "group") {
+      const group = el("fieldset");group.append(el("legend","Group compositing"));root.append(group);
+      group.append(el("p","Isolate renders children into the group's explicit width and height, then applies opacity, masks and material once. Children outside these local bounds are clipped. Existing groups use inherited layer effects."));
+      input(group,"Isolate group",n.isolate?"yes":"no",value=>edit(()=>{
+        const target=flattenNodes(p.scenes.get(p.manifest.faces[getSide()].scene).nodes).find(node=>node.id===n.id);
+        if(target.locked)throw new Error("Choose an unlocked group");
+        if(value==="yes"){
+          target.isolate=true;target.width??=p.manifest.canvas.width;target.height??=p.manifest.canvas.height;
+          if(!p.manifest.capabilities.required.includes("dc.group-isolation@0.2"))p.manifest.capabilities.required.push("dc.group-isolation@0.2");
+        }else delete target.isolate;
+      }),{choices:["no","yes"],disabled:!!n.locked});
+    }
+    if (n && (n.type !== "group" || n.isolate)) {
       const maskSide = getSide(), panelKey = maskSide + ":" + n.id,
         masks = el("details"), disabled = !!n.locked,
         editMask = (fn) => edit(() => {

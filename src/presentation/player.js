@@ -164,7 +164,7 @@ export function createPlayerStage({
           height = Math.max(1, Math.round((asset.height ?? maxEdge) * ratio)),
           cost = width * height * 4;
         ensure(
-          bytes + cost + canvas.width * canvas.height * 4 <=
+          bytes + cost + canvas.width * canvas.height * 4 + (gpu?.diagnostics().surfaceBytes??0) <=
             limits.estimatedGpuBytes,
           "BUDGET",
           "Stage texture budget exceeded",
@@ -223,6 +223,7 @@ export function createPlayerStage({
     }
   }
   function unload(view) {
+    gpu?.clearSurfaces();
     view.loadAbort?.abort();
     view.loadAbort = new AbortController();
     for (const media of view.media.values()) {
@@ -426,7 +427,7 @@ export function createPlayerStage({
             height = Math.max(1, Math.ceil(measured.renderHeight * ratio)),
             cost = width * height * 4;
           ensure(
-            bytes + cost + canvas.width * canvas.height * 4 <=
+            bytes + cost + canvas.width * canvas.height * 4 + (gpu?.diagnostics().surfaceBytes??0) <=
               limits.estimatedGpuBytes,
             "BUDGET",
             "Text surface budget exceeded",
@@ -462,7 +463,7 @@ export function createPlayerStage({
           ensure(
             Number.isFinite(cost) &&
               cost > 0 &&
-              bytes + cost + canvas.width * canvas.height * 4 <=
+              bytes + cost + canvas.width * canvas.height * 4 + (gpu?.diagnostics().surfaceBytes??0) <=
                 limits.estimatedGpuBytes,
             "BUDGET",
             "Adapter surface budget exceeded",
@@ -601,6 +602,7 @@ export function createPlayerStage({
           y,
         ],
         operations = { remaining: limits.maxGraphOperationsPerUpdate };
+      let drawViewport = viewport;
       function drawNodes(
         nodes,
         parent,
@@ -629,6 +631,19 @@ export function createPlayerStage({
           node.brightness = (node.brightness ?? 1) * inherited.brightness;
           node.saturation = (node.saturation ?? 1) * inherited.saturation;
           if (node.type === "group") {
+            if (node.isolate) {
+              const scale=Math.max(Math.hypot(parent[0],parent[1])*Math.abs(node.scaleX??1),Math.hypot(parent[2],parent[3])*Math.abs(node.scaleY??1)),
+                width=Math.max(1,Math.ceil(node.width*scale)),height=Math.max(1,Math.ceil(node.height*scale)),
+                previousViewport=drawViewport;
+              gpu.beginIsolation(width,height,limits.estimatedGpuBytes-bytes-canvas.width*canvas.height*4);
+              let surface;
+              try {
+                drawViewport=[0,0,width,height];
+                drawNodes(node.children??[],[width/node.width,0,0,height/node.height,0,0]);
+              } finally {surface=gpu.endIsolation();drawViewport=previousViewport;}
+              gpu.draw({...node,pivotX:node.pivotX??0,pivotY:node.pivotY??0},surface,parent,drawViewport,view.assets.get(node.mask?.asset),view.assets.get(node.material?.flakeAsset),view.assets.get(node.material?.mask?.asset??node.material?.maskAsset));
+              continue;
+            }
             const a = ((node.rotation ?? 0) * Math.PI) / 180,
               c = Math.cos(a),
               s = Math.sin(a),
@@ -676,7 +691,7 @@ export function createPlayerStage({
                   height: a.instance.canvas.height,
                 },
                 parent,
-                viewport,
+                drawViewport,
                 view.assets.get(node.mask?.asset),
                 view.assets.get(node.material?.flakeAsset),
                 view.assets.get(node.material?.mask?.asset ?? node.material?.maskAsset),
@@ -725,7 +740,7 @@ export function createPlayerStage({
                 const cost =
                   media.video.videoWidth * media.video.videoHeight * 4 * 4;
                 ensure(
-                  bytes + cost + canvas.width * canvas.height * 4 <=
+                  bytes + cost + canvas.width * canvas.height * 4 + (gpu?.diagnostics().surfaceBytes??0) <=
                     limits.estimatedGpuBytes,
                   "BUDGET",
                   "Video buffer budget exceeded",
@@ -751,7 +766,7 @@ export function createPlayerStage({
               node.type==="text"&&asset.layoutHeight?{...node,height:asset.layoutHeight}:node,
               asset,
               parent,
-              viewport,
+              drawViewport,
               view.assets.get(node.mask?.asset),
               view.assets.get(node.material?.flakeAsset),
               view.assets.get(node.material?.mask?.asset ?? node.material?.maskAsset),
@@ -893,6 +908,7 @@ export function createPlayerStage({
         });
       }
       cancelAnimationFrame(raf);
+      gpu?.clearSurfaces();
       raf = 0;
     },
     { signal: cleanup.signal },
@@ -1228,7 +1244,7 @@ export function createPlayerStage({
         ).length,
         scheduledFrames: raf ? 1 : 0,
         frames,
-        estimatedGpuBytes: bytes + canvas.width * canvas.height * 4,
+        estimatedGpuBytes: bytes + canvas.width * canvas.height * 4 + (gpu?.diagnostics().surfaceBytes??0),
         assetReferences: [...cache.values()].reduce(
           (sum, e) => sum + e.refs,
           0,

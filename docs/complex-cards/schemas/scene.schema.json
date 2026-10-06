@@ -323,6 +323,9 @@
           "minItems": 0,
           "maxItems": 512
         },
+        "isolate": {
+          "const": true
+        },
         "text": {
           "type": "string",
           "maxLength": 10000
@@ -576,6 +579,42 @@
       "required": [
         "id",
         "type"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "isolate": {
+                "const": true
+              }
+            },
+            "required": [
+              "isolate"
+            ]
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "const": "group"
+              },
+              "width": {
+                "type": "number",
+                "minimum": 0.001,
+                "maximum": 20000
+              },
+              "height": {
+                "type": "number",
+                "minimum": 0.001,
+                "maximum": 20000
+              }
+            },
+            "required": [
+              "type",
+              "width",
+              "height"
+            ]
+          }
+        }
       ]
     },
     "mask": {

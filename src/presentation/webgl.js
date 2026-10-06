@@ -25,6 +25,7 @@ precision highp int;
 uniform sampler2D art; uniform sampler2D maskArt; uniform sampler2D flakeArt; uniform sampler2D effectMaskArt;
 uniform float opacity; uniform float brightness; uniform float saturation;
 uniform vec4 fillColor; uniform int hasFill;
+uniform int artPremultiplied; uniform int roundedClip;
 uniform int effect; uniform vec4 params; uniform vec4 details;
 uniform vec2 center; uniform vec2 nodeSize; uniform vec4 clip; uniform vec2 resolution;
 uniform int maskMode; uniform int polygonCount; uniform vec2 polygon[64]; uniform int hasMask; uniform int hasFlake;
@@ -39,8 +40,8 @@ bool withinMask(vec2 p){return all(greaterThanEqual(p,vec2(0.)))&&all(lessThanEq
 void main(){
  vec2 screen=vec2(gl_FragCoord.x,resolution.y-gl_FragCoord.y);
  vec2 q=abs(screen-(clip.xy+clip.zw*.5))-(clip.zw*.5-vec2(9.));
- float edge=1.-smoothstep(8.,9.,length(max(q,0.)));
- vec4 c=hasFill==1?fillColor:texture(art,tex); c.rgb=mix(vec3(dot(c.rgb,vec3(.2126,.7152,.0722))),c.rgb,saturation)*brightness;
+ float edge=roundedClip==1?1.-smoothstep(8.,9.,length(max(q,0.))):1.;
+ vec4 c=hasFill==1?fillColor:texture(art,tex);if(artPremultiplied==1&&c.a>0.)c.rgb/=c.a;c.rgb=mix(vec3(dot(c.rgb,vec3(.2126,.7152,.0722))),c.rgb,saturation)*brightness;
  vec2 maskPoint=(maskMatrix*vec3(point,1.)).xy;
  if(polygonCount>0||hasMask==1){float coverage=polygonCount>0?polygonCoverage(maskPoint,polygonCount,polygon):1.;if(hasMask==1)coverage*=withinMask(maskPoint)?texture(maskArt,clamp(maskRect.xy+maskPoint*maskRect.zw,maskLimits.xy,maskLimits.zw)).a:0.;c.a*=maskMode==1?1.-coverage:coverage;}
  vec2 effectPoint=(effectMaskMatrix*vec3(point,1.)).xy;
@@ -100,6 +101,7 @@ export function createWebGLRenderer(canvas) {
   const names = [
     "fillColor",
     "hasFill",
+    "artPremultiplied", "roundedClip",
     "resolution",
     "opacity",
     "brightness",
@@ -132,7 +134,20 @@ export function createWebGLRenderer(canvas) {
     names.map((n) => [n, gl.getUniformLocation(program, n)]),
   );
   const textures = new Set();
-  let draws = 0;
+  const surfaces = [], targets = [];
+  let draws = 0, surfaceBytes = 0, targetWidth = 1, targetHeight = 1;
+  function clearSurfaces() {
+    for (const surface of surfaces) {
+      if (!surface) continue;
+      gl.deleteFramebuffer(surface.framebuffer);gl.deleteTexture(surface.texture);
+    }
+    surfaces.length=0;surfaceBytes=0;
+  }
+  function restoreTarget(target) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER,target.framebuffer);
+    targetWidth=target.width;targetHeight=target.height;
+    gl.viewport(0,0,targetWidth,targetHeight);gl.uniform2f(u.resolution,targetWidth,targetHeight);
+  }
   function texture(source) {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -164,6 +179,29 @@ export function createWebGLRenderer(canvas) {
       ...gl.getParameter(gl.MAX_VIEWPORT_DIMS),
     ),
     texture,
+    clearSurfaces,
+    beginIsolation(width,height,availableBytes) {
+      ensure(targets.length<16,"LIMIT","Group isolation depth exceeds 16");
+      const dimension=Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE),gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
+      ensure(Number.isInteger(width)&&Number.isInteger(height)&&width>0&&height>0&&width<=dimension&&height<=dimension,"BUDGET","Group surface dimensions exceed graphics limits");
+      const index=targets.length, previous=surfaces[index], cost=width*height*4;
+      ensure(surfaceBytes-(previous?.bytes??0)+cost<=availableBytes,"BUDGET","Group isolation exceeds stage GPU budget");
+      if (!previous || previous.width!==width || previous.height!==height) {
+        if(previous){gl.deleteFramebuffer(previous.framebuffer);gl.deleteTexture(previous.texture);surfaceBytes-=previous.bytes;surfaces[index]=undefined;}
+        const texture=gl.createTexture(),framebuffer=gl.createFramebuffer();
+        gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);
+        if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE){gl.deleteFramebuffer(framebuffer);gl.deleteTexture(texture);restoreTarget({framebuffer:targets.at(-1)?.surface.framebuffer??null,width:targetWidth,height:targetHeight});ensure(false,"WEBGL","Group framebuffer unavailable");}
+        surfaces[index]={texture,framebuffer,width,height,bytes:cost,premultiplied:true,flipY:true};surfaceBytes+=cost;
+      }
+      const surface=surfaces[index];targets.push({framebuffer:targets.at(-1)?.surface.framebuffer??null,width:targetWidth,height:targetHeight,surface});
+      restoreTarget(surface);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);return surface;
+    },
+    endIsolation() {
+      const target=targets.pop();ensure(target,"WEBGL","No isolated group to finish");restoreTarget(target);return target.surface;
+    },
     updateTexture(t, source) {
       gl.bindTexture(gl.TEXTURE_2D, t);
       gl.texImage2D(
@@ -180,9 +218,11 @@ export function createWebGLRenderer(canvas) {
     },
     begin(width, height) {
       if (canvas.width !== width || canvas.height !== height) {
+        clearSurfaces();
         canvas.width = width;
         canvas.height = height;
       }
+      targets.length=0;targetWidth=width;targetHeight=height;gl.bindFramebuffer(gl.FRAMEBUFFER,null);
       gl.viewport(0, 0, width, height);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
@@ -218,7 +258,8 @@ export function createWebGLRenderer(canvas) {
         vertices[at] = matrix[0] * x + matrix[2] * y + matrix[4];
         vertices[at + 1] = matrix[1] * x + matrix[3] * y + matrix[5];
         vertices[at + 2] = (rect[0] + a * rect[2]) / asset.width;
-        vertices[at + 3] = (rect[1] + b * rect[3]) / asset.height;
+        const sourceY=(rect[1] + b * rect[3]) / asset.height;
+        vertices[at + 3] = asset.flipY ? 1-sourceY : sourceY;
         vertices[at + 4] = a;
         vertices[at + 5] = b;
       }
@@ -254,6 +295,8 @@ export function createWebGLRenderer(canvas) {
           : [0, 0, 0, 0],
       );
       gl.uniform1f(u.opacity, node.opacity ?? 1);
+      gl.uniform1i(u.artPremultiplied,asset.premultiplied?1:0);
+      gl.uniform1i(u.roundedClip,targets.length?0:1);
       gl.uniform1f(u.brightness, node.brightness ?? 1);
       gl.uniform1f(u.saturation, node.saturation ?? 1);
       gl.uniform2f(u.nodeSize, w, h);
@@ -325,9 +368,10 @@ export function createWebGLRenderer(canvas) {
         );
     },
     diagnostics() {
-      return { draws, textures: textures.size - (textures.has(white) ? 1 : 0) };
+      return { draws, textures: textures.size - (textures.has(white) ? 1 : 0),surfaceBytes,groupSurfaces:surfaces.filter(Boolean).length };
     },
     dispose() {
+      clearSurfaces();targets.length=0;
       for (const t of textures) gl.deleteTexture(t);
       textures.clear();
       gl.deleteBuffer(buffer);

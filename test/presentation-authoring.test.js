@@ -14,6 +14,22 @@ import { textValue, inspectFont } from "../src/presentation/text.js";
 import { testFont } from "./font-fixture.mjs";
 import { maskLayout } from "../src/presentation/webgl.js";
 import { saveMask, applyMask } from "../src/presentation/authoring-tools.js";
+import { analyzePerformance } from "../src/presentation/performance.js";
+
+test("group isolation requires explicit capability and bounds and preserves grouped mask export", async () => {
+  const project=createProject(await build(presentationFixture())),scene=()=>project.scenes.get(project.manifest.faces.front.scene),
+    group={id:"isolated",type:"group",isolate:true,width:100,height:100,children:[structuredClone(scene().nodes[0])],opacity:0.5,mask:{polygon:[[0,0],[1,0],[1,1]]}};
+  assert.throws(()=>project.edit(()=>{scene().nodes=[group];}),/dc.group-isolation/);
+  project.edit(()=>{project.manifest.capabilities.required.push("dc.group-isolation@0.2");scene().nodes=[structuredClone(group)];});
+  const before=project.serialize();
+  for(const change of [g=>{delete g.width;},g=>{g.height=Infinity;},g=>{g.isolate=false;},g=>{delete g.isolate;},g=>{g.type="image";g.asset="art";}]) {
+    assert.throws(()=>project.edit(()=>{change(scene().nodes[0]);}));assert.deepEqual(project.serialize(),before);
+  }
+  const exported=await importPackage((await project.export()).archive);
+  assert.equal(exported.scenes.get(exported.manifest.faces.front.scene).nodes[0].isolate,true);
+  assert.equal(analyzePerformance(project).faces.front.estimatedGroupSurfaceBytes,40000);
+  assert.equal(analyzePerformance(project).layers.some(layer=>layer.layerId==="isolated"&&layer.estimatedGroupSurfaceBytes===40000),true);
+});
 
 test("mask layout requires negotiated capability and preserves crop and transform in reusable effects", async () => {
   const project = createProject(await build(presentationFixture())), side = "front",

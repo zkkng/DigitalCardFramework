@@ -29,6 +29,13 @@ export interface MaterialParameters {
 export type Material=MaterialParameters&({mask?:PersistedMask;maskAsset?:never}|{mask?:never;maskAsset?:string});
 export interface MaskLayerFields {mask?:PersistedMask;material?:Material}
 export interface TextLayer extends MaskLayerFields {id:string;type:'text';text:string;width:number;height:number;x?:number;y?:number;typography?:Typography;runs?:TextSpan[];stat?:StatBinding;locked?:boolean;readingOrder?:number}
+export interface GroupLayerFields {
+  id:string;type:'group';children:Record<string,unknown>[];
+  x?:number;y?:number;rotation?:number;scaleX?:number;scaleY?:number;pivotX?:number;pivotY?:number;
+  opacity?:number;
+}
+/** Isolated groups require dc.group-isolation@0.2 and finite 0.001–20000 dimensions. */
+export type GroupLayer=GroupLayerFields&((MaskLayerFields&{isolate:true;width:number;height:number;blend?:'normal'|'screen'|'add'|'multiply'})|{isolate?:never;width?:number;height?:number;mask?:never;material?:never;blend?:'normal'});
 export interface LibraryEntry {key:string;kind:'template'|'mask'|'style'|'template-set';document:Record<string,Json>;archive?:Uint8Array;shared?:boolean}
 export interface AuthoringLibrary {list():Promise<LibraryEntry[]>;get(key:string,shared?:boolean):Promise<LibraryEntry|undefined>;put(entry:LibraryEntry):Promise<unknown>;share?(entry:LibraryEntry):Promise<unknown>}
 
