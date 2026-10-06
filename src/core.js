@@ -451,8 +451,15 @@ export class CardFramework {
     try{return {purchaseKey,purchase:this.#resolveLegacyPurchase(s,row,purchaseKey)};}catch(error){if(error.code==='LEGACY_RESOLUTION_REJECTED')return null;throw error;}
   }
   #adjust(s,userId,currencyId,delta,type,reference) {
-    const old=s.balances[userId][currencyId]??0, next=old+delta;
-    check(Number.isSafeInteger(next),'BALANCE_OVERFLOW','Balance exceeds integer range',409);
+    const old=s.balances[userId][currencyId]??0;
+    check(Number.isSafeInteger(old)&&Number.isSafeInteger(delta),'INVALID_STATE','Invalid balance arithmetic',500);
+    const exact=BigInt(old)+BigInt(delta);
+    let refundable=0n;
+    if(delta>0)for(const trade of Object.values(s.trades))if(trade.status==='pending'&&trade.fromUserId===userId)for(const money of trade.give.currencies)if(money.currencyId===currencyId){
+      check(Number.isSafeInteger(money.amount)&&money.amount>0,'INVALID_STATE','Invalid refundable escrow',500);refundable+=BigInt(money.amount);
+    }
+    check(exact<=BigInt(Number.MAX_SAFE_INTEGER)&&exact+refundable<=BigInt(Number.MAX_SAFE_INTEGER),'BALANCE_OVERFLOW','Balance and refundable escrow exceed integer range',409);
+    const next=Number(exact);
     check(next>=0,'INSUFFICIENT_FUNDS','Insufficient '+currencyId,409);
     s.balances[userId][currencyId]=next;
     s.ledger.push({id:id(),userId,currencyId,delta,balance:next,type,reference,at:this.#clock()});
@@ -710,19 +717,30 @@ export class CardFramework {
     });
   }
   #release(s,trade,status) {
+    trade.status=status; trade.completedAt=this.#clock();
     for(const copyId of trade.give.copyIds) delete s.copies[copyId].lockedBy;
     for(const money of trade.give.currencies) this.#adjust(s,trade.fromUserId,money.currencyId,money.amount,'trade.refund',trade.id);
-    trade.status=status; trade.completedAt=this.#clock();
     this.#event(s,'trade.'+status,{tradeId:trade.id});
     this.#notify(s,trade.fromUserId,'trade.'+status,{tradeId:trade.id});this.#notify(s,trade.toUserId,'trade.'+status,{tradeId:trade.id});
   }
-  #expire(s) {
-    for(const trade of Object.values(s.trades)) if(trade.status==='pending' && Date.parse(trade.expiresAt)<=Date.parse(this.#clock())) this.#release(s,trade,'expired');
+  #expire() {
+    const ids=this.#store.read(s=>Object.values(s.trades).filter(trade=>trade.status==='pending'&&Date.parse(trade.expiresAt)<=Date.parse(this.#clock())).map(trade=>trade.id));
+    const completed=[],failed=[];
+    for(const tradeId of ids)try{
+      const released=this.#store.transact(s=>{
+        const trade=s.trades[tradeId];
+        if(trade?.status!=='pending'||Date.parse(trade.expiresAt)>Date.parse(this.#clock()))return false;
+        this.#release(s,trade,'expired');return true;
+      });
+      if(released)completed.push(tradeId);
+    }catch(error){failed.push({tradeId,code:/^[A-Z][A-Z0-9_]{0,80}$/.test(error?.code)?error.code:'INTERNAL_ERROR'});}
+    return {ok:failed.length===0,completed,failed};
   }
-  sweepExpiredTrades(actor) {this.#admin(actor,'maintenance.run');if(!this.#store.read(s=>Object.values(s.trades).some(t=>t.status==='pending'&&Date.parse(t.expiresAt)<=Date.parse(this.#clock()))))return {ok:true};return this.#store.transact(s=>{this.#expire(s); return {ok:true};});}
+  sweepExpiredTrades(actor) {this.#admin(actor,'maintenance.run');return this.#expire();}
   trades(actor) {
-    const current=this.#store.read(s=>{const u=this.#user(s,actor);return {expired:Object.values(s.trades).some(t=>t.status==='pending'&&Date.parse(t.expiresAt)<=Date.parse(this.#clock())),items:Object.values(s.trades).filter(t=>t.fromUserId===u.id||t.toUserId===u.id).map(t=>({...t,digest:this.#tradeDigest(t),fromName:s.users[t.fromUserId].displayName,toName:s.users[t.toUserId].displayName}))};});if(!current.expired)return current.items;
-    return this.#store.transact(s=>{const u=this.#user(s,actor); this.#expire(s); return Object.values(s.trades).filter(t=>t.fromUserId===u.id || t.toUserId===u.id).map(t=>({...t,digest:this.#tradeDigest(t),fromName:s.users[t.fromUserId].displayName,toName:s.users[t.toUserId].displayName}));});
+    this.#store.read(s=>this.#user(s,actor));
+    this.#expire();
+    return this.#store.read(s=>{const u=this.#user(s,actor);return Object.values(s.trades).filter(t=>t.fromUserId===u.id||t.toUserId===u.id).map(t=>({...t,digest:this.#tradeDigest(t),fromName:s.users[t.fromUserId].displayName,toName:s.users[t.toUserId].displayName}));});
   }
   #transfer(s,copyId,from,to,tradeId) {
     const copy=s.copies[copyId]; copy.ownerId=to; copy.acquiredAt=this.#clock(); copy.version++;
@@ -753,6 +771,7 @@ export class CardFramework {
       }
       for(const money of trade.give.currencies) check(this.#currency(s,money.currencyId).tradable===true,'TRANSFER_BLOCKED','Currency trading disabled',403);
       this.#offer(s,user.id,trade.receive,trade.fromUserId);
+      trade.status='accepted'; trade.completedAt=this.#clock();
       for(const money of trade.receive.currencies) {
         this.#adjust(s,user.id,money.currencyId,-money.amount,'trade',trade.id);
         this.#adjust(s,trade.fromUserId,money.currencyId,money.amount,'trade',trade.id);

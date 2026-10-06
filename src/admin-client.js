@@ -6,33 +6,37 @@ const commands = new Set(['configureAdmin','administerCards']);
 export function createAdminController({client,storage,namespace} = {}) {
   if (!client || !namespace) throw new Error('An admin client and an operator namespace are required.');
   const storageKey = 'digital-card.admin-command.v1:' + namespace;
-  let pending = null, disposed = false, generation = 0, usersGeneration = 0, personGeneration = 0, historyGeneration = 0, active = null;
+  let pending = null, disposed = false, generation = 0, usersGeneration = 0, personGeneration = 0, historyGeneration = 0, publication = 0, active = null;
   try { const saved = JSON.parse(storage?.getItem(storageKey) ?? 'null'); if (saved && commands.has(saved.command) && saved.input?.key && saved.review) pending = saved; } catch {}
   let state = {phase:'idle',overview:null,users:{items:[],next:null,total:0},person:null,history:{items:[],next:null,total:0},review:pending?.review ?? null,pending:!!pending,error:null,message:pending ? 'A previous save needs confirmation. Retry the same change to recover its result safely.' : '',loadingUsers:false,loadingPerson:false,loadingHistory:false};
   const listeners = new Set();
-  const publish = patch => { if (disposed) return; state = {...state,...patch}; for (const listener of listeners) listener(copy(state)); };
+  const publish = patch => { if (disposed) return; state = {...state,...patch}; const version=++publication,snapshot=copy(state);for(const listener of listeners){if(disposed||version!==publication)break;listener(copy(snapshot));} };
   const persist = clearKey => { try { if (pending) storage?.setItem(storageKey,JSON.stringify(pending)); else if(JSON.parse(storage?.getItem(storageKey)??'null')?.input?.key===clearKey)storage?.removeItem(storageKey); } catch {} };
   async function load({keepReview = true} = {}) {
     if (disposed || active) return;
     const current = ++generation; publish({phase:'loading',error:null,...(!keepReview && !pending ? {review:null} : {})});
+    if(disposed||current!==generation)return;
     try { const overview = await client.adminOverview(); if (disposed || current !== generation) return; publish({phase:'ready',overview}); }
     catch (error) { if (current === generation) publish({phase:'error',error:errors(error)}); }
   }
   async function users({search = '',after,limit = 30} = {}) {
     if (disposed) return;
     const current = ++usersGeneration; publish({loadingUsers:true,error:null});
+    if(disposed||current!==usersGeneration)return;
     try { const result = await client.adminUsers({search,after,limit}); if (disposed || current !== usersGeneration) return; publish({loadingUsers:false,users:after ? {...result,items:[...state.users.items,...result.items]} : result}); }
     catch (error) { if (current === usersGeneration) publish({loadingUsers:false,error:errors(error)}); }
   }
   async function person(userId,{after,limit = 50} = {}) {
     if (disposed) return;
     const current = ++personGeneration; publish({loadingPerson:true,error:null,...(!after ? {person:null} : {})});
+    if(disposed||current!==personGeneration)return;
     try { const result = await client.adminUser({userId,after,limit}); if (disposed || current !== personGeneration) return; if (after && state.person?.user.id === result.user.id) result.inventory.items = [...state.person.inventory.items,...result.inventory.items]; publish({loadingPerson:false,person:result}); }
     catch (error) { if (current === personGeneration) publish({loadingPerson:false,error:errors(error)}); }
   }
   async function history({search = '',after,limit = 30} = {}) {
     if (disposed) return;
     const current = ++historyGeneration; publish({loadingHistory:true,error:null});
+    if(disposed||current!==historyGeneration)return;
     try { const result = await client.adminHistory({search,after,limit}); if (disposed || current !== historyGeneration) return; publish({loadingHistory:false,history:after ? {...result,items:[...state.history.items,...result.items]} : result}); }
     catch (error) { if (current === historyGeneration) publish({loadingHistory:false,error:errors(error)}); }
   }
@@ -47,21 +51,22 @@ export function createAdminController({client,storage,namespace} = {}) {
   function confirm() {
     if (active) return active;
     if (disposed || !state.review) return Promise.resolve(null);
+    const priorAttempt=!!pending;
     if (!pending) {
       let saved;try{saved=JSON.parse(storage?.getItem(storageKey)??'null');}catch{}
       if(saved&&commands.has(saved.command)&&saved.input?.key&&saved.review){pending=saved;publish({pending:true,review:copy(saved.review),message:'Another save needs confirmation. Retry that original change before making a new one.'});return Promise.resolve(null);}
       pending = {command:state.review.command,input:{...copy(state.review.input),key:client.requestKey()},review:copy(state.review)}; persist();
     }
-    const operation = pending; publish({phase:'saving',pending:true,error:null,message:''});
+    const operation = pending,current=++generation;
     active = Promise.resolve().then(async () => {
-      if(disposed)return null;
+      if(disposed||current!==generation)return null;
       let receipt;
-      try { receipt = await client[operation.command](copy(operation.input)); pending = null; persist(operation.input.key); publish({phase:'ready',pending:false,review:null,error:null,message:'Changes saved. They apply to new actions immediately.'}); }
-      catch (error) { const definite = Number.isInteger(error.status) && error.status >= 400 && error.status < 500; if (definite) { pending = null; persist(operation.input.key); } publish({phase:'error',pending:!!pending,error:errors(error),message:definite ? '' : 'The result is not confirmed. Retry this same change; it will not run twice.'}); return null; }
+      try { receipt = await client[operation.command](copy(operation.input)); if(disposed||current!==generation)return receipt; pending = null; persist(operation.input.key); publish({phase:'ready',pending:false,review:null,error:null,message:'Changes saved. They apply to new actions immediately.'}); }
+      catch (error) { if(disposed||current!==generation)return null; const definite = !priorAttempt && Number.isInteger(error.status) && error.status >= 400 && error.status < 500; if (definite) { pending = null; persist(operation.input.key); } publish({phase:'error',pending:!!pending,error:errors(error),message:definite ? '' : 'The result is not confirmed. Retry this same change; it will not run twice.'}); return null; }
       finally { active = null; }
       if (!disposed) { const selected = state.person?.user.id; await load({keepReview:false}); if (state.error) publish({message:'Your changes were saved, but current settings could not be refreshed. Reload before making another change.'}); if (!disposed && selected) await person(selected); }
       return receipt;
-    }); return active;
+    }); publish({phase:'saving',pending:true,error:null,message:''});return active;
   }
   return {getState:() => copy(state),subscribe(listener) { if (disposed) return () => {}; listeners.add(listener); listener(copy(state)); return () => listeners.delete(listener); },load,users,person,history,stage,cancel,confirm,dispose() {disposed = true;generation++;usersGeneration++;personGeneration++;historyGeneration++;listeners.clear();}};
 }

@@ -78,3 +78,9 @@ Hooks receive cloned context and must make synchronous decisions. Do not call a 
 The default reference application exposes **Trading controls** to authorized operators, with the complete policy JSON and individual-copy lock controls. Custom applications use the same client methods or replace the view via `views.tradingControls`. All inputs and reasons are rendered as text.
 
 HTTP: `GET /api/trading-policy`, `POST /api/operator/trading`, `POST /api/operator/card-lock`. See [OpenAPI](openapi.json) for bounded request schemas and [identity and access](access-and-identity.md) for server-derived permissions.
+
+## Refundable balance headroom
+
+Credits, conversions and incoming transfers must leave enough integer headroom for every pending currency escrow refund. Available balance plus refundable escrow cannot exceed `Number.MAX_SAFE_INTEGER`. A rejected credit or acceptance rolls back its complete command. Cancel, decline, counter and expiry release the original escrow before applying its refund; acceptance removes that offer's refund liability before transferring money.
+
+`sweepExpiredTrades` returns `{ok,completed,failed}`. Each expired offer has its own transaction. A failed offer remains pending; its entry contains only the trade identifier and a stable error code. Other offers still complete. The historical trade read also attempts expiry without making an unrelated failed offer prevent the read. Operators should investigate reported failures and the integrity audit before retrying.

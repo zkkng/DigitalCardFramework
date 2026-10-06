@@ -47,9 +47,9 @@ export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={})
   };
 }
 export function createRevealController({open,key=()=>globalThis.crypto.randomUUID()}) {
-  let state={phase:'idle',receipt:null,revealed:0,error:null}, generation=0, pendingKey=null, packId=null, disposed=false;
+  let state={phase:'idle',receipt:null,revealed:0,error:null}, generation=0, pendingKey=null, packId=null, disposed=false, publication=0;
   const listeners=new Set();
-  const publish=next=>{if(disposed)return;state={...state,...next}; for(const fn of listeners) fn(structuredClone(state));};
+  const publish=next=>{if(disposed)return;state={...state,...next};const version=++publication,snapshot=structuredClone(state);for(const fn of listeners){if(disposed||version!==publication)break;fn(structuredClone(snapshot));}};
   return {
     getState:()=>structuredClone(state),
     subscribe(fn) {if(disposed)return ()=>{};listeners.add(fn);fn(structuredClone(state));return ()=>listeners.delete(fn);},
@@ -58,6 +58,7 @@ export function createRevealController({open,key=()=>globalThis.crypto.randomUUI
       const current=++generation;
       if(packId!==id) {packId=id;pendingKey=key();}
       publish({phase:'loading',receipt:null,revealed:0,error:null});
+      if(disposed||current!==generation)return;
       try {
         const receipt=await open({key:pendingKey,packId:id});
         if(current!==generation) return;
@@ -125,12 +126,12 @@ export function createCommandRunner({client,storage,namespace}) {
       const saved=read();
       if(Object.keys(saved).some(key=>key.startsWith(command+':')&&key!==token&&!saved[key]._confirmed))throw new ApiError('COMMAND_PENDING','Resolve the original pending command before making a different purchase or change.',409);
       if(!recover&&acknowledged.get(token)===saved[token]?.key&&saved[token]?._confirmed&&!uncertain.has(token))return run.beginNew(command,input);
-      const local=uncertain.get(token);
+      const local=uncertain.get(token),priorAttempt=!!local||!!saved[token];
       if(!saved[token]&&!local){saved[token]={...safe,key:input.key??client.requestKey()};write(saved);}
       const payload=structuredClone(local??saved[token]);delete payload._confirmed;uncertain.set(token,payload);
       const task=Promise.resolve().then(async()=>{
         try{fence();const result=await client[command](structuredClone(payload));fence();clear(token,payload.key,true);uncertain.delete(token);acknowledged.set(token,payload.key);return result;}
-        catch(error){if(!disposed&&error.code!=='PRINCIPAL_CHANGED'&&error.code!=='COMMAND_DISPOSED'&&Number.isInteger(error.status)&&error.status>=400&&error.status<500){clear(token,payload.key);uncertain.delete(token);}throw error;}
+        catch(error){if(!priorAttempt&&!disposed&&error.code!=='PRINCIPAL_CHANGED'&&error.code!=='COMMAND_DISPOSED'&&Number.isInteger(error.status)&&error.status>=400&&error.status<500){clear(token,payload.key);uncertain.delete(token);}throw error;}
         finally{active.delete(token);}
       });active.set(token,task);return task;
     }catch(error){return Promise.reject(error);}

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Window} from 'happy-dom';
+import {ApiError} from '../src/client.js';
 import {createAdminController} from '../src/admin-client.js';
 import {mountAdminPanel} from '../src/admin-ui.js';
 import {fixture} from './helpers.js';
@@ -37,4 +38,16 @@ test('inventory changes require a reason and exact-copy review; safe names reach
 }));
 test('read-only operators see saved controls without editable actions',async()=>{
   const window=new Window(),x=setup();globalThis.document=window.document;x.client.adminOverview=async()=>x.core.adminOverview({...x.alice,permissions:['admin.read']});const root=document.createElement('div'),panel=mountAdminPanel(root,{client:x.client,namespace:'read-only'});try{await panel.ready;root.querySelector('[data-admin-tab="website"]').click();assert(root.querySelector('[aria-label="Pack purchases"]').disabled);assert.match(root.textContent,/Additional administrator permission/);}finally{panel.dispose();await window.happyDOM.abort();delete globalThis.document;}
+});
+
+
+for(const retryStatus of [401,429])test('admin original issuance survives a retry rejection '+retryStatus,async()=>{
+  const x=setup(),storage=memory(),real=x.client.administerCards,inputs=[];let attempts=0;
+  x.client.administerCards=async input=>{inputs.push(input);attempts++;if(attempts===2)throw new ApiError('RETRY_REJECTED','Retry unavailable',retryStatus);const result=await real(input);if(attempts===1)throw new Error('Committed response lost');return result;};
+  let controller=createAdminController({client:x.client,storage,namespace:x.alice.userId});
+  try{
+    await controller.load();controller.stage({command:'administerCards',input:{userId:x.bob.userId,action:'give',variantId:'dawn.standard',quantity:1,reason:'Replacement'},title:'Give Dawn',changes:[{label:'Dawn',before:'0',after:'1'}]});await controller.confirm();controller.dispose();
+    controller=createAdminController({client:x.client,storage,namespace:x.alice.userId});await controller.confirm();assert.equal(controller.getState().pending,true);controller.dispose();
+    controller=createAdminController({client:x.client,storage,namespace:x.alice.userId});await controller.confirm();assert.equal(controller.getState().pending,false);assert.deepEqual(inputs[0],inputs[2]);assert.equal(x.core.inventory(x.bob).length,1);
+  }finally{controller.dispose();x.core.close();}
 });

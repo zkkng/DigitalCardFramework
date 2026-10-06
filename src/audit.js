@@ -209,8 +209,8 @@ function auditEscrow(s,add){
     for(const money of trade.give.currencies){
       expected.push({userId:trade.fromUserId,currencyId:money.currencyId,type:'trade.escrow',delta:-money.amount});
       if(trade.status==='pending'){
-        const key=accountKey(trade.fromUserId,money.currencyId),old=liabilities.get(key)??{userId:trade.fromUserId,currencyId:money.currencyId,amount:0};
-        old.amount+=money.amount;liabilities.set(key,old);
+        const key=accountKey(trade.fromUserId,money.currencyId),old=liabilities.get(key)??{userId:trade.fromUserId,currencyId:money.currencyId,amount:0n};
+        if(Number.isSafeInteger(money.amount)&&money.amount>0)old.amount+=BigInt(money.amount);else add('ESCROW_AMOUNT_INVALID',trade.id);liabilities.set(key,old);
       }else expected.push({userId:trade.status==='accepted'?trade.toUserId:trade.fromUserId,currencyId:money.currencyId,type:trade.status==='accepted'?'trade':'trade.refund',delta:money.amount});
     }
     if(trade.status==='accepted')for(const money of trade.receive.currencies){
@@ -218,7 +218,7 @@ function auditEscrow(s,add){
     }
     if(JSON.stringify(expected.map(signature).sort())!==JSON.stringify((byTrade.get(trade.id)??[]).map(signature).sort()))add('ESCROW_LEDGER_INVALID',trade.id);
   }
-  for(const {userId,currencyId,amount}of liabilities.values())if(!Number.isSafeInteger(amount+(s.balances[userId]?.[currencyId]??0)))add('ESCROW_HEADROOM_INVALID',userId+':'+currencyId);
+  for(const {userId,currencyId,amount}of liabilities.values()){const available=s.balances[userId]?.[currencyId]??0;if(!Number.isSafeInteger(available)||amount+BigInt(available)>BigInt(Number.MAX_SAFE_INTEGER))add('ESCROW_HEADROOM_INVALID',userId+':'+currencyId);}
 }
 
 function auditExternalPurchases(s,add){

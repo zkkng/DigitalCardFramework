@@ -60,3 +60,18 @@ test('storage cleanup failure after a committed command cannot turn success into
   assert.equal(inputs[0].key,inputs[1].key);
   assert.equal(Object.values(JSON.parse(stored))[0]._confirmed,true);
 });
+
+
+for(const retryStatus of [401,429])for(const remount of [false,true])test('lost committed conversion keeps its original key after retry rejection '+retryStatus+' remount '+remount,async()=>{
+  const {fixture}=await import('./helpers.js'),{SQLiteStore}=await import('../src/sqlite.js'),{MemoryStore}=await import('../src/store.js');
+  for(const Store of [MemoryStore,SQLiteStore]){
+    const x=fixture({store:new Store()}),storage=memory();let calls=0,keys=0;const inputs=[];
+    const client={requestKey:()=>String(++keys),convert:async input=>{calls++;inputs.push(input);if(calls===2)throw new ApiError('RETRY_REJECTED','Retry cannot run',retryStatus);const result=x.core.convert(x.alice,input);if(calls===1)throw new Error('Committed response lost');return result;}};
+    let runner=createCommandRunner({client,storage,namespace:x.alice.userId});const input={from:'credits',to:'gems',amount:300,catalogVersion:1};
+    try{
+      await assert.rejects(runner('convert',input));if(remount){runner.dispose();runner=createCommandRunner({client,storage,namespace:x.alice.userId});}
+      await assert.rejects(runner('convert',input));assert.equal(runner.pending('convert').key,'1');if(remount){runner.dispose();runner=createCommandRunner({client,storage,namespace:x.alice.userId});}
+      await runner('convert',input);assert.equal(keys,1);assert.deepEqual(inputs[0],inputs[2]);assert.equal(x.core.wallet(x.alice).credits,9700);assert.equal(x.core.wallet(x.alice).gems,3);
+    }finally{runner.dispose();x.core.close();}
+  }
+});

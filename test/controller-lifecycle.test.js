@@ -52,3 +52,29 @@ test('a detached trading-policy control cannot dispatch after view disposal',asy
   try{const view=renderTradingControls({inventory:[]},{client:{tradingPolicy:async()=>({revision:0,policy:{}}),configureTrading:async()=>{calls++;return {revision:1};}}});document.body.append(view.node);await view.ready;const button=[...view.node.querySelectorAll('button')].find(node=>node.textContent==='Apply trading policy');assert(button);view.dispose();button.click();await Promise.resolve();assert.equal(calls,0);}
   finally{await window.happyDOM.abort();delete globalThis.document;}
 });
+
+
+test('synchronous loading subscribers cannot dispatch after controller disposal',async()=>{
+  let calls=0;const reveal=createRevealController({open:async()=>{calls++;return {cards:[]};},key:()=> 'key'});
+  reveal.subscribe(state=>{if(state.phase==='loading')reveal.dispose();});await reveal.load('one');assert.equal(calls,0);
+  for(const [method,flag]of [['load','phase'],['users','loadingUsers'],['person','loadingPerson'],['history','loadingHistory']]){
+    const client=Object.fromEntries(['adminOverview','adminUsers','adminUser','adminHistory'].map(name=>[name,async()=>{calls++;return {items:[]};}]));
+    const controller=createAdminController({client,namespace:'one'});controller.subscribe(state=>{if(flag==='phase'?state.phase==='loading':state[flag])controller.dispose();});await controller[method]('one');assert.equal(calls,0);
+  }
+  const trade=createTradeDraft({client:{tradeInventory:async()=>{calls++;return {items:[],owner:null,next:null};}},userId:'one',catalog:{features:{cardTrading:true},currencies:[]}});
+  trade.subscribe(state=>{if(state.phase==='loading')trade.dispose();});await trade.load('two');assert.equal(calls,0);
+});
+test('nested loading replaces obsolete dispatch and notification for reveal and trade',async()=>{
+  const calls=[],states=[];let redirected=false;
+  const reveal=createRevealController({open:async input=>{calls.push(input.packId);return {cards:[]};},key:()=> 'key'});
+  reveal.subscribe(state=>{if(state.phase==='loading'&&!redirected){redirected=true;void reveal.load('new');}});reveal.subscribe(state=>states.push(state.phase));
+  await reveal.load('old');await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls,['new']);assert.deepEqual(states,['idle','loading','ready']);
+  const reads=[];redirected=false;const trade=createTradeDraft({client:{tradeInventory:async id=>{reads.push(id);return {items:[],owner:null,next:null};}},userId:'one',catalog:{features:{cardTrading:true},currencies:[]}});
+  trade.subscribe(state=>{if(state.phase==='loading'&&!redirected){redirected=true;void trade.load('new');}});await trade.load('old');await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(reads,['one','new']);
+});
+test('nested admin loading supersedes the older generation before any read',async()=>{
+  for(const [method,flag]of [['load','phase'],['users','loadingUsers'],['person','loadingPerson'],['history','loadingHistory']]){
+    let calls=0,redirected=false;const client={adminOverview:async()=>{calls++;return {};},adminUsers:async()=>{calls++;return {items:[]};},adminUser:async()=>{calls++;return {user:{id:'new'},inventory:{items:[]}};},adminHistory:async()=>{calls++;return {items:[]};}};
+    const controller=createAdminController({client,namespace:'one'});controller.subscribe(state=>{if((flag==='phase'?state.phase==='loading':state[flag])&&!redirected){redirected=true;void controller[method]('new');}});await controller[method]('old');await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1);controller.dispose();
+  }
+});

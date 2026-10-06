@@ -1,7 +1,7 @@
 /** Headless visual trade draft. State is presentation only; the server owns every transfer. */
 export function createTradeDraft({client,userId,catalog,storage,namespace=userId,initial,parentTradeId=null}={}){
   const listeners=new Set(),storageKey='digital-card.trade-draft.v1:'+namespace;
-  let generation=0,disposed=false,state={phase:'idle',recipientId:initial?.toUserId??null,owner:null,partner:null,
+  let generation=0,publication=0,disposed=false,state={phase:'idle',recipientId:initial?.toUserId??null,owner:null,partner:null,
     inventory:[],partnerInventory:[],give:[],receive:[],giveCurrencies:[],receiveCurrencies:[],message:'',reviewed:false,error:null,
     ownNext:null,partnerNext:null};
   let restored=initial;try{restored??=JSON.parse(storage?.getItem(storageKey)??'null');}catch{}
@@ -10,12 +10,13 @@ export function createTradeDraft({client,userId,catalog,storage,namespace=userId
   const publicState=()=>structuredClone({...state,selectedGive:state.give.map(id=>copyMaps.give.get(id)).filter(Boolean),selectedReceive:state.receive.map(id=>copyMaps.receive.get(id)).filter(Boolean)});
   function publish(change,edit=false){if(disposed)return;state={...state,...change,...(edit?{reviewed:false}: {})};
     if(edit)try{storage?.setItem(storageKey,JSON.stringify({toUserId:state.recipientId,give:{copyIds:state.give,currencies:state.giveCurrencies},receive:{copyIds:state.receive,currencies:state.receiveCurrencies},message:state.message,parentTradeId}));}catch{}
-    for(const fn of listeners)fn(publicState());}
+    const version=++publication,snapshot=publicState();for(const fn of listeners){if(disposed||version!==publication)break;fn(structuredClone(snapshot));}}
   function eligible(copy){return catalog.features.cardTrading&&(copy?.tradable||parentTradeId&&copy?.lockedBy===parentTradeId);}
   function sideFields(side){if(!['give','receive'].includes(side))throw new Error('Invalid trade side');return side==='give'?{list:'inventory',cursor:'ownNext',owner:userId}:{list:'partnerInventory',cursor:'partnerNext',owner:state.recipientId};}
   function select(side,copyId){if(disposed)return;sideFields(side);const copy=copyMaps[side].get(copyId);if(!eligible(copy))throw new Error(copy?.untradableReason??'Card is not available');if(state[side].includes(copyId))return;if(state[side].length>=100)throw new Error('An offer can contain at most 100 cards per side');publish({[side]:[...state[side],copyId]},true);}
   async function load(recipientId){if(disposed)return;const current=++generation;publish({phase:'loading',recipientId,reviewed:false,error:null});
-    try{const [own,partner]=await Promise.all([client.tradeInventory(userId,{limit:200}),recipientId?client.tradeInventory(recipientId,{limit:200}):Promise.resolve({items:[],owner:null,next:null})]);if(disposed||generation!==current)return;
+    if(disposed||generation!==current)return;
+    try{const ownRead=client.tradeInventory(userId,{limit:200});if(disposed||generation!==current){Promise.resolve(ownRead).catch(()=>{});return;}const partnerRead=recipientId?client.tradeInventory(recipientId,{limit:200}):Promise.resolve({items:[],owner:null,next:null});const [own,partner]=await Promise.all([ownRead,partnerRead]);if(disposed||generation!==current)return;
       for(const side of ['give','receive'])copyMaps[side].clear();own.items.forEach(copy=>copyMaps.give.set(copy.id,copy));partner.items.forEach(copy=>copyMaps.receive.set(copy.id,copy));
       const restore=restored?.toUserId===recipientId?restored:null;restored=null;
       publish({phase:'ready',owner:own.owner,partner:partner.owner,inventory:own.items,partnerInventory:partner.items,ownNext:own.next,partnerNext:partner.next,
