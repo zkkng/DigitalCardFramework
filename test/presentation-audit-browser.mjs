@@ -92,7 +92,9 @@ const checks = [],
   errors = [];
 try {
   try {
-    browser = await pw[engine].launch({ headless: process.env.HEADED !== "1" });
+    browser = await pw[engine].launch({ headless: process.env.HEADED !== "1",
+      ...(engine==="firefox"&&process.env.DC_CI_SOFTWARE_WEBGL==="1"?{firefoxUserPrefs:{"webgl.disabled":false,"webgl.force-enabled":true}}:{}),
+    });
   } catch (error) {
     if (engine !== "chromium") throw error;
     browser = await pw.chromium.launch({ headless: true, channel: "msedge" });
@@ -115,6 +117,11 @@ try {
         return { name, passed: true, detail };
       },
       results = [];
+    const probeCanvas=document.createElement("canvas"),contextErrors=[];
+    probeCanvas.addEventListener("webglcontextcreationerror",event=>contextErrors.push(event.statusMessage));
+    const probe=probeCanvas.getContext("webgl2"),setup={available:Boolean(probe),contextErrors,
+      ...(probe?{maxTextureSize:probe.getParameter(probe.MAX_TEXTURE_SIZE),fragmentUniformVectors:probe.getParameter(probe.MAX_FRAGMENT_UNIFORM_VECTORS),version:probe.getParameter(probe.VERSION)}:{})};
+    results.push(check(Boolean(probe),"fresh WebGL2 graphics setup",setup));probe.getExtension("WEBGL_lose_context")?.loseContext();
     const settle = () => new Promise((r) => setTimeout(r, 80)),
       root = document.getElementById("root");
     const resolver = await directoryResolver("/card/");

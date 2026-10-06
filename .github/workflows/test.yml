@@ -78,6 +78,8 @@ jobs:
       - run: xvfb-run --auto-servernum node test/presentation-audit-browser.mjs ./node_modules/playwright/index.mjs test-results ${{ matrix.engine }}
         env:
           HEADED: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          DC_CI_SOFTWARE_WEBGL: '1'
       - run: xvfb-run --auto-servernum node test/card-authoring-browser.mjs test-results/card-authoring
         env:
           HEADED: '1'
