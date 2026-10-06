@@ -1,8 +1,10 @@
 # Incremental acquisition storage
 
-`await core.purchaseAsync(actor, request)` provides an opt-in acquisition path using record transactions. Its request and receipt are the same as `core.purchase`; both methods share the same idempotency namespace. Accepted replay returns the original receipt. Wallet adjustment, supply and pity updates, sealed copies and packs, receipt, ledger entries, events and delivery reservations commit atomically.
+`await core.purchaseAsync(actor, request)` provides an acquisition path using record transactions. Its request and receipt are the same as `core.purchase`; both methods share the same idempotency namespace. The production API uses it for direct and durable-intent purchases. Accepted replay returns the original receipt. Wallet adjustment, supply and pity updates, sealed copies and packs, receipt, ledger entries, events and delivery reservations commit atomically.
 
-This method returns a Promise, but SQLite operations still run synchronously on the calling thread. It does not provide a worker thread, concurrent writer execution or a general asynchronous application API. The production HTTP routes continue to use the established command methods.
+This method returns a Promise, but SQLite operations still run synchronously on the calling thread. It does not provide a worker thread, concurrent writer execution or a general asynchronous application API. Other production commands continue to use their established storage paths.
+
+`executeCommandIntentAsync(actor, {id}, options)` awaits the underlying command before finalizing its server-owned recovery head. It preserves the same authorization, immutable input, receipt replay and explicit acknowledgement rules as synchronous `executeCommandIntent`. An interruption after the purchase commit leaves the original key available for recovery. Intent registration, finalization and acknowledgement still materialize installation state; the complete browser purchase lifecycle is not yet an incremental transaction path.
 
 ## Supported products
 
@@ -12,7 +14,7 @@ SQLite reads the selected catalog/configuration, account, balance, receipt, supp
 
 ## Preparation and mixed writers
 
-Call `store.prepareRecordTransactions()` during planned writable maintenance to establish revision-bound capacity accounting. The first incremental purchase also prepares it when absent or stale. Preparation scans installation state and consumes ordinary storage capacity; insufficient capacity fails atomically. Read-only inspection does not prepare or modify a database. Existing installations that never activate this path do not pay its accounting refresh cost.
+Call `store.prepareRecordTransactions()` during planned writable maintenance to establish revision-bound capacity accounting. The first incremental purchase, including a production API purchase, also prepares it when absent or stale. Preparation scans installation state and consumes ordinary storage capacity; insufficient capacity fails atomically. Read-only inspection does not prepare or modify a database. Applications using only the synchronous core methods do not activate its accounting refresh cost.
 
 Once activated, compatibility transactions refresh accounting in their own transaction. They still scan state; accounting stabilization updates only its scalar and reservation payload sizes after the initial measurement. An older writer that changes the revision without refreshing accounting causes the next incremental admission to prepare again. Existing receipt recovery can use the compatibility path without allocating this metadata first.
 

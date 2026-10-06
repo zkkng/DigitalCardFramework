@@ -40,6 +40,24 @@ for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' commit before int
   const result=x.core.executeCommandIntent(x.alice,{id:intent.id});assert.equal(result.intent.state,'completed');assert.equal(x.core.wallet(x.alice).credits,9990);assert.equal(x.core.packs(x.alice).length,1);assert.deepEqual(x.core.executeCommandIntent(x.alice,{id:intent.id}).result,result.result);
  }finally{x.core.close();}
 });
+
+for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' async execution preserves receipt after finalization interruption',async()=>{
+ const store=new Store(),x=fixture({store});try{
+  const intent=x.core.registerCommandIntent(x.alice,{command:'purchase',input:x.core.quote(x.alice,{productId:'common',quantity:1})}),transact=store.transact.bind(store);let inject=true;
+  store.transact=fn=>transact(s=>{const result=fn(s);if(inject&&s.commandIntents?.[intent.id]?.state==='completed'){inject=false;throw new FrameworkError('FINALIZATION_INTERRUPTED','Interrupted before finalization',503);}return result;});
+  await assert.rejects(x.core.executeCommandIntentAsync(x.alice,{id:intent.id}),code('FINALIZATION_INTERRUPTED'));assert.equal(x.core.wallet(x.alice).credits,9990);assert.equal(x.core.commandIntents(x.alice).items[0].state,'pending');
+  await assert.rejects(x.core.executeCommandIntentAsync(x.bob,{id:intent.id}),code('NOT_FOUND'));
+  const result=await x.core.executeCommandIntentAsync(x.alice,{id:intent.id});assert.equal(result.intent.state,'completed');assert.equal(x.core.wallet(x.alice).credits,9990);assert.equal(x.core.packs(x.alice).length,1);assert.deepEqual(x.core.executeCommandIntent(x.alice,{id:intent.id}).result,result.result);
+ }finally{x.core.close();}
+});
+
+test('HTTP direct and intent purchases await the asynchronous acquisition boundary',async t=>{
+ const x=await live(t,SQLiteStore),client=x.client();await client.me();const quote=await client.quote({productId:'common',quantity:1}),purchase=x.core.purchaseAsync.bind(x.core);let calls=0,release,entered;
+ const gate=new Promise(resolve=>{release=resolve;}),started=new Promise(resolve=>{entered=resolve;});
+ x.core.purchaseAsync=async(...args)=>{calls++;const result=await purchase(...args);entered();await gate;return result;};
+ let responded=false;const pending=client.purchase({...quote,key:'direct-async'}).then(result=>{responded=true;return result;});await started;assert.equal(responded,false);release();const receipt=await pending;assert.equal(receipt.packs.length,1);
+ const intent=await client.registerCommandIntent({command:'purchase',input:quote}),result=await client.executeCommandIntent({id:intent.id});assert.equal(result.intent.state,'completed');assert.equal(result.result.packs.length,1);assert.equal(calls,2);assert.equal(x.core.wallet(x.alice).credits,9980);
+});
 test('encrypted restart retains recovery and acknowledgement at full storage capacity',()=>{
  const dir=mkdtempSync(join(tmpdir(),'command-intent-restart-')),path=join(dir,'state.sqlite'),encryptionKey=randomBytes(32);let core;
  try{

@@ -61,7 +61,7 @@ export class CardFramework {
       deliverCopy:(...args)=>this.#deliverCopy(...args),deliverPack:(...args)=>this.#deliverPack(...args),
       canList:policies.canList,canPurchase:policies.canPurchase,
     },{random:raffleRandom});
-    this.#commandIntents=new CommandIntentService({store,clock,limits:this.#limits,admit:(s,completion)=>this.#capacity(s,completion),execute:(actor,command,input)=>this[command==='preferences'?'setPreferences':command](actor,input),completion:(s,actor,command,input)=>!!(input.key&&(s.requests[actor.userId+':'+input.key]||s.operatorRequests?.[actor.userId+':'+input.key]))||command==='openPack'&&s.packs[input.packId]&&!s.packs[input.packId].receipt||['acceptTrade','cancelTrade'].includes(command)&&s.trades[input.tradeId]?.status==='pending'||command==='cancelListing'&&s.listings?.[input.listingId]?.status==='active'});
+    this.#commandIntents=new CommandIntentService({store,clock,limits:this.#limits,admit:(s,completion)=>this.#capacity(s,completion),execute:(actor,command,input)=>this[command==='preferences'?'setPreferences':command](actor,input),executeAsync:(actor,command,input)=>this[command==='purchase'?'purchaseAsync':command==='preferences'?'setPreferences':command](actor,input),completion:(s,actor,command,input)=>!!(input.key&&(s.requests[actor.userId+':'+input.key]||s.operatorRequests?.[actor.userId+':'+input.key]))||command==='openPack'&&s.packs[input.packId]&&!s.packs[input.packId].receipt||['acceptTrade','cancelTrade'].includes(command)&&s.trades[input.tradeId]?.status==='pending'||command==='cancelListing'&&s.listings?.[input.listingId]?.status==='active'});
 
   }
   adminOverview(actor){return this.#administration.overview(actor);}
@@ -248,6 +248,7 @@ export class CardFramework {
   commandIntents(actor,options){return this.#commandIntents.pending(actor,options);}
   registerCommandIntent(actor,input,options){return this.#commandIntents.register(actor,input,options);}
   executeCommandIntent(actor,input,options){return this.#commandIntents.execute(actor,input,options);}
+  executeCommandIntentAsync(actor,input,options){return this.#commandIntents.executeAsync(actor,input,options);}
   acknowledgeCommandIntent(actor,input,options){return this.#commandIntents.acknowledge(actor,input,options);}
 
   #notify(s,userId,type,data){s.notifications??=[];s.notifications.push({id:id(),userId,type,data,at:this.#clock(),read:false});const own=s.notifications.filter(n=>n.userId===userId);if(own.length>2000){const remove=new Set(own.slice(0,own.length-2000).map(n=>n.id));s.notifications=s.notifications.filter(n=>!remove.has(n.id));}}

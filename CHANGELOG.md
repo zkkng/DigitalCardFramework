@@ -24,6 +24,7 @@
 
 ### Changed
 
+- Production HTTP purchases now await incremental acquisition and durable command execution while preserving original receipt recovery after interrupted finalization.
 - Converted the admin controller to strict TypeScript and generated declarations. Saved admin commands must match their reviewed inputs before recovery.
 - Converted the browser client, code-reveal controller and durable command runner to strict TypeScript with generated declarations and checked build parity.
 - New catalogs default to collection-only. The reference frontend loads optional views and data according to enabled workflows and retained recovery needs; the example catalog explicitly selects the demo profile.

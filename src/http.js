@@ -87,14 +87,14 @@ export function createApiHandler({framework,currencyGateway,codeGateway,resolveI
           '/api/operator/import/preview':'previewImport','/api/operator/import/commit':'commitImport','/api/operator/card-policies/effective':'effectiveCardPolicy','/api/operator/card-policies/save':'saveCardPolicy','/api/operator/card-policies/preview':'previewCardPolicy','/api/operator/card-policies/activate':'activateCardPolicy','/api/operator/card-policies/retire':'retireCardPolicy','/api/operator/card-policies/restore':'restoreCardPolicy','/api/operator/card-resources/save':'saveCardResource','/api/operator/card-resources/retire':'retireCardResource','/api/operator/card-resources/restore':'restoreCardResource','/api/operator/copy-stats':'updateCopyStats'
         };
         if(path==='/api/command-intents')result=framework.registerCommandIntent(actor,input,{operators:exposeOperators});
-        else if(path==='/api/command-intents/execute')result=framework.executeCommandIntent(actor,input,{operators:exposeOperators,requireTradeReview});
+        else if(path==='/api/command-intents/execute')result=await (framework.executeCommandIntentAsync??framework.executeCommandIntent).call(framework,actor,input,{operators:exposeOperators,requireTradeReview});
         else if(path==='/api/command-intents/acknowledge')result=framework.acknowledgeCommandIntent(actor,input,{operators:exposeOperators});
         else if(path==='/api/currency/reconcile' && currencyGateway) result=await currencyGateway.reconcile(actor,input);
         else if(path==='/api/codes/reconcile' && codeGateway) result=await codeGateway.reconcile(actor,input);
         else {
         const command=routes[path]; if(!command) throw new FrameworkError('NOT_FOUND','Unknown API route',404);
         if(requireTradeReview&&['acceptTrade','counterTrade'].includes(command)&&typeof input.expectedDigest!=='string')throw new FrameworkError('REVIEW_REQUIRED','Review the immutable trade contents first',409);
-        result=await framework[command](actor,input);
+        result=await (command==='purchase'&&framework.purchaseAsync?framework.purchaseAsync:framework[command]).call(framework,actor,input);
         }
       }
       response.end(JSON.stringify(result));

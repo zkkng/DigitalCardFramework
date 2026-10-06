@@ -16,8 +16,8 @@ function user(q,actor){check(actor?.disabled!==true&&typeof actor?.userId==='str
 
 /** Server-owned recovery heads retain original commands until acknowledged. */
 export class CommandIntentService{
-  #store;#clock;#execute;#admit;#limits;#completion;
-  constructor({store,clock,execute,admit,limits,completion}){this.#store=store;this.#clock=clock;this.#execute=execute;this.#admit=admit;this.#limits=limits;this.#completion=completion;}
+  #store;#clock;#execute;#executeAsync;#admit;#limits;#completion;
+  constructor({store,clock,execute,executeAsync=execute,admit,limits,completion}){this.#store=store;this.#clock=clock;this.#execute=execute;this.#executeAsync=executeAsync;this.#admit=admit;this.#limits=limits;this.#completion=completion;}
   #read(actor,id,options={}){
     text(id,'intent ID',100);
     return this.#store.query(q=>{user(q,actor);const row=q.get('commandIntents',id);check(row?.userId===actor.userId,'NOT_FOUND','Command intent not found',404);authorize(actor,row.command,options);return row;});
@@ -59,14 +59,31 @@ export class CommandIntentService{
     if(row.error)throw new FrameworkError(row.error.code,row.error.message,row.error.status);
     let result;
     try{
-      if(options.requireTradeReview&&['acceptTrade','counterTrade'].includes(row.command))check(typeof row.input.expectedDigest==='string'&&/^[a-f0-9]{64}$/.test(row.input.expectedDigest),'TRADE_REVIEW_REQUIRED','Review the current offer before submitting this action',409);
+      this.#review(row,options);
       result=this.#execute(actor,row.command,clone(row.input));
       check(!result?.then,'INVALID_STATE','Durable command callbacks must be synchronous',500);
     }catch(error){
-      if(row.state==='pending'&&Number.isInteger(error.status)&&(error.status>=400&&error.status<500||error.status===507)&&![401,403,429].includes(error.status))this.#finish(actor,id,current=>{if(current.state==='pending'){current.state='failed';current.completedAt=this.#clock();current.error={code:/^[A-Z][A-Z0-9_]{0,80}$/.test(error.code)?error.code:'COMMAND_REJECTED',message:String(error.message).slice(0,512),status:error.status};}});
-      throw error;
+      this.#rejected(actor,row,error);
     }
-    const intent=row.state==='pending'?this.#finish(actor,id,current=>{if(current.state==='pending'){current.state='completed';current.completedAt=this.#clock();}return current;}):row;
+    return this.#completed(actor,row,result);
+  }
+  async executeAsync(actor,{id},options={}){
+    const principal=clone(actor),policy=clone(options),row=this.#read(principal,id,policy);
+    if(row.error)throw new FrameworkError(row.error.code,row.error.message,row.error.status);
+    let result;
+    try{this.#review(row,policy);result=await this.#executeAsync(principal,row.command,clone(row.input));}
+    catch(error){this.#rejected(principal,row,error);}
+    return this.#completed(principal,row,result);
+  }
+  #review(row,options){
+    if(options.requireTradeReview&&['acceptTrade','counterTrade'].includes(row.command))check(typeof row.input.expectedDigest==='string'&&/^[a-f0-9]{64}$/.test(row.input.expectedDigest),'TRADE_REVIEW_REQUIRED','Review the current offer before submitting this action',409);
+  }
+  #rejected(actor,row,error){
+    if(row.state==='pending'&&Number.isInteger(error.status)&&(error.status>=400&&error.status<500||error.status===507)&&![401,403,429].includes(error.status))this.#finish(actor,row.id,current=>{if(current.state==='pending'){current.state='failed';current.completedAt=this.#clock();current.error={code:/^[A-Z][A-Z0-9_]{0,80}$/.test(error.code)?error.code:'COMMAND_REJECTED',message:String(error.message).slice(0,512),status:error.status};}});
+    throw error;
+  }
+  #completed(actor,row,result){
+    const intent=row.state==='pending'?this.#finish(actor,row.id,current=>{if(current.state==='pending'){current.state='completed';current.completedAt=this.#clock();}return current;}):row;
     return {intent,result};
   }
   acknowledge(actor,{id},options={}){
