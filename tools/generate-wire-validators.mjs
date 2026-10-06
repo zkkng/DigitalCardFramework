@@ -14,7 +14,7 @@ function dateTime(value){
   return m>=1&&m<=12&&d>=1&&d<=days[m-1]&&Number(hour)<24&&Number(minute)<60&&Number(second)<60&&Number(offsetHour)<24&&Number(offsetMinute)<60;
 }
 const formatCode=new _Code('({"date-time":'+dateTime.toString()+'})');
-const ajv=new Ajv2020({strict:false,allErrors:true,code:{source:true,esm:true,formats:formatCode}});
+const ajv=new Ajv2020({strict:false,allErrors:true,inlineRefs:false,code:{source:true,esm:true,formats:formatCode}});
 ajv.addFormat('date-time',dateTime);
 const root='https://digital-card.invalid/wire';
 ajv.addSchema({$id:root,components:openapi.components});

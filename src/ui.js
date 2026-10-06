@@ -273,6 +273,11 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
       const stats=element('div','dc-account-stats');stats.append(element('span','',model.inventory.length+' cards'),element('span','',model.packs.filter(p=>!p.openedAt).length+' sealed packs'));dashboard.append(stats);
       for(const name of sections){if(typeof name!=='string'||!views[name])continue;const item=button(labels[name]??name,()=>navigate(name));item.className='dc-nav-item';item.dataset.view=name;item.setAttribute('aria-current',active===name?'page':'false');if(name==='packs'){const count=model.packs.filter(p=>!p.openedAt).length;if(count)item.append(element('span','dc-nav-count',count));}nav.append(item);}
     }
+    if(model.recoverable?.length){
+      const recovery=element('section','dc-panel');recovery.setAttribute('aria-label','Unconfirmed changes');recovery.append(element('h2','','Unconfirmed changes'),element('p','','Recover these previously reviewed changes before starting another. Recovery uses the original request.'));
+      const names={purchase:'pack purchase',openPack:'pack opening',buyListing:'marketplace purchase',configureAdmin:'settings change',administerCards:'card administration',convert:'currency conversion',tradeUp:'trade-up',saveAlbum:'album change',proposeTrade:'trade offer',acceptTrade:'trade acceptance',cancelTrade:'trade cancellation',counterTrade:'counteroffer',preferences:'preferences',readNotifications:'notification update',commitImport:'catalog import',reportCodeUsage:'code usage report',createShop:'shop creation',createListing:'listing creation',cancelListing:'listing cancellation',enterRaffle:'raffle entry',openCard:'card opening',consumeBinding:'attached action'};
+      for(const intent of model.recoverable){const label=names[intent.command]??'saved change',row=element('div');row.append(element('strong','',label));if(intent.input.productId)row.append(element('p','',String(intent.input.quantity??1)+' × '+(model.catalog.products.find(product=>product.id===intent.input.productId)?.name??intent.input.productId)));row.append(button('Recover '+label,()=>action(()=>mutate.resume(intent),{message:'Original result recovered.'})));recovery.append(row);}content.append(recovery);
+    }
     for(const name of (navigation==='tabs'?[active]:sections)){const view=typeof name==='function'?()=>name(model,{client,inspect,inspectTogether,refresh,mutate,action,navigate,cardRenderer:renderer}):views[name];if(view){const result=view();content.append(result.node??result);if(result.dispose)viewDisposers.push(result.dispose);if(result.requestLeave)viewLeave=result.requestLeave;}}
   }
   async function refresh() {
@@ -281,7 +286,9 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
     const [catalog,me,walletData,packData,inventory,albumData,tradeData,availability,pity]=await Promise.all([client.catalog(),client.me(),client.wallet(),client.packs(),client.inventory(),client.albums(),client.trades(),client.availability?.()??null,client.pity?.()??{}]);
     if(disposed||generation!==refreshGeneration)return;
     if(commandPrincipal!==me.userId){mutate?.dispose();commandPrincipal=me.userId;mutate=createCommandRunner({client,namespace:me.userId});}
-    model={catalog,me,wallet:walletData,packs:packData,inventory,albums:albumData,trades:tradeData,availability,pity};renderView();
+    const recovery=await mutate.recoverable();if(disposed||generation!==refreshGeneration)return;
+    const recoverable=recovery.items.filter(intent=>!(mutate.pending(intent.command)?._confirmed&&mutate.pending(intent.command)?.key===intent.input.key));
+    model={catalog,me,wallet:walletData,packs:packData,inventory,albums:albumData,trades:tradeData,availability,pity,recoverable};renderView();
   }
   const ready=refresh().catch(error=>{if(disposed)return;status.className='dc-status dc-error';status.textContent=error.message;throw error;});
   return {ready,refresh,inspect,inspectTogether,dispose(){disposed=true;mutate?.dispose();openerDispose?.();viewDisposers.forEach(fn=>fn());controller.dispose();inspector.close();removeStyles();root.replaceChildren();}};

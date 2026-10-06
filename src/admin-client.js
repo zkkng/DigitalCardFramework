@@ -1,3 +1,4 @@
+import {createCommandRunner} from './client.js';
 const copy = value => structuredClone(value);
 const errors = error => ({code:error.code ?? 'NETWORK_ERROR',message:error.message ?? 'Unable to reach the server.',status:error.status});
 const commands = new Set(['configureAdmin','administerCards']);
@@ -6,6 +7,7 @@ const commands = new Set(['configureAdmin','administerCards']);
 export function createAdminController({client,storage,namespace} = {}) {
   if (!client || !namespace) throw new Error('An admin client and an operator namespace are required.');
   const storageKey = 'digital-card.admin-command.v1:' + namespace;
+  const durable=typeof client.registerCommandIntent==='function'?createCommandRunner({client,storage,namespace}):null;
   let pending = null, disposed = false, generation = 0, usersGeneration = 0, personGeneration = 0, historyGeneration = 0, publication = 0, active = null;
   const storageError = () => Object.assign(new Error('Safe command storage is unavailable. Restore storage before retrying this change.'),{code:'COMMAND_STORAGE_UNAVAILABLE',status:503});
   function readPending() {
@@ -40,7 +42,15 @@ export function createAdminController({client,storage,namespace} = {}) {
     if (disposed || active) return;
     const current = ++generation; publish({phase:'loading',error:null,...(!keepReview && !pending ? {review:null} : {})});
     if(disposed||current!==generation)return;
-    try { const overview = await client.adminOverview(); if (disposed || current !== generation) return; publish({phase:'ready',overview}); }
+    try {
+      const overview = await client.adminOverview(); if (disposed || current !== generation) return;
+      if(durable&&!pending){
+        const recovered=await durable.recoverable();if(disposed||current!==generation)return;
+        const intent=recovered.items.find(row=>commands.has(row.command)&&!(durable.pending(row.command)?._confirmed&&durable.pending(row.command)?.key===row.input.key));
+        if(intent){const review={command:intent.command,input:copy(intent.input),title:intent.command==='administerCards'?'Recover card change':'Recover settings change',description:'This previously reviewed change still needs confirmation.',changes:[{label:'Saved command',before:'Unconfirmed',after:intent.command==='administerCards'?String(intent.input.action)+' '+String(intent.input.quantity??''):'Settings update'}]};pending={command:intent.command,input:copy(intent.input),review};persist();publish({pending:true,review,message:'Recover the original change before making another one.'});if(disposed||current!==generation)return;}
+      }
+      publish({phase:'ready',overview});
+    }
     catch (error) { if (current === generation) publish({phase:'error',error:errors(error)}); }
   }
   async function users({search = '',after,limit = 30} = {}) {
@@ -86,12 +96,12 @@ export function createAdminController({client,storage,namespace} = {}) {
     active = Promise.resolve().then(async () => {
       if(disposed||current!==generation)return null;
       let receipt;
-      try { receipt = await client[operation.command](copy(operation.input)); if(disposed||current!==generation)return receipt; pending = null; persist(operation.input.key); publish({phase:'ready',pending:false,review:null,error:null,message:'Changes saved. They apply to new actions immediately.'}); }
+      try { const prior=durable?.pending(operation.command);receipt = await (durable?(prior?._confirmed&&prior.key!==operation.input.key?durable.beginNew(operation.command,copy(operation.input)):durable.recover(operation.command,copy(operation.input))):client[operation.command](copy(operation.input))); if(disposed||current!==generation)return receipt; pending = null; persist(operation.input.key); publish({phase:'ready',pending:false,review:null,error:null,message:'Changes saved. They apply to new actions immediately.'}); }
       catch (error) { if(disposed||current!==generation)return null; const definite = !priorAttempt && Number.isInteger(error.status) && error.status >= 400 && error.status < 500; if (definite) { pending = null; persist(operation.input.key); } publish({phase:'error',pending:!!pending,error:errors(error),message:definite ? '' : 'The result is not confirmed. Retry this same change; it will not run twice.'}); return null; }
       finally { active = null; }
       if (!disposed) { const selected = state.person?.user.id; await load({keepReview:false}); if (state.error) publish({message:'Your changes were saved, but current settings could not be refreshed. Reload before making another change.'}); if (!disposed && selected) await person(selected); }
       return receipt;
     }); publish({phase:'saving',pending:true,error:null,message:''});return active;
   }
-  return {getState:() => copy(state),subscribe(listener) { if (disposed) return () => {}; listeners.add(listener); listener(copy(state)); return () => listeners.delete(listener); },load,users,person,history,stage,cancel,confirm,dispose() {disposed = true;generation++;usersGeneration++;personGeneration++;historyGeneration++;listeners.clear();}};
+  return {getState:() => copy(state),subscribe(listener) { if (disposed) return () => {}; listeners.add(listener); listener(copy(state)); return () =>listeners.delete(listener); },load,users,person,history,stage,cancel,confirm,dispose() {disposed = true;durable?.dispose();generation++;usersGeneration++;personGeneration++;historyGeneration++;listeners.clear();}};
 }

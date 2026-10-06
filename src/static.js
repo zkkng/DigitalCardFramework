@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const presentationModules=['index','card-view','integration','player','resolution','webgl','resolver','package','data','motion','validate','media','advanced-media','extensions','project','authoring','performance','album-motion','studio','studio-tools','authoring-tools','stats-csv','text','font-engine','layered-import','layered-package','layered-poster','layered-worker-bundle','png-encode'];
 const modules=['album-appearance','admin-ui','admin-client','admin-styles','marketplace-ui','card-types','code-ui','ui','client','styles','atelier-styles','trade-client','trading-ui','collection-ui','studio-ui','inspector-ui','player-ui','ui-kit','card-policy','card-policy-ui','visual-studio-ui'];
+modules.push('wire-client','wire-contracts','wire-validators','contracts','card-policy-schema','admin-schema','external-purchase-contracts','read-model-contracts');
 export async function serveReference(req,res,{production=false,assetOrigins=[]}={}){
   const path=new URL(req.url,'http://localhost').pathname;
   const files=new Map([['/','examples/index.html'],['/app.js','examples/app.js'],['/site.css','examples/site.css'],['/src/presentation/studio.css','src/presentation/studio.css'],...modules.map(x=>['/src/'+x+'.js','src/'+x+'.js']),...presentationModules.map(x=>['/src/presentation/'+x+'.js','src/presentation/'+x+'.js'])]);

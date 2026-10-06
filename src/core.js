@@ -1,4 +1,5 @@
 import {hasPermission} from './access.js';
+import {CommandIntentService} from './command-intents.js';
 import {completionContext,completionDefaults,completionCapacity,ordinaryRequestCount,reserveCompletion,withCompletion,missingCompletions,reserveDelivery,accountReservationMetadata} from './completion.js';
 import {ExternalPurchaseService} from './external-purchases.js';
 import {deriveStats,inspectCardPolicy} from './card-policy.js';
@@ -28,15 +29,15 @@ function fingerprint(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
 export class CardFramework {
-  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce; #cardPolicies; #administration; #externalPurchases;
+  #store; #clock; #random; #bindings; #policies; #limits; #codes; #actions; #subscriptions; #commerce; #cardPolicies; #administration; #externalPurchases;#commandIntents;
   constructor({store=new MemoryStore(), clock=nowISO, random=randomInt, bindings={}, policies={},limits={},codeVault,codeLimits={},codeGenerators={},actionHandlers={},actionOptions={},eventSubscriptions=[],raffleRandom=randomInt,externalPurchaseProviders={},externalPurchaseLimits={}}={}) {
     this.#store=store; this.#clock=clock; this.#random=random;
     this.#cardPolicies=new CardPolicyService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),clock});
     this.#administration=new AdminService({read:fn=>store.read(fn),operate:(...args)=>this.#operatorCommand(...args),now:clock,mint:(...args)=>this.#mint(...args),open:(...args)=>this.#openCopy(...args),removePlacements:(...args)=>this.#removePlacements(...args)});
-    const allowedLimits=['users','copies','packs','requests','albums','trades','copiesPerUser','packsPerUser','actionJobs','shops','listings','orders','events',...Object.keys(completionDefaults)];
+    const allowedLimits=['users','copies','packs','requests','albums','trades','copiesPerUser','packsPerUser','actionJobs','shops','listings','orders','events','commandIntents',...Object.keys(completionDefaults)];
     check(limits&&typeof limits==='object'&&!Array.isArray(limits),'INVALID_INPUT','Limits must be an object');
     for(const [name,value]of Object.entries(limits)){check(allowedLimits.includes(name),'INVALID_INPUT','Unknown installation limit '+name);integer(value,'Installation limit '+name,1,name==='completionBytes'?1073741824:10000000);}
-    this.#bindings=bindings; this.#policies=policies;this.#limits={actionJobs:50000,shops:1000,listings:10000,orders:50000,...completionDefaults,...limits};
+    this.#bindings=bindings; this.#policies=policies;this.#limits={actionJobs:50000,shops:1000,listings:10000,orders:50000,commandIntents:100000,...completionDefaults,...limits};
     check(Array.isArray(eventSubscriptions)&&eventSubscriptions.length<=50,'INVALID_INPUT','At most 50 event subscriptions');
     this.#subscriptions=eventSubscriptions.map(x=>{text(x.id,'subscription ID',100);text(x.handler,'subscription handler',100);check(Array.isArray(x.events)&&x.events.every(e=>typeof e==='string'),'INVALID_INPUT','Subscription events required');return clone(x);});
     check(new Set(this.#subscriptions.map(x=>x.id)).size===this.#subscriptions.length,'INVALID_INPUT','Duplicate event subscription ID');
@@ -56,6 +57,7 @@ export class CardFramework {
       deliverCopy:(...args)=>this.#deliverCopy(...args),deliverPack:(...args)=>this.#deliverPack(...args),
       canList:policies.canList,canPurchase:policies.canPurchase,
     },{random:raffleRandom});
+    this.#commandIntents=new CommandIntentService({store,clock,limits:this.#limits,admit:(s,completion)=>this.#capacity(s,completion),execute:(actor,command,input)=>this[command==='preferences'?'setPreferences':command](actor,input),completion:(s,actor,command,input)=>!!(input.key&&(s.requests[actor.userId+':'+input.key]||s.operatorRequests?.[actor.userId+':'+input.key]))||command==='openPack'&&s.packs[input.packId]&&!s.packs[input.packId].receipt||['acceptTrade','cancelTrade'].includes(command)&&s.trades[input.tradeId]?.status==='pending'||command==='cancelListing'&&s.listings?.[input.listingId]?.status==='active'});
 
   }
   adminOverview(actor){return this.#administration.overview(actor);}
@@ -204,6 +206,10 @@ export class CardFramework {
       accountReservationMetadata(s,rows,measure,before);completionCapacity(s,this.#limits);return {count:rows.length};
     });
   }
+  commandIntents(actor,options){return this.#commandIntents.pending(actor,options);}
+  registerCommandIntent(actor,input,options){return this.#commandIntents.register(actor,input,options);}
+  executeCommandIntent(actor,input,options){return this.#commandIntents.execute(actor,input,options);}
+  acknowledgeCommandIntent(actor,input,options){return this.#commandIntents.acknowledge(actor,input,options);}
 
   #notify(s,userId,type,data){s.notifications??=[];s.notifications.push({id:id(),userId,type,data,at:this.#clock(),read:false});const own=s.notifications.filter(n=>n.userId===userId);if(own.length>2000){const remove=new Set(own.slice(0,own.length-2000).map(n=>n.id));s.notifications=s.notifications.filter(n=>!remove.has(n.id));}}
   #preferences(user){return {inventoryVisibility:'traders',favoriteCopyIds:[],wishlistCardIds:[],blockedUserIds:[],...user.preferences};}

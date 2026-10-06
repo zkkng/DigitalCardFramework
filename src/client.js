@@ -1,8 +1,10 @@
+import {createWireTransport} from './wire-client.js';
 export class ApiError extends Error {
   constructor(code,message,status) {super(message);this.code=code;this.status=status;}
 }
 export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={}) {
   let principal=null;
+  const wire=createWireTransport({baseUrl,fetch:request,principal:()=>principal});
   const query=options=>'?' + new URLSearchParams(Object.entries(options??{}).filter(([,value])=>value!==undefined&&value!==null)).toString();
   async function call(path,body,method=body===undefined?'GET':'POST') {
     const response=await request(baseUrl+path,{method,credentials:'same-origin',
@@ -12,6 +14,10 @@ export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={})
     return data;
   }
   return {
+    commandIntents:options=>wire('commandIntents',undefined,{query:options}),
+    registerCommandIntent:input=>wire('registerCommandIntent',input),
+    executeCommandIntent:input=>wire('executeCommandIntent',input),
+    acknowledgeCommandIntent:input=>wire('acknowledgeCommandIntent',input),
     adminOverview:()=>call('/operator/admin'),
     adminUsers:options=>call('/operator/admin/users'+query(options)),
     adminUser:options=>call('/operator/admin/user'+query(options)),
@@ -26,7 +32,7 @@ export function createClient({baseUrl='/api',fetch:request=globalThis.fetch}={})
     fulfillments:options=>call('/fulfillments'+query(options)),actionJobs:options=>call('/operator/actions'+query(options)),retryAction:input=>call('/operator/actions/retry',input),openCard:input=>call('/cards/open',input),
     catalog:()=>call('/catalog'), me:async()=>{const me=await call('/me');principal=me.userId;return me;}, wallet:()=>call('/wallet'), history:()=>call('/history'),
     inventory:()=>call('/inventory'), packs:()=>call('/packs'), quote:input=>call('/quote',input),
-    inventoryPage:options=>call('/inventory'+query({limit:50,...options})),directory:options=>call('/users'+query(options)),
+    inventoryPage:options=>call('/inventory'+query({...options,limit:options?.limit??50})),directory:options=>call('/users'+query(options)),
     tradeInventory:(userId,options)=>call('/users/'+encodeURIComponent(userId)+'/inventory'+query(options)),
     availability:()=>call('/availability'),pity:()=>call('/pity'),preferences:input=>call('/preferences',input),
     notifications:options=>call('/notifications'+query(options)),readNotifications:input=>call('/notifications/read',input),
@@ -77,6 +83,7 @@ export function createCommandRunner({client,storage,namespace}) {
   if(typeof namespace!=='string'||!namespace||namespace.length>300)throw new Error('A principal namespace is required');
   if(storage===undefined)try{storage=globalThis.sessionStorage;}catch{}
   const storageKey='digital-card.commands.v1:'+namespace,active=new Map(),uncertain=new Map(),acknowledged=new Map();let disposed=false;
+  const serverRecovery=['registerCommandIntent','executeCommandIntent','acknowledgeCommandIntent','commandIntents'].every(name=>typeof client[name]==='function');
   const allowed=new Set(['purchase','openPack','convert','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','consumeBinding','counterTrade','preferences','readNotifications','commitImport','reportCodeUsage','createShop','createListing','buyListing','cancelListing','enterRaffle','openCard','configureAdmin','administerCards']);
   const stable=x=>Array.isArray(x)?x.map(stable):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,stable(x[k])])):x;
   const unavailable=()=>new ApiError('COMMAND_STORAGE_UNAVAILABLE','Safe command storage is unavailable. Restore storage or use host recovery before retrying.',503);
@@ -125,20 +132,46 @@ export function createCommandRunner({client,storage,namespace}) {
       const safe=clean(command,input),token=tokenFor(command,safe);if(active.has(token))return active.get(token);
       const saved=read();
       if(Object.keys(saved).some(key=>key.startsWith(command+':')&&key!==token&&!saved[key]._confirmed))throw new ApiError('COMMAND_PENDING','Resolve the original pending command before making a different purchase or change.',409);
+      if(serverRecovery&&!recover&&!saved[token]&&Object.keys(saved).some(key=>key.startsWith(command+':')&&saved[key]._confirmed))return run.beginNew(command,input);
       if(!recover&&acknowledged.get(token)===saved[token]?.key&&saved[token]?._confirmed&&!uncertain.has(token))return run.beginNew(command,input);
       const local=uncertain.get(token),priorAttempt=!!local||!!saved[token];
       if(!saved[token]&&!local){saved[token]={...safe,key:input.key??client.requestKey()};write(saved);}
       const payload=structuredClone(local??saved[token]);delete payload._confirmed;uncertain.set(token,payload);
       const task=Promise.resolve().then(async()=>{
-        try{fence();const result=await client[command](structuredClone(payload));fence();clear(token,payload.key,true);uncertain.delete(token);acknowledged.set(token,payload.key);return result;}
-        catch(error){if(!priorAttempt&&!disposed&&error.code!=='PRINCIPAL_CHANGED'&&error.code!=='COMMAND_DISPOSED'&&Number.isInteger(error.status)&&error.status>=400&&error.status<500){clear(token,payload.key);uncertain.delete(token);}throw error;}
+        let intent,executing=false;
+        try{
+          fence();let result;
+          if(serverRecovery){
+            intent=await client.registerCommandIntent({command,input:structuredClone(payload)});fence();
+            if(intent.command!==command||intent.userId!==namespace)throw new ApiError('PRINCIPAL_CHANGED','The returned command does not belong to this account.',409);
+            const originalToken=tokenFor(command,clean(command,intent.input));
+            if(originalToken!==token){const journal=read();if(journal[token]?.key===payload.key)delete journal[token];journal[originalToken]=structuredClone(intent.input);write(journal);uncertain.delete(token);uncertain.set(originalToken,structuredClone(intent.input));throw new ApiError('COMMAND_PENDING','Recover the previously reviewed command before making a different change.',409);}
+            Object.assign(payload,structuredClone(intent.input));const journal=read();journal[token]=structuredClone(intent.input);write(journal);uncertain.set(token,structuredClone(intent.input));fence();executing=true;
+            const response=await client.executeCommandIntent({id:intent.id});result=response.result;
+          }else result=await client[command](structuredClone(payload));
+          fence();clear(token,payload.key,true);uncertain.delete(token);acknowledged.set(token,payload.key);return result;
+        }
+        catch(error){
+          const definite=Number.isInteger(error.status)&&(error.status>=400&&error.status<500||error.status===507)&&![401,403,429].includes(error.status)&&!['PRINCIPAL_CHANGED','COMMAND_DISPOSED','COMMAND_PENDING'].includes(error.code);
+          if(!disposed&&definite){if(serverRecovery&&executing){try{fence();const current=await client.commandIntents({command});fence();if(current.items.some(row=>row.id===intent.id&&row.state==='failed')){clear(token,payload.key,true);uncertain.delete(token);acknowledged.set(token,payload.key);}}catch{}}else if(!serverRecovery&&!priorAttempt){clear(token,payload.key);uncertain.delete(token);}}
+          throw error;
+        }
         finally{active.delete(token);}
       });active.set(token,task);return task;
     }catch(error){return Promise.reject(error);}
   }
   run.pending=command=>{if(disposed)return null;try{const saved=read(),tokens=Object.keys(saved).filter(key=>key.startsWith(command+':')),token=tokens.find(key=>!saved[key]._confirmed)??tokens.at(-1);return token?structuredClone(saved[token]):null;}catch{return null;}};
   run.recover=(command,input)=>run(command,input,{recover:true});
+  run.recoverable=async command=>{fence();if(!serverRecovery)return {items:[]};const result=await client.commandIntents(command?{command}:{});fence();return result;};
+  run.resume=intent=>run.recover(intent.command,intent.input);
   run.beginNew=(command,input)=>{
+    if(serverRecovery)return (async()=>{
+      fence();const token=tokenFor(command,clean(command,input)),saved=read();
+      if([...uncertain.keys()].some(key=>key.startsWith(command+':'))||Object.keys(saved).some(key=>key.startsWith(command+':')&&!saved[key]._confirmed))throw new ApiError('COMMAND_PENDING','Recover the original result before starting another command.',409);
+      const pending=await client.commandIntents({command});fence();
+      for(const intent of pending.items){const originalToken=tokenFor(command,clean(command,intent.input));if(!['completed','failed'].includes(intent.state)||!saved[originalToken]?._confirmed||saved[originalToken].key!==intent.input.key)throw new ApiError('COMMAND_PENDING','Recover the original command before starting another.',409);await client.acknowledgeCommandIntent({id:intent.id});fence();}
+      const latest=read();for(const key of Object.keys(latest))if(key.startsWith(command+':')&&latest[key]._confirmed)delete latest[key];write(latest);const next=structuredClone(input);delete next.key;return run(command,next);
+    })();
     try{
       fence();const token=tokenFor(command,clean(command,input)),saved=read();
       if(uncertain.has(token)||Object.keys(saved).some(key=>key.startsWith(command+':')&&!saved[key]._confirmed))throw new ApiError('COMMAND_PENDING','Recover the original result before starting another command.',409);

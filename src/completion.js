@@ -57,7 +57,8 @@ export function completionPool(s){
   const delivering=new Set(Object.values(s.actionJobs??{}).filter(job=>(job.completionId||job.deliveryCompletionId)&&['pending','running'].includes(job.status)).map(job=>job.completionId??job.deliveryCompletionId));
   for(const row of Object.values(s.completionObligations??{})){
     check(['reserved','completed'].includes(row.status)&&Number.isSafeInteger(row.bytes)&&row.bytes>=0&&Number.isSafeInteger(row.usedBytes)&&row.usedBytes>=0&&row.usedBytes<=row.bytes,'INVALID_STATE','Invalid completion byte accounting',500);
-    storedBytes+=row.usedBytes;if(row.status==='reserved'||delivering.has(row.id))reservedBytes+=row.bytes-row.usedBytes;
+    const awaitingAcknowledgement=row.kind==='intent'&&s.commandIntents?.[row.entityId]?.state!=='acknowledged';
+    storedBytes+=row.usedBytes;if(row.status==='reserved'||delivering.has(row.id)||awaitingAcknowledgement)reservedBytes+=row.bytes-row.usedBytes;
   }
   check(Number.isSafeInteger(storedBytes)&&Number.isSafeInteger(reservedBytes),'INVALID_STATE','Completion byte accounting exceeds integer range',500);return {storedBytes,reservedBytes};
 }

@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added server-owned command recovery with account-scoped discovery, immutable reviewed inputs and explicit acknowledgement. A fresh browser or admin panel can recover an unconfirmed action after local storage is erased without repeating its debit or issuance.
+- Added typed existing client/admin-controller APIs and checked inventory, trade, administration and command-recovery responses.
 - Added a checked browser HTTP transport with generated TypeScript declarations, request/response validation and strict consumer checks. Acquisition contracts include reviewed revisions, public pack views and consistent error envelopes.
 - Added editable stat binding controls, including explicit card/variant scope, labels, units, number formatting and bar ranges. Empty, false and null field values remain distinct.
 - Added Studio policy diagnostics that focus the relevant field or select the correct card face, with embedded-font overflow checks and visible rule references.
@@ -29,6 +31,7 @@
 
 ### Upgrade notes
 
+- Commands registered after upgrade use the server recovery journal. Older commands whose browser identity was already lost still require host reconciliation. Plan the retained-intent limit; unresolved records are not automatically discarded.
 - Back up the database and required keys before upgrading. Follow [production operations](docs/production.md) for schema migration and completion limits. Custom hosts must backfill legacy completion reservations before accepting new commands.
 - New completion budgets are separate from the ordinary payload budget; configure the framework and SQLite limits consistently. Existing receipts and unresolved recovery records are retained.
 - The checked transport does not manage retry identities. Preserve reviewed commands and their original keys as described in the [SDK guide](docs/wire-sdk.md).

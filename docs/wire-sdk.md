@@ -31,4 +31,18 @@ await call('tradeInventory', undefined, {
 
 The acquisition schemas describe quote revisions, integer prices, public pack views and opening receipts. Pack responses reject sealed copy IDs and internal receipts. Every documented error status uses the `{code, message}` envelope. Other operations are checked to the detail currently present in their schemas; unspecified object fields remain `unknown` and need an application-level contract before use. These declarations cover the wire transport, not the entire JavaScript browser or backend implementation.
 
+Inventory responses include checked copy identities, public definitions, variant identities, binding lifecycle fields and transfer eligibility. Administration responses describe permissions, effective product odds, account restrictions, sanitized copy summaries and changes by scope. Trade responses describe immutable offers, snapshots, status and review digests. Extension metadata remains extensible.
+
+The server-owned command intent routes retain original commands across browser sessions. Register an input, execute its returned intent ID, recover that same ID after an uncertain outcome, and acknowledge its resolved outcome before starting another command of that kind:
+
+```ts
+const intent = await call('registerCommandIntent', {
+  command: 'purchase', input: quote
+});
+const executed = await call('executeCommandIntent', {id: intent.id});
+await call('acknowledgeCommandIntent', {id: executed.intent.id});
+```
+
+Registration supplies a retry key when one is absent. An existing unacknowledged head is returned unchanged even when the proposed input differs; compare and resolve the original before continuing. `commandIntents` lists account-owned current heads, including completed and failed commands. Execution responses validate their result against the returned command's schema. Failed execution uses the regular error envelope, and its retained intent contains the failure for recovery.
+
 Contract generation uses the pinned Ajv dependency. Strict SDK compilation uses the pinned TypeScript development dependency. Run `pnpm contract` after changing wire schemas and `pnpm test:sdk` to check consumer types and generated-file drift. The runtime uses generated ESM and requires no schema compiler in the browser.

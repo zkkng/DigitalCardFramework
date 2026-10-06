@@ -12,7 +12,10 @@
     ".": "./src/index.js",
     "./sqlite": "./src/sqlite.js",
     "./ui": "./src/ui.js",
-    "./client": "./src/client.js",
+    "./client": {
+      "types": "./src/client.d.ts",
+      "default": "./src/client.js"
+    },
     "./wire-client": {
       "types": "./src/wire-client.d.ts",
       "default": "./src/wire-client.js"
@@ -24,7 +27,10 @@
     "./wire-types": {
       "types": "./src/wire-types.d.ts"
     },
-    "./admin-client": "./src/admin-client.js",
+    "./admin-client": {
+      "types": "./src/admin-client.d.ts",
+      "default": "./src/admin-client.js"
+    },
     "./admin-ui": "./src/admin-ui.js",
     "./http": "./src/http.js",
     "./importer": "./src/importer.js",

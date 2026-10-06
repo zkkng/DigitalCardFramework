@@ -653,7 +653,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Trade"
                 }
               }
             }
@@ -715,7 +715,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object"
+                    "$ref": "#/components/schemas/Trade"
                   }
                 }
               }
@@ -797,7 +797,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Trade"
                 }
               }
             }
@@ -888,7 +888,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Trade"
                 }
               }
             }
@@ -1294,11 +1294,11 @@
                     {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Copy"
+                        "$ref": "#/components/schemas/InventoryCopy"
                       }
                     },
                     {
-                      "$ref": "#/components/schemas/Page"
+                      "$ref": "#/components/schemas/InventoryPage"
                     }
                   ]
                 }
@@ -2036,34 +2036,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/Page"
-                    },
-                    {
-                      "type": "object",
-                      "required": [
-                        "owner"
-                      ],
-                      "properties": {
-                        "owner": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "name"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "name": {
-                              "type": "string"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
+                  "$ref": "#/components/schemas/TradeInventoryPage"
                 }
               }
             }
@@ -2556,7 +2529,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Trade"
                 }
               }
             }
@@ -8935,7 +8908,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page"
+                  "$ref": "#/components/schemas/AdminUsersPage"
                 }
               }
             }
@@ -9205,7 +9178,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page"
+                  "$ref": "#/components/schemas/AdminHistoryPage"
                 }
               }
             }
@@ -9504,6 +9477,598 @@
           },
           "429": {
             "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/command-intents": {
+      "get": {
+        "operationId": "commandIntents",
+        "description": "Current authenticated account command heads. Recover an unacknowledged original intent before beginning another command of the same kind.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "command",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "purchase",
+                "openPack",
+                "convert",
+                "tradeUp",
+                "saveAlbum",
+                "proposeTrade",
+                "acceptTrade",
+                "cancelTrade",
+                "consumeBinding",
+                "counterTrade",
+                "preferences",
+                "readNotifications",
+                "commitImport",
+                "reportCodeUsage",
+                "createShop",
+                "createListing",
+                "buyListing",
+                "cancelListing",
+                "enterRaffle",
+                "openCard",
+                "configureAdmin",
+                "administerCards"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "maxItems": 25,
+                      "items": {
+                        "$ref": "#/components/schemas/CommandIntent"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Verified account required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account-owned intent or command resource is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Byte limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Command recovery storage is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "registerCommandIntent",
+        "description": "Persists original input and a server-generated retry identity. An existing unacknowledged command head is returned unchanged, even when registration input differs.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandIntentRegistration"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandIntent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Verified account required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account-owned intent or command resource is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Byte limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Command recovery storage is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/command-intents/execute": {
+      "post": {
+        "operationId": "executeCommandIntent",
+        "description": "Executes or recovers the original account-owned command. Deterministic command failures use the normal error envelope and remain discoverable on the failed intent.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandIntentId"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandExecution"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Verified account required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account-owned intent or command resource is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Byte limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Command recovery storage is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Installation or account capacity reached; operator intervention required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/command-intents/acknowledge": {
+      "post": {
+        "operationId": "acknowledgeCommandIntent",
+        "description": "Acknowledges a resolved original intent before registering a new command of the same kind.",
+        "security": [
+          {
+            "hostSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-DC-Principal",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required by the production host; must match the verified session principal."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandIntentId"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "state"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "const": "acknowledged"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid bounded input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Verified account required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin, authority or feature rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account-owned intent or command resource is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Catalog, version, review, account or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Byte limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Command recovery storage is unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -10055,13 +10620,16 @@
             "format": "date-time"
           },
           "definition": {
-            "type": "object"
+            "$ref": "#/components/schemas/CardDefinitionView"
           },
           "variant": {
-            "type": "object"
+            "$ref": "#/components/schemas/CardVariantView"
           },
           "bindings": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CardBindingView"
+            }
           },
           "metadata": {
             "type": "object"
@@ -10075,6 +10643,21 @@
           "provenance": {
             "type": "object",
             "description": "Immutable source, definition hashes and pack/slot snapshots. Legacy reconstruction explicitly marks unknown historical fields."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "acquiredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openedByName": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -13120,47 +13703,512 @@
         ]
       },
       "AdminChange": {
-        "type": "object",
-        "required": [
-          "id",
-          "at",
-          "scope",
-          "reason",
-          "before",
-          "after"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "createdAt",
+              "actorId",
+              "targetId",
+              "reason",
+              "scope",
+              "before",
+              "after"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "actorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "targetId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "actorName": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              },
+              "scope": {
+                "const": "site"
+              },
+              "before": {
+                "type": "object",
+                "required": [
+                  "packPurchasesPaused",
+                  "tradingPaused",
+                  "playerShopsPaused",
+                  "playerShopsEnabled"
+                ],
+                "properties": {
+                  "packPurchasesPaused": {
+                    "type": "boolean"
+                  },
+                  "tradingPaused": {
+                    "type": "boolean"
+                  },
+                  "playerShopsPaused": {
+                    "type": "boolean"
+                  },
+                  "playerShopsEnabled": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "after": {
+                "type": "object",
+                "required": [
+                  "packPurchasesPaused",
+                  "tradingPaused",
+                  "playerShopsPaused",
+                  "playerShopsEnabled"
+                ],
+                "properties": {
+                  "packPurchasesPaused": {
+                    "type": "boolean"
+                  },
+                  "tradingPaused": {
+                    "type": "boolean"
+                  },
+                  "playerShopsPaused": {
+                    "type": "boolean"
+                  },
+                  "playerShopsEnabled": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
           },
-          "at": {
-            "type": "string"
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "createdAt",
+              "actorId",
+              "targetId",
+              "reason",
+              "scope",
+              "before",
+              "after"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "actorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "targetId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "actorName": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              },
+              "scope": {
+                "const": "line"
+              },
+              "before": {
+                "type": "object",
+                "required": [
+                  "salesPaused"
+                ],
+                "properties": {
+                  "salesPaused": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "after": {
+                "type": "object",
+                "required": [
+                  "salesPaused"
+                ],
+                "properties": {
+                  "salesPaused": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
           },
-          "actorId": {
-            "type": [
-              "string",
-              "null"
-            ]
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "createdAt",
+              "actorId",
+              "targetId",
+              "reason",
+              "scope",
+              "before",
+              "after"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "actorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "targetId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "actorName": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              },
+              "scope": {
+                "const": "product"
+              },
+              "before": {
+                "type": "object",
+                "required": [
+                  "priceAmount",
+                  "discountPercent",
+                  "rarityWeights"
+                ],
+                "properties": {
+                  "priceAmount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "discountPercent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 99
+                  },
+                  "rarityWeights": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "after": {
+                "type": "object",
+                "required": [
+                  "priceAmount",
+                  "discountPercent",
+                  "rarityWeights"
+                ],
+                "properties": {
+                  "priceAmount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "discountPercent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 99
+                  },
+                  "rarityWeights": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
           },
-          "scope": {
-            "type": "string"
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "createdAt",
+              "actorId",
+              "targetId",
+              "reason",
+              "scope",
+              "before",
+              "after"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "actorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "targetId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "actorName": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              },
+              "scope": {
+                "const": "user"
+              },
+              "before": {
+                "type": "object",
+                "required": [
+                  "tradingBlocked",
+                  "sellingBlocked",
+                  "buyingBlocked"
+                ],
+                "properties": {
+                  "tradingBlocked": {
+                    "type": "boolean"
+                  },
+                  "sellingBlocked": {
+                    "type": "boolean"
+                  },
+                  "buyingBlocked": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "after": {
+                "type": "object",
+                "required": [
+                  "tradingBlocked",
+                  "sellingBlocked",
+                  "buyingBlocked"
+                ],
+                "properties": {
+                  "tradingBlocked": {
+                    "type": "boolean"
+                  },
+                  "sellingBlocked": {
+                    "type": "boolean"
+                  },
+                  "buyingBlocked": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
           },
-          "targetId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500
-          },
-          "before": {},
-          "after": {}
-        }
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "createdAt",
+              "actorId",
+              "targetId",
+              "reason",
+              "scope",
+              "before",
+              "after"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "actorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "targetId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "actorName": {
+                "type": "string"
+              },
+              "targetName": {
+                "type": "string"
+              },
+              "scope": {
+                "const": "cards"
+              },
+              "before": {
+                "type": "object",
+                "required": [
+                  "action",
+                  "quantity"
+                ],
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "give",
+                      "remove"
+                    ]
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "additionalProperties": false
+              },
+              "after": {
+                "type": "object",
+                "required": [
+                  "action",
+                  "copyIds",
+                  "variantId"
+                ],
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "give",
+                      "remove"
+                    ]
+                  },
+                  "copyIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "variantId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "AdminMutation": {
         "type": "object",
@@ -13180,41 +14228,82 @@
           "cards": {
             "type": "array",
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/AdminCopy"
             }
           }
-        }
+        },
+        "additionalProperties": false
       },
       "AdminUser": {
         "type": "object",
         "required": [
           "id",
-          "name"
+          "name",
+          "displayName",
+          "createdAt",
+          "restrictions",
+          "cardCount",
+          "packCount"
         ],
         "properties": {
           "id": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 100
+            "minLength": 1
           },
           "name": {
             "type": "string"
           },
-          "createdAt": {
+          "displayName": {
             "type": "string"
           },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "restrictions": {
-            "$ref": "#/components/schemas/AdminUserChanges"
+            "type": "object",
+            "required": [
+              "tradingBlocked",
+              "sellingBlocked",
+              "buyingBlocked"
+            ],
+            "properties": {
+              "tradingBlocked": {
+                "type": "boolean"
+              },
+              "sellingBlocked": {
+                "type": "boolean"
+              },
+              "buyingBlocked": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "cardCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "packCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
-        }
+        },
+        "additionalProperties": false
       },
       "AdminOverview": {
         "type": "object",
         "required": [
           "revision",
+          "permissions",
           "site",
+          "baseFeatures",
+          "effective",
           "lines",
           "variants",
+          "rarities",
           "currencies",
           "counts"
         ],
@@ -13224,34 +14313,147 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "permissions": {
+            "type": "object",
+            "required": [
+              "read",
+              "manage",
+              "cards"
+            ],
+            "properties": {
+              "read": {
+                "type": "boolean"
+              },
+              "manage": {
+                "type": "boolean"
+              },
+              "cards": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
           "site": {
-            "$ref": "#/components/schemas/AdminSiteChanges"
+            "type": "object",
+            "required": [
+              "packPurchasesPaused",
+              "tradingPaused",
+              "playerShopsPaused",
+              "playerShopsEnabled"
+            ],
+            "properties": {
+              "packPurchasesPaused": {
+                "type": "boolean"
+              },
+              "tradingPaused": {
+                "type": "boolean"
+              },
+              "playerShopsPaused": {
+                "type": "boolean"
+              },
+              "playerShopsEnabled": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "baseFeatures": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "effective": {
+            "type": "object",
+            "required": [
+              "directTrading",
+              "playerShops",
+              "commerceEnabled",
+              "tradingPolicyEnabled"
+            ],
+            "properties": {
+              "directTrading": {
+                "type": "boolean"
+              },
+              "playerShops": {
+                "type": "boolean"
+              },
+              "commerceEnabled": {
+                "type": "boolean"
+              },
+              "tradingPolicyEnabled": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
           },
           "lines": {
             "type": "array",
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/AdminLine"
             }
           },
           "variants": {
             "type": "array",
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/AdminVariant"
+            }
+          },
+          "rarities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRarity"
             }
           },
           "currencies": {
             "type": "array",
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/AdminCurrency"
             }
           },
           "counts": {
-            "type": "object"
-          },
-          "permissions": {
-            "type": "object"
+            "type": "object",
+            "required": [
+              "users",
+              "cards",
+              "packs",
+              "activeTrades",
+              "activeListings"
+            ],
+            "properties": {
+              "users": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "cards": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "packs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "activeTrades": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "activeListings": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "additionalProperties": false
           }
-        }
+        },
+        "additionalProperties": false
       },
       "AdminUserDetail": {
         "type": "object",
@@ -13270,9 +14472,10 @@
             "$ref": "#/components/schemas/AdminUser"
           },
           "inventory": {
-            "$ref": "#/components/schemas/Page"
+            "$ref": "#/components/schemas/AdminInventoryPage"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "ExternalPurchasePrice": {
         "type": "object",
@@ -14463,6 +15666,3030 @@
           }
         },
         "additionalProperties": false
+      },
+      "CardDefinitionView": {
+        "type": "object",
+        "required": [
+          "id",
+          "lineId",
+          "name",
+          "type",
+          "tags",
+          "behavior",
+          "metadata"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lineId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "behavior": {
+            "type": "object",
+            "required": [
+              "collectionDefault",
+              "albumDefault",
+              "albumEligible",
+              "tradable",
+              "tradeUp"
+            ],
+            "properties": {
+              "collectionDefault": {
+                "type": "boolean"
+              },
+              "albumDefault": {
+                "type": "boolean"
+              },
+              "albumEligible": {
+                "type": "boolean"
+              },
+              "tradable": {
+                "type": "boolean"
+              },
+              "tradeUp": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "stats": {
+            "type": "object"
+          },
+          "presentation": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CardVariantView": {
+        "type": "object",
+        "required": [
+          "id",
+          "cardId",
+          "rarityId",
+          "metadata"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rarityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "supplyLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "stats": {
+            "type": "object"
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeAttachment"
+            }
+          },
+          "onOpen": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpeningAction"
+            }
+          },
+          "presentation": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CardBindingView": {
+        "type": "object",
+        "required": [
+          "visibility",
+          "transfer",
+          "holderId",
+          "state",
+          "data"
+        ],
+        "properties": {
+          "visibility": {
+            "enum": [
+              "public",
+              "owner"
+            ]
+          },
+          "transfer": {
+            "enum": [
+              "follow",
+              "retain",
+              "block"
+            ]
+          },
+          "holderId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "enum": [
+              "active",
+              "used"
+            ]
+          },
+          "data": {
+            "type": "object"
+          },
+          "usedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "InventoryCopy": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Copy"
+          },
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "version",
+              "createdAt",
+              "acquiredAt",
+              "tradable",
+              "untradableReason"
+            ],
+            "properties": {
+              "state": {
+                "const": "owned"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "acquiredAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "tradable": {
+                "type": "boolean"
+              },
+              "untradableReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
+      "InventoryPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "next"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryCopy"
+            },
+            "maxItems": 200
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "next": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "TradeInventoryPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "next",
+          "owner"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryCopy"
+            },
+            "maxItems": 200
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "next": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "TradeOffer": {
+        "type": "object",
+        "required": [
+          "copyIds",
+          "currencies"
+        ],
+        "properties": {
+          "copyIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 1000,
+            "uniqueItems": true
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Money"
+            },
+            "maxItems": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "Trade": {
+        "type": "object",
+        "required": [
+          "id",
+          "fromUserId",
+          "toUserId",
+          "give",
+          "receive",
+          "status",
+          "createdAt",
+          "expiresAt",
+          "message",
+          "snapshots",
+          "parentTradeId",
+          "digest"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fromUserId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "toUserId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "give": {
+            "$ref": "#/components/schemas/TradeOffer"
+          },
+          "receive": {
+            "$ref": "#/components/schemas/TradeOffer"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "accepted",
+              "cancelled",
+              "declined",
+              "expired",
+              "countered"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "snapshots": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Copy"
+            }
+          },
+          "parentTradeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "counterTradeId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fromName": {
+            "type": "string"
+          },
+          "toName": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminUsersPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "next"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminUser"
+            },
+            "maxItems": 200
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "next": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminCopy": {
+        "type": "object",
+        "required": [
+          "id",
+          "copyId",
+          "name",
+          "cardId",
+          "variantId",
+          "lineId",
+          "rarityId",
+          "state",
+          "createdAt",
+          "version",
+          "serialNumber",
+          "locked",
+          "removable",
+          "canRemove",
+          "blockedReason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "copyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "variantId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lineId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rarityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "enum": [
+              "sealed",
+              "owned",
+              "consumed"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "serialNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "removable": {
+            "type": "boolean"
+          },
+          "canRemove": {
+            "type": "boolean"
+          },
+          "blockedReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminInventoryPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "next"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCopy"
+            },
+            "maxItems": 200
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "next": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminHistoryPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "next"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminChange"
+            },
+            "maxItems": 200
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "next": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminVariant": {
+        "type": "object",
+        "required": [
+          "id",
+          "cardId",
+          "name",
+          "lineId",
+          "rarityId",
+          "enabled",
+          "remaining"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "lineId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rarityId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "remaining": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminSlotOdds": {
+        "type": "object",
+        "required": [
+          "slotId",
+          "count",
+          "rarities"
+        ],
+        "properties": {
+          "slotId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "rarities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "rarityId",
+                "weight",
+                "percent"
+              ],
+              "properties": {
+                "rarityId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "weight": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "percent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminProduct": {
+        "type": "object",
+        "required": [
+          "id",
+          "lineId",
+          "name",
+          "revision",
+          "price",
+          "enabled",
+          "adminRevision",
+          "priceAmount",
+          "discountPercent",
+          "rarityWeights",
+          "basePrice",
+          "baseSlots",
+          "catalogEnabled",
+          "slotOdds"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lineId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "adminRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "priceAmount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "discountPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 99
+          },
+          "rarityWeights": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "basePrice": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "baseSlots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackSlot"
+            }
+          },
+          "catalogEnabled": {
+            "type": "boolean"
+          },
+          "slotOdds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminSlotOdds"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "AdminLine": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "salesPaused",
+          "products"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "salesPaused": {
+            "type": "boolean"
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminProduct"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "AdminCurrency": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "tradable": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "AdminRarity": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "rank"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "additionalProperties": true
+      },
+      "CommandIntent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "userId",
+          "command",
+          "input",
+          "state",
+          "createdAt",
+          "completedAt",
+          "error"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "command": {
+            "enum": [
+              "purchase",
+              "openPack",
+              "convert",
+              "tradeUp",
+              "saveAlbum",
+              "proposeTrade",
+              "acceptTrade",
+              "cancelTrade",
+              "consumeBinding",
+              "counterTrade",
+              "preferences",
+              "readNotifications",
+              "commitImport",
+              "reportCodeUsage",
+              "createShop",
+              "createListing",
+              "buyListing",
+              "cancelListing",
+              "enterRaffle",
+              "openCard",
+              "configureAdmin",
+              "administerCards"
+            ]
+          },
+          "input": {
+            "type": "object",
+            "required": [
+              "key"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "completed",
+              "failed",
+              "acknowledged"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "code",
+                  "message",
+                  "status"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "integer",
+                    "minimum": 400,
+                    "maximum": 599
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "CommandIntentRegistration": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "purchase"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "productId",
+                  "quantity",
+                  "productRevision",
+                  "catalogVersion"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "productId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "productRevision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "catalogVersion": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "adminRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0,
+                    "description": "Administration revision from the reviewed quote. Stale prices or odds require a new quote.",
+                    "maximum": 9007199254740991
+                  },
+                  "price": {
+                    "$ref": "#/components/schemas/Money"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "openPack"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "packId"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "packId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "convert"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "from",
+                  "to",
+                  "amount",
+                  "catalogVersion"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "from": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "to": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "catalogVersion": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "rounding": {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "floor"
+                    ],
+                    "default": "exact"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "tradeUp"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "recipeId",
+                  "copyIds"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "recipeId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "copyIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "maxItems": 100
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "saveAlbum"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "albumId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "private",
+                      "public"
+                    ],
+                    "default": "private"
+                  },
+                  "layout": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "placements": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "copyId"
+                      ],
+                      "properties": {
+                        "copyId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "position": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100000
+                        },
+                        "data": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "proposeTrade"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "toUserId",
+                  "give",
+                  "receive"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "toUserId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "give": {
+                    "type": "object",
+                    "required": [
+                      "copyIds",
+                      "currencies"
+                    ],
+                    "properties": {
+                      "copyIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "maxItems": 100
+                      },
+                      "currencies": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "currencyId",
+                            "amount"
+                          ],
+                          "properties": {
+                            "currencyId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "amount": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            }
+                          }
+                        },
+                        "maxItems": 20
+                      }
+                    }
+                  },
+                  "receive": {
+                    "type": "object",
+                    "required": [
+                      "copyIds",
+                      "currencies"
+                    ],
+                    "properties": {
+                      "copyIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "maxItems": 100
+                      },
+                      "currencies": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "currencyId",
+                            "amount"
+                          ],
+                          "properties": {
+                            "currencyId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "amount": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            }
+                          }
+                        },
+                        "maxItems": 20
+                      }
+                    }
+                  },
+                  "expiresInSeconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800,
+                    "default": 86400
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "versions": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "acceptTrade"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "tradeId",
+                  "expectedDigest"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "tradeId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "expectedDigest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "cancelTrade"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "tradeId"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "tradeId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "expectedDigest": {
+                    "type": "string",
+                    "description": "Required by production review policy; SHA-256 digest of the immutable offer."
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "consumeBinding"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "copyId",
+                  "namespace"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "copyId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "counterTrade"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "tradeId",
+                  "give",
+                  "receive",
+                  "expectedDigest"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "toUserId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "give": {
+                    "type": "object",
+                    "required": [
+                      "copyIds",
+                      "currencies"
+                    ],
+                    "properties": {
+                      "copyIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "maxItems": 100
+                      },
+                      "currencies": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "currencyId",
+                            "amount"
+                          ],
+                          "properties": {
+                            "currencyId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "amount": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            }
+                          }
+                        },
+                        "maxItems": 20
+                      }
+                    }
+                  },
+                  "receive": {
+                    "type": "object",
+                    "required": [
+                      "copyIds",
+                      "currencies"
+                    ],
+                    "properties": {
+                      "copyIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "maxItems": 100
+                      },
+                      "currencies": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "currencyId",
+                            "amount"
+                          ],
+                          "properties": {
+                            "currencyId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "amount": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            }
+                          }
+                        },
+                        "maxItems": 20
+                      }
+                    }
+                  },
+                  "expiresInSeconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800,
+                    "default": 86400
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "versions": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "tradeId": {
+                    "type": "string"
+                  },
+                  "expectedDigest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "preferences"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "inventoryVisibility": {
+                    "enum": [
+                      "private",
+                      "traders",
+                      "public"
+                    ]
+                  },
+                  "favoriteCopyIds": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "wishlistCardIds": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "blockedUserIds": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "key": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "minLength": 1
+                  }
+                },
+                "required": []
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "readNotifications"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "ids": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "commitImport"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "manifest",
+                  "digest",
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "manifest": {
+                    "$ref": "#/components/schemas/CatalogManifest"
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "policyRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Required once policy administration has changed; commit must match the review."
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "reportCodeUsage"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "codeId"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "codeId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "used": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "createShop"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "kind": {
+                    "enum": [
+                      "admin",
+                      "player"
+                    ],
+                    "default": "player"
+                  },
+                  "ownerId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "metadata": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "createListing"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "shopId",
+                  "title",
+                  "price",
+                  "items"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "shopId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "price": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "currencyId",
+                      "amount"
+                    ],
+                    "properties": {
+                      "currencyId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "amount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    }
+                  },
+                  "items": {
+                    "$ref": "#/components/schemas/ListingStock"
+                  },
+                  "previewAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "startsAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "endsAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "perBuyerLimit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "default": 10
+                  },
+                  "metadata": {
+                    "type": "object"
+                  },
+                  "raffle": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/components/schemas/RaffleTerms"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "buyListing"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "listingId",
+                  "quantity",
+                  "unitIds",
+                  "digest"
+                ],
+                "properties": {
+                  "listingId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "default": 1
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "unitIds": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "uniqueItems": true
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "cancelListing"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "listingId"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "listingId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "enterRaffle"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "listingId"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "listingId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "openCard"
+              },
+              "input": {
+                "type": "object",
+                "required": [
+                  "copyId"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "copyId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "configureAdmin"
+              },
+              "input": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "expectedRevision",
+                      "reason",
+                      "scope",
+                      "changes"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "expectedRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "scope": {
+                        "const": "site"
+                      },
+                      "changes": {
+                        "$ref": "#/components/schemas/AdminSiteChanges"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "expectedRevision",
+                      "reason",
+                      "scope",
+                      "changes",
+                      "targetId"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "expectedRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "scope": {
+                        "const": "line"
+                      },
+                      "targetId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "changes": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [],
+                        "properties": {
+                          "salesPaused": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "expectedRevision",
+                      "reason",
+                      "scope",
+                      "changes",
+                      "targetId"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "expectedRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "scope": {
+                        "const": "product"
+                      },
+                      "targetId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "changes": {
+                        "$ref": "#/components/schemas/AdminProductChanges"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "expectedRevision",
+                      "reason",
+                      "scope",
+                      "changes",
+                      "targetId"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "expectedRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "scope": {
+                        "const": "user"
+                      },
+                      "targetId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "changes": {
+                        "$ref": "#/components/schemas/AdminUserChanges"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "input"
+            ],
+            "properties": {
+              "command": {
+                "const": "administerCards"
+              },
+              "input": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "expectedRevision",
+                      "reason",
+                      "userId",
+                      "action",
+                      "variantId",
+                      "quantity"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "expectedRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "action": {
+                        "const": "give"
+                      },
+                      "variantId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "expectedRevision",
+                      "reason",
+                      "userId",
+                      "action",
+                      "copyIds"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "expectedRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "action": {
+                        "const": "remove"
+                      },
+                      "copyIds": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "CommandIntentId": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
+      "CommandExecution": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "purchase"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/PurchaseResult"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "openPack"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/Receipt"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "convert"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "tradeUp"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/Copy"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "saveAlbum"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "proposeTrade"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/Trade"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "acceptTrade"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/Trade"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "cancelTrade"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/Trade"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "consumeBinding"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "counterTrade"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/Trade"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "preferences"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/Preferences"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "readNotifications"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "commitImport"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "reportCodeUsage"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/CodeSummary"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "createShop"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "createListing"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "buyListing"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "cancelListing"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "enterRaffle"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "openCard"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/Copy"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "configureAdmin"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/AdminMutation"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent",
+              "result"
+            ],
+            "properties": {
+              "intent": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandIntent"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "const": "administerCards"
+                      }
+                    }
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/components/schemas/AdminMutation"
+              }
+            }
+          }
+        ]
       }
     }
   }

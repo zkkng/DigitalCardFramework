@@ -1,4 +1,5 @@
 import { externalPurchaseDigest, externalPurchaseId, externalPurchaseIntent } from './external-purchases.js';
+import {durableCommands} from './command-intents.js';
 
 /** Read-only invariant checker used for startup, restored backups and operator diagnostics. */
 export function auditState(s){
@@ -48,6 +49,15 @@ export function auditState(s){
   const identities=new Set();for(const u of Object.values(s.users)){const identity=JSON.stringify([u.provider,u.subject]);if(identities.has(identity))add('IDENTITY_DUPLICATE',u.id);identities.add(identity);}
   auditRelationships(s,add);
   auditExternalPurchases(s,add);
+  const intents=Object.entries(s.commandIntents??{}),heads=s.commandIntentHeads??{};
+  if((s.commandIntentCount??0)!==intents.length)add('COMMAND_INTENT_COUNT','Retained command intent count differs');
+  for(const [id,row]of intents){
+    if(!row||row.id!==id||!s.users[row.userId]||!durableCommands.includes(row.command)||!['pending','completed','failed','acknowledged'].includes(row.state)||typeof row.input?.key!=='string'||!row.input.key||row.input.key.length>128){add('COMMAND_INTENT_INVALID',id);continue;}
+    if(row.state!=='acknowledged'&&heads[row.userId]?.[row.command]!==id||row.state==='acknowledged'&&heads[row.userId]?.[row.command]===id)add('COMMAND_INTENT_HEAD',id);
+    const reservation=s.completionObligations?.['intent:'+id];if(reservation?.kind!=='intent'||reservation.entityId!==id)add('COMMAND_INTENT_RESERVATION',id);
+    if(row.state==='failed'&&(!row.error||!Number.isInteger(row.error.status))||row.state==='pending'&&row.completedAt!==null||['completed','failed','acknowledged'].includes(row.state)&&typeof row.completedAt!=='string')add('COMMAND_INTENT_STATE',id);
+  }
+  for(const [userId,commands]of Object.entries(heads))for(const [command,id]of Object.entries(commands)){const row=s.commandIntents?.[id];if(!row||row.userId!==userId||row.command!==command||row.state==='acknowledged')add('COMMAND_INTENT_HEAD',String(id));}
   return {ok:issues.length===0,issues,revision:s.revision,counts:{users:Object.keys(s.users).length,copies:copies.length,packs:Object.keys(s.packs).length,trades:Object.keys(s.trades).length,events:s.events.length}};
 }
 

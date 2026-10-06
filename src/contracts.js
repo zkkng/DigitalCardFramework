@@ -1,6 +1,7 @@
 import {policyDefinitions} from "./card-policy-schema.js";
 import {adminDefinitions} from './admin-schema.js';
 import {externalPurchaseDefinitions} from './external-purchase-contracts.js';
+import {readModelDefinitions} from './read-model-contracts.js';
 // Source for the generated HTTP contract.
 export const openapi = {
   "openapi": "3.1.0",
@@ -1692,6 +1693,35 @@ Object.assign(openapi.paths,{
   '/operator/admin/settings':route('post','configureAdmin',ref('AdminMutation'),{requestSchema:ref('AdminSettingsCommand'),description:'Requires admin.manage. Partial settings update, with a current admin revision, durable retry identity and recorded reason.'}),
   '/operator/admin/cards':route('post','administerCards',ref('AdminMutation'),{requestSchema:ref('AdminCardsCommand'),description:'Requires admin.cards. Grant finite-supply copies or remove available owned copies; reserved and sealed copies cannot be removed. History is retained.'})
 });
+Object.assign(schemas,readModelDefinitions);
+Object.assign(schemas.Copy.properties,{definition:ref('CardDefinitionView'),variant:ref('CardVariantView'),bindings:{type:'object',additionalProperties:ref('CardBindingView')},version:{...safeInteger,minimum:1},acquiredAt:{type:'string',format:'date-time'},openedByName:{type:['string','null']},codes:{type:'array',items:ref('CodeSummary')}});
+openapi.paths['/inventory'].get.responses['200'].content['application/json'].schema={oneOf:[{type:'array',items:ref('InventoryCopy')},ref('InventoryPage')]};
+openapi.paths['/users/{userId}/inventory'].get.responses['200'].content['application/json'].schema=ref('TradeInventoryPage');
+for(const [path,method,schema]of [['/operator/admin/users','get','AdminUsersPage'],['/operator/admin/history','get','AdminHistoryPage'],['/trades','post','Trade'],['/trades/accept','post','Trade'],['/trades/cancel','post','Trade'],['/trades/counter','post','Trade']])openapi.paths[path][method].responses['200'].content['application/json'].schema=ref(schema);
+openapi.paths['/trades'].get.responses['200'].content['application/json'].schema={type:'array',items:ref('Trade')};
+const durableCommands=['purchase','openPack','convert','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','consumeBinding','counterTrade','preferences','readNotifications','commitImport','reportCodeUsage','createShop','createListing','buyListing','cancelListing','enterRaffle','openCard','configureAdmin','administerCards'];
+const commandOperations=Object.fromEntries(Object.values(openapi.paths).flatMap(item=>Object.values(item).map(operation=>[operation.operationId,operation])));
+const commandSchema=command=>commandOperations[command==='preferences'?'setPreferences':command].requestBody.content['application/json'].schema;
+function registrationInput(schema){
+  const source=schema.$ref?schemas[schema.$ref.split('/').at(-1)]:schema;
+  const result={...source};
+  if(result.required)result.required=result.required.filter(name=>name!=='key');
+  for(const branch of ['oneOf','anyOf','allOf'])if(result[branch])result[branch]=result[branch].map(registrationInput);
+  return result;
+}
+schemas.CommandIntent={type:'object',additionalProperties:false,required:['id','userId','command','input','state','createdAt','completedAt','error'],properties:{id:str,userId:str,command:{enum:durableCommands},input:{type:'object',required:['key'],properties:{key:requestKey}},state:{enum:['pending','completed','failed','acknowledged']},createdAt:{type:'string',format:'date-time'},completedAt:{type:['string','null'],format:'date-time'},error:{oneOf:[{type:'null'},{type:'object',additionalProperties:false,required:['code','message','status'],properties:{code:str,message:str,status:{type:'integer',minimum:400,maximum:599}}}]}}};
+schemas.CommandIntentRegistration={oneOf:durableCommands.map(command=>{
+  const input=registrationInput(commandSchema(command));
+  return {type:'object',additionalProperties:false,required:['command','input'],properties:{command:{const:command},input}};
+})};
+schemas.CommandIntentId={type:'object',additionalProperties:false,required:['id'],properties:{id:{type:'string',minLength:1,maxLength:100}}};
+schemas.CommandExecution={oneOf:durableCommands.map(command=>({type:'object',additionalProperties:false,required:['intent','result'],properties:{intent:{allOf:[ref('CommandIntent'),{type:'object',required:['command'],properties:{command:{const:command}}}]},result:commandOperations[command==='preferences'?'setPreferences':command].responses['200'].content['application/json'].schema}}))};
+Object.assign(openapi.paths,{
+  '/command-intents':{...route('get','commandIntents',{type:'object',additionalProperties:false,required:['items'],properties:{items:{type:'array',maxItems:25,items:ref('CommandIntent')}}},{parameters:[{name:'command',in:'query',schema:{enum:durableCommands}}],description:'Current authenticated account command heads. Recover an unacknowledged original intent before beginning another command of the same kind.'}),...route('post','registerCommandIntent',ref('CommandIntent'),{requestSchema:ref('CommandIntentRegistration'),description:'Persists original input and a server-generated retry identity. An existing unacknowledged command head is returned unchanged, even when registration input differs.'})},
+  '/command-intents/execute':route('post','executeCommandIntent',ref('CommandExecution'),{requestSchema:ref('CommandIntentId'),description:'Executes or recovers the original account-owned command. Deterministic command failures use the normal error envelope and remain discoverable on the failed intent.'}),
+  '/command-intents/acknowledge':route('post','acknowledgeCommandIntent',{type:'object',additionalProperties:false,required:['id','state'],properties:{id:str,state:{const:'acknowledged'}}},{requestSchema:ref('CommandIntentId'),description:'Acknowledges a resolved original intent before registering a new command of the same kind.'})
+});
+for(const path of ['/command-intents','/command-intents/execute','/command-intents/acknowledge'])for(const operation of Object.values(openapi.paths[path]))Object.assign(operation.responses,{'404':{description:'Account-owned intent or command resource is unavailable'},'503':{description:'Command recovery storage is unavailable'}});
 // All documented failure statuses use the same JSON envelope.
 for(const item of Object.values(openapi.paths))for(const operation of Object.values(item)){
   for(const [status,response]of Object.entries(operation.responses??{}))if(Number(status)>=400)response.content={'application/json':{schema:ref('Error')}};

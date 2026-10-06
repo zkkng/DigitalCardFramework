@@ -50,6 +50,7 @@ export function createApiHandler({framework,currencyGateway,codeGateway,resolveI
       let result;
       if(method==='GET') {
         const routes={
+          '/api/command-intents':()=>framework.commandIntents(actor,{command:url.searchParams.get('command')??undefined,operators:exposeOperators}),
           '/api/operator/admin':()=>framework.adminOverview(actor),
           '/api/operator/admin/users':()=>framework.adminUsers(actor,options),
           '/api/operator/admin/user':()=>framework.adminUser(actor,{...options,userId:url.searchParams.get('userId')}),
@@ -84,7 +85,10 @@ export function createApiHandler({framework,currencyGateway,codeGateway,resolveI
           '/api/codes/reveal':'revealCode','/api/codes/report':'reportCodeUsage','/api/operator/code-pools':'configureCodePool','/api/operator/codes/import':'importCodes','/api/operator/codes/confirm':'confirmCodeStatus',
           '/api/operator/import/preview':'previewImport','/api/operator/import/commit':'commitImport','/api/operator/card-policies/effective':'effectiveCardPolicy','/api/operator/card-policies/save':'saveCardPolicy','/api/operator/card-policies/preview':'previewCardPolicy','/api/operator/card-policies/activate':'activateCardPolicy','/api/operator/card-policies/retire':'retireCardPolicy','/api/operator/card-policies/restore':'restoreCardPolicy','/api/operator/card-resources/save':'saveCardResource','/api/operator/card-resources/retire':'retireCardResource','/api/operator/card-resources/restore':'restoreCardResource','/api/operator/copy-stats':'updateCopyStats'
         };
-        if(path==='/api/currency/reconcile' && currencyGateway) result=await currencyGateway.reconcile(actor,input);
+        if(path==='/api/command-intents')result=framework.registerCommandIntent(actor,input,{operators:exposeOperators});
+        else if(path==='/api/command-intents/execute')result=framework.executeCommandIntent(actor,input,{operators:exposeOperators,requireTradeReview});
+        else if(path==='/api/command-intents/acknowledge')result=framework.acknowledgeCommandIntent(actor,input,{operators:exposeOperators});
+        else if(path==='/api/currency/reconcile' && currencyGateway) result=await currencyGateway.reconcile(actor,input);
         else if(path==='/api/codes/reconcile' && codeGateway) result=await codeGateway.reconcile(actor,input);
         else {
         const command=routes[path]; if(!command) throw new FrameworkError('NOT_FOUND','Unknown API route',404);
