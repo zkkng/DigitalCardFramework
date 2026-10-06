@@ -11,6 +11,18 @@ import {randomBytes} from 'node:crypto';
 import {summarizeRecords} from '../src/record-accounting.js';
 
 for(const Store of [MemoryStore,SQLiteStore]){
+ test(Store.name+' quote reads selected configuration without installation materialization',()=>{
+  const store=new Store(),x=fixture({store});try{
+   x.core.configureAdmin(admin,{key:'discount',expectedRevision:0,reason:'Reviewed pricing',scope:'product',targetId:'common',changes:{discountPercent:20}});
+   const configurationRecords=store.read(s=>1+Object.keys(s.catalog).length+Object.keys(s.adminControls).length),before=store.diagnostics?.(),read=store.read.bind(store);store.read=()=>{throw new Error('Whole-state read is forbidden');};
+   const quote=x.core.quote(x.alice,{productId:'common',quantity:2});assert.equal(quote.price.amount,16);assert.equal(quote.adminRevision,1);
+   if(before)assert(store.diagnostics().decodedQueryRecords-before.decodedQueryRecords<=configurationRecords);
+   assert.throws(()=>x.core.quote({...x.alice,disabled:true},{productId:'common'}),code('UNAUTHENTICATED'));assert.throws(()=>x.core.quote(x.alice,{productId:'missing'}),code('UNAVAILABLE'));
+   assert.throws(()=>x.core.quote({userId:'__proto__'},{productId:'common'}),code('UNAUTHENTICATED'));
+   if(before){const after=store.diagnostics();assert.equal(after.compatibilityMaterializations,before.compatibilityMaterializations);assert.equal(after.recordWrites,before.recordWrites);}
+   store.read=read;assert.equal(store.read(s=>Object.hasOwn(s,'_recordAccounting')),false);
+  }finally{x.core.close();}
+ });
  test(Store.name+' record scope reads staged values, counts and special identifiers',()=>{
   const store=new Store();try{
    store.prepareRecordTransactions();let retained;

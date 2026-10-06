@@ -72,7 +72,7 @@ export function matches(row, options) {
 
 /** Detached query view for the in-memory adapter. Persistent adapters implement the same selectors. */
 export function memoryQueries(state) {
-  const get = (field, id) => structuredClone(state[field]?.[id]);
+  const get = (field, id) => structuredClone(Object.hasOwn(state[field]??{},id)?state[field][id]:undefined);
   const page = (collection, input) => {
     const options = queryOptions(collection, input);
     const rows = Object.entries(state[collection] ?? {}).map(([key, value],ordinal) => ({value,ordinal,...projection(collection, key, value)})).filter(row => matches(row, options)).sort((a, b) => compareRows(a, b, options.sort));

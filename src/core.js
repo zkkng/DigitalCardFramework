@@ -594,8 +594,8 @@ export class CardFramework {
   }
   quote(actor,{productId,quantity=1}) {
     integer(quantity,'quantity',1,100);
-    return this.#store.read(s=>{
-      const user=this.#user(s,actor),c=this.#catalog(s),base=lookup(c.products,productId);
+    return this.#query(q=>{
+      const user=this.#queryUser(q,actor),s={catalog:q.value('catalog'),adminControls:q.value('adminControls')},c=this.#catalog(s),base=lookup(c.products,productId);
       check(base && base.enabled!==false,'UNAVAILABLE','Pack product unavailable',404);
       assertAdminPurchase(s,user.id,base);const product=effectiveProduct(s,base);
       this.#workflow(s,'packs',product.price.amount>0);
