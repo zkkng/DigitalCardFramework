@@ -127,3 +127,14 @@ test('fresh reference UI displays server recovery after browser storage is erase
   assert.equal(root.querySelector('[aria-label="Unconfirmed changes"]'),null);assert.match(root.textContent,/Original result recovered/);assert.equal(x.core.wallet(x.alice).credits,9990);assert.equal(x.core.packs(x.alice).length,1);
  }finally{mounted?.dispose();await window.happyDOM.abort();if(priorDocument===undefined)delete globalThis.document;else globalThis.document=priorDocument;if(priorStorage===undefined)delete globalThis.sessionStorage;else globalThis.sessionStorage=priorStorage;}
 });
+
+test('retained intent lookup validates owner and exact command after acknowledgement',()=>{
+ const x=fixture();try{
+  const intent=x.core.registerCommandIntent(x.alice,{command:'preferences',input:{inventoryVisibility:'public'}});x.core.executeCommandIntent(x.alice,{id:intent.id});x.core.acknowledgeCommandIntent(x.alice,{id:intent.id});
+  assert.equal(x.core.commandIntents(x.alice,{command:'preferences'}).items.length,0);
+  assert.deepEqual(x.core.commandIntent(x.alice,{id:intent.id,command:'preferences'}),{id:intent.id,userId:x.alice.userId,command:'preferences',state:'acknowledged'});
+  assert.throws(()=>x.core.commandIntent(x.bob,{id:intent.id,command:'preferences'}),error=>error.code==='NOT_FOUND');
+  assert.throws(()=>x.core.commandIntent(x.alice,{id:intent.id,command:'purchase'}),error=>error.code==='NOT_FOUND');
+  assert.throws(()=>x.core.commandIntent(x.alice,{id:intent.id,command:'configureAdmin'},{operators:false}),error=>error.code==='FORBIDDEN');
+ }finally{x.core.close();}
+});

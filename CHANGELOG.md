@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added owner-scoped retained command-intent status lookup after acknowledgement, with exact command authorization and no input payload exposure.
+
 - Added an authenticated plugin control handler for delegated inventory and catalog reads, with expiring sessions, live authorization, resource limits and a Python transport example. Added Go receiver distribution notices.
 
 - Upgraded SQLite storage to schema 4 with stable notification identities, indexed account reads and bounded history trimming during pack opening. Stop writers and back up the database and encryption keys before upgrading; older applications cannot open the upgraded database.

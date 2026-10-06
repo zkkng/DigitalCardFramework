@@ -24,6 +24,7 @@ export class CommandIntentService{
     text(id,'intent ID',100);
     return this.#store.query(q=>{user(q,actor);const row=q.get('commandIntents',id);check(row?.userId===actor.userId,'NOT_FOUND','Command intent not found',404);authorize(actor,row.command,options);return row;});
   }
+  get(actor,{id,command},options={}){authorize(actor,command,options);const row=this.#read(actor,id,options);check(row.command===command,'NOT_FOUND','Command intent not found',404);return {id:row.id,userId:row.userId,command:row.command,state:row.state};}
   pending(actor,{command,...options}={}){
     if(command!==undefined)authorize(actor,command,options);
     return this.#store.query(q=>{

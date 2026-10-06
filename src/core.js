@@ -250,6 +250,7 @@ export class CardFramework {
       accountReservationMetadata(s,rows,measure,before);completionCapacity(s,this.#limits);return {count:rows.length};
     });
   }
+  commandIntent(actor,input,options){return this.#commandIntents.get(actor,input,options);}
   commandIntents(actor,options){return this.#commandIntents.pending(actor,options);}
   registerCommandIntent(actor,input,options){return this.#commandIntents.register(actor,input,options);}
   executeCommandIntent(actor,input,options){return this.#commandIntents.execute(actor,input,options);}
