@@ -2,13 +2,36 @@
 
 ## Unreleased
 
+### Added
+
+- Added a checked browser HTTP transport with generated TypeScript declarations, request/response validation and strict consumer checks. Acquisition contracts include reviewed revisions, public pack views and consistent error envelopes.
+- Added editable stat binding controls, including explicit card/variant scope, labels, units, number formatting and bar ranges. Empty, false and null field values remain distinct.
+- Added Studio policy diagnostics that focus the relevant field or select the correct card face, with embedded-font overflow checks and visible rule references.
+- Added a styled-text row editor for text, emphasis, colors and embedded icons, with reordering, inherited formatting and undoable conversion to plain text. Rejected edits restore working controls for correction.
+- Added custom field controls for scope, help text, units, visibility, nullability, ranges, precision, length bounds and primitive choices.
 - Added proof-bound external pack purchases with atomic delivery, original-source refund confirmation, cancellation fences, and attributed recovery of proven legacy purchases.
-- Added encrypted storage schema 2 with indexed identity and collection queries, blind private lookup keys, atomic legacy migration, and preserved authentication sessions.
-- Reserved request and storage capacity for admitted payment recovery; unchanged commands no longer rewrite state.
-- Strengthened wallet, receipt, delivery and code audits, and routed code lifecycle events through durable subscriptions.
 - Added strict external-purchase schemas, a headless wallet example, and backup/encryption tools that preserve legacy source and rollback artifacts.
 - Added synchronous host code generators for atomic pack allocation, with encrypted storage, provider-wide collision checks and retry preservation.
 - Added a trusted server registration-material method for connecting issued codes to external reward services before player reveal.
+
+### Changed
+
+- Encrypted storage schema 3 adds indexed current/former code-holder history alongside identity and collection queries. Migration preserves existing encrypted records and authentication sessions.
+- Trade, listing, pack and action delivery workflows reserve completion capacity separately from new admissions. Legacy pending work receives an atomic reservation backfill before the production host admits traffic.
+- Strengthened wallet, receipt, delivery and code audits, and routed code lifecycle events through durable subscriptions. Unchanged command replay does not rewrite state.
+
+### Fixed
+
+- Preserved original purchase inputs and retry keys across remounts and later authentication/rate-limit failures. Admin saves stop before dispatch when their recovery journal cannot be stored safely.
+- Reserved refundable balance headroom so later credits cannot prevent escrow refunds, and fenced disposed controllers against obsolete requests and callbacks.
+- Fixed concurrent SQLite startup snapshot copying and pending purchase pagination after terminal transitions.
+- Contained album appearance rules and prevented style edits from changing locked text layers. Ambiguous stat keys now require an explicit scope.
+
+### Upgrade notes
+
+- Back up the database and required keys before upgrading. Follow [production operations](docs/production.md) for schema migration and completion limits. Custom hosts must backfill legacy completion reservations before accepting new commands.
+- New completion budgets are separate from the ordinary payload budget; configure the framework and SQLite limits consistently. Existing receipts and unresolved recovery records are retained.
+- The checked transport does not manage retry identities. Preserve reviewed commands and their original keys as described in the [SDK guide](docs/wire-sdk.md).
 
 ## 0.2.0 — 1 October 2026
 
