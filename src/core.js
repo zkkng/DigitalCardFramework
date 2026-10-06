@@ -310,7 +310,7 @@ export class CardFramework {
     const result=q.pageCopies({...options,ownerId:user.id,state:'owned'}),s=this.#viewState(q,result.items,[user.id]);return {...result,items:this.#inventoryViews(s,result.items,user.id)};
   });}
   collectionSummary(actor,options={}){return this.#query(q=>{const user=this.#queryUser(q,actor),result=q.variantCounts({...options,ownerId:user.id}),copies=Object.values(q.records('copies',{ids:result.items.map(row=>row.copyId)})),s=this.#viewState(q,copies,[user.id]),views=new Map(this.#inventoryViews(s,copies,user.id).map(copy=>[copy.id,copy]));return {...result,items:result.items.map(({copyId,...row})=>({...row,card:views.get(copyId)}))};});}
-  notifications(actor,options={}){return this.#store.read(s=>{const u=this.#user(s,actor);return page((s.notifications??[]).filter(n=>n.userId===u.id),options);});}
+  notifications(actor,options={}){return this.#query(q=>{const user=this.#queryUser(q,actor);return page(q.notifications(user.id),options);});}
   readNotifications(actor,{key,ids}){check(Array.isArray(ids)&&ids.length<=200,'INVALID_INPUT','Select at most 200 notifications');return this.#command(actor,key,'notifications.read',{ids},(s,u)=>{for(const n of s.notifications??[])if(n.userId===u.id&&ids.includes(n.id))n.read=true;return {ok:true};});}
   #command(actor,key,type,input,fn) {
     text(key,'idempotency key',128);
@@ -739,7 +739,7 @@ export class CardFramework {
     try{return this.#store.transactRecords(tx=>{
       const user=this.#queryUser(tx,actor),token=user.id+':'+key,hash=fingerprint({type:'pack.opened',input}),previous=tx.get('requests',token);if(previous){check(previous.hash===hash,'IDEMPOTENCY_CONFLICT','Request key was used for another command',409);return previous.result;}
       const pack=typeof packId==='string'?tx.get('packs',packId):undefined;check(pack?.ownerId===user.id,'NOT_FOUND','Pack not found',404);check(!pack.lockedBy,'PACK_LOCKED','Pack is reserved in a listing',409);
-      let accounting;try{accounting=JSON.parse(tx.value(recordAccountingField));}catch{}check(validRecordAccounting(accounting,tx.value('revision'))&&!pack.receipt&&(accounting.counts.notifications??0)<2000,'RECORD_PATH_UNAVAILABLE','Opening requires the compatibility completion path',409);
+      let accounting;try{accounting=JSON.parse(tx.value(recordAccountingField));}catch{}check(validRecordAccounting(accounting,tx.value('revision'))&&!pack.receipt,'RECORD_PATH_UNAVAILABLE','Opening requires the compatibility completion path',409);
       const obligation=tx.get('completionObligations','pack:'+pack.id);check(obligation?.status==='reserved','RECORD_PATH_UNAVAILABLE','Opening requires the compatibility reservation path',409);
       const copies=Object.create(null);for(const copyId of pack.copyIds){const copy=tx.get('copies',copyId);check(copy,'INVALID_STATE','Pack copy is missing',500);check(!(copy.codeIds?.length||copy.variant.codes?.length),'RECORD_PATH_UNAVAILABLE','Code attachments require compatibility opening',409);copies[copyId]=copy;}
       const state={schemaVersion:1,revision:accounting.revision,catalog:tx.value('catalog'),cardAuthoring:tx.value('cardAuthoring'),users:{[user.id]:user},copies,packs:{[pack.id]:pack},requests:{},events:[],notifications:[],completionObligations:{[obligation.id]:obligation}};
@@ -748,7 +748,7 @@ export class CardFramework {
       const seen=new Set();for(const cardId of new Set(Object.values(copies).map(copy=>copy.cardId))){const variants=state.catalog.variants.filter(variant=>variant.cardId===cardId).map(variant=>variant.id);check(variants.length<=2000,'RECORD_PATH_UNAVAILABLE','Card history requires compatibility opening',409);if(tx.ownedVariantCount(user.id,variants)>0)seen.add(cardId);}
       recordContexts.set(state,{accounting,ownerId:user.id,ownerCounts});
       try{const result=this.#complete(state,'pack',pack.id,()=>{const receipt=this.#openPackBody(state,user,packId,seen);state.requests[token]={hash,result:clone(receipt),completionId:obligation.id};this.#event(state,'pack.opened',{userId:user.id});this.#capacity(state,true);return receipt;});
-        for(const field of ['copies','packs','requests','actionJobs','completionObligations'])for(const [id,row]of Object.entries(state[field]??{}))tx.put(field,id,row);for(const field of ['events','notifications'])for(const row of state[field])tx.append(field,row);tx.reservePackCompletion(obligation.id);return result;
+        for(const field of ['copies','packs','requests','actionJobs','completionObligations'])for(const [id,row]of Object.entries(state[field]??{}))tx.put(field,id,row);for(const field of ['events','notifications'])for(const row of state[field])tx.append(field,row);tx.trimNotifications(user.id);tx.reservePackCompletion(obligation.id);return result;
       }finally{recordContexts.delete(state);}
     },{packCompletion:true});}catch(error){if(['RECORD_PATH_UNAVAILABLE','TRANSACTION_BUDGET'].includes(error.code))return fallback();throw error;}
   }

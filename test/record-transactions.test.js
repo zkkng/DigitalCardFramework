@@ -120,3 +120,18 @@ test('encrypted acquisition changes bounded records and recovers its receipt and
   await core.dispatchActions(admin);await core.dispatchActions(admin);assert.equal(deliveries,1);assert.equal(core.wallet(x.alice).credits,9990);assert.equal(core.audit(admin).ok,true);
  }finally{core?.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+for(const Store of [MemoryStore,SQLiteStore])test(Store.name+' opening trims only the owner journal with stable retained order and accurate deletion accounting',async()=>{
+ const store=new Store(),x=fixture({store});try{
+  store.transact(s=>{s.notifications=[];for(let i=0;i<2000;i++){s.notifications.push({id:'a:'+i,userId:x.alice.userId,type:'sample',at:String(i),read:false,data:{}});s.notifications.push({id:'b:'+i,userId:x.bob.userId,type:'sample',at:String(i),read:false,data:{}});}});
+  store.prepareRecordTransactions();const buy=await x.core.purchaseAsync(x.alice,{...x.core.quote(x.alice,{productId:'common',quantity:1}),key:'trim-buy'}),before=store.diagnostics?.();
+  const result=x.core.openPack(x.alice,{packId:buy.packs[0].id,key:'trim-open'}),after=store.diagnostics?.();
+  if(before){assert.equal(after.compatibilityMaterializations,before.compatibilityMaterializations);assert(after.decodedQueryRecords-before.decodedQueryRecords<40);assert(after.recordWrites-before.recordWrites<20);}
+  const state=store.read(s=>s),alice=state.notifications.filter(n=>n.userId===x.alice.userId),bob=state.notifications.filter(n=>n.userId===x.bob.userId);
+  assert.equal(alice.length,2000);assert.equal(alice[0].id,'a:1');assert.equal(alice.at(-1).type,'pack.opened');assert.deepEqual(bob.map(n=>n.id),Array.from({length:2000},(_,i)=>'b:'+i));
+  const cached=JSON.parse(state._recordAccounting),actual=summarizeRecords(state);actual.usedBytes=store.measure(state).usedBytes;assert.deepEqual(cached,actual);
+  assert.deepEqual(x.core.openPack(x.alice,{packId:buy.packs[0].id,key:'trim-open'}),result);
+  const original=state.notifications.map(n=>n.id);x.core.readNotifications(x.alice,{key:'mark-read',ids:['a:1']});assert.deepEqual(store.read(s=>s.notifications.map(n=>n.id)),original);assert.equal(store.read(s=>s.notifications.find(n=>n.id==='a:1').read),true);
+  const read=store.read;store.read=()=>{throw Error('No whole-state read');};assert.equal(x.core.notifications(x.bob,{limit:10}).total,2000);store.read=read;store.transact(s=>s.notifications.reverse());assert.deepEqual(store.read(s=>s.notifications.map(n=>n.id)),original.slice().reverse());store.transact(s=>s.notifications.unshift({id:'inserted',userId:x.bob.userId,type:'test',data:{},at:'now',read:false}));assert.equal(store.read(s=>s.notifications[0].id),'inserted');
+ }finally{x.core.close();}
+});

@@ -1,7 +1,7 @@
 import {check} from './catalog.js';
 import {projection, queryOptions} from './storage-query.js';
 
-export const STORAGE_SCHEMA = 3;
+export const STORAGE_SCHEMA = 4;
 export const schemaSqlV2 = `
 CREATE TABLE framework_meta(id INTEGER PRIMARY KEY CHECK(id=1),schema_version INTEGER NOT NULL,codec_check TEXT NOT NULL) STRICT;
 CREATE TABLE framework_fields(name TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('object','array','scalar')),payload TEXT) STRICT;
@@ -30,7 +30,9 @@ CREATE TABLE framework_code_holders(collection TEXT NOT NULL CHECK(collection='c
  PRIMARY KEY(holder_hash,code_id),FOREIGN KEY(collection,code_id) REFERENCES framework_entities(collection,entity_key) ON DELETE CASCADE) STRICT;
 CREATE INDEX framework_code_membership ON framework_code_holders(collection,code_id);
 `;
-export const schemaSql = schemaSqlV2 + codeHolderSchemaSql;
+export const schemaSqlV3 = schemaSqlV2 + codeHolderSchemaSql;
+export const notificationSchemaSql = "CREATE INDEX framework_notification_owner_order ON framework_entities(collection,owner_id,ordinal,entity_key);";
+export const schemaSql = schemaSqlV3 + notificationSchemaSql;
 
 const fieldName = value => {
   check(typeof value === 'string' && value.length <= 200 && !['__proto__','constructor','prototype'].includes(value), 'INVALID_STATE', 'Invalid state field', 500);
@@ -70,7 +72,9 @@ export function encodeState(state, codec, identityHash, keyHash) {
       bytes: kind === 'scalar' ? encodedBytes(codec,wrapper(name,null,value)) : 0});
     if (kind === 'scalar') continue;
     let ordinal = 0;
-    for (const [key, item] of Object.entries(value)) {
+    for (const [position, item] of Object.entries(value)) {
+      const key=name==='notifications'?item.id:position;
+      check(typeof key==='string'&&!entities.has(JSON.stringify([name,key])),'INVALID_STATE','Duplicate or invalid stored record identity',500);
       const projected = projection(name, key, item);
       const identity = name === 'users' && typeof item?.provider === 'string' && typeof item?.subject === 'string'
         ? identityHash(item.provider, item.subject) : null;
@@ -101,7 +105,7 @@ export function readState(db, codec, keyHash) {
   for (const row of db.prepare('SELECT collection,entity_key,payload FROM framework_entities ORDER BY collection,ordinal').all()) {
     const envelope=decodeEnvelope(codec,row.payload,row.collection,row.entity_key,keyHash);
     check(Object.hasOwn(state,row.collection) && state[row.collection] !== null && typeof state[row.collection] === 'object', 'INVALID_STATE', 'Stored collection is missing', 500);
-    Object.defineProperty(state[row.collection],envelope.key,{value:envelope.value,writable:true,enumerable:true,configurable:true});
+    if(row.collection==='notifications'&&Array.isArray(state[row.collection]))state[row.collection].push(envelope.value);else Object.defineProperty(state[row.collection],envelope.key,{value:envelope.value,writable:true,enumerable:true,configurable:true});
   }
   return state;
 }
@@ -111,6 +115,10 @@ export function writeDifference(db, before, after) {
   const putEntity=db.prepare(`INSERT INTO framework_entities VALUES(${Array(19).fill('?').join(',')}) ON CONFLICT(collection,entity_key) DO UPDATE SET
     ordinal=excluded.ordinal,payload=excluded.payload,identity_hash=excluded.identity_hash,owner_id=excluded.owner_id,holder_id=excluded.holder_id,state=excluded.state,status=excluded.status,
     card_id=excluded.card_id,variant_id=excluded.variant_id,line_id=excluded.line_id,rarity_id=excluded.rarity_id,pool_id=excluded.pool_id,provider_id=excluded.provider_id,created_at=excluded.created_at,name_sort=excluded.name_sort,search_text=excluded.search_text,card_type=excluded.card_type`);
+  const retainedOrder=records=>[...records.entities].filter(([key,row])=>row.collection==='notifications'&&before.entities.has(key)&&after.entities.has(key)).sort((a,b)=>a[1].ordinal-b[1].ordinal).map(([key])=>key);
+  const notificationOrder=[...after.entities].filter(([,row])=>row.collection==='notifications').sort((a,b)=>a[1].ordinal-b[1].ordinal).map(([key])=>key);
+  const appendedOrder=retainedOrder(before).concat(notificationOrder.filter(key=>!before.entities.has(key)));
+  const reorderedNotifications=JSON.stringify(appendedOrder)!==JSON.stringify(notificationOrder);
   let changed = 0;
   for (const name of before.fields.keys()) if (!after.fields.has(name)) { db.prepare('DELETE FROM framework_fields WHERE name=?').run(name); changed++; }
   for (const [name,row] of after.fields) {
@@ -121,11 +129,12 @@ export function writeDifference(db, before, after) {
   for (const [key,row] of after.entities) {
     const old=before.entities.get(key);
     if (old && old.raw===row.raw) {
-      if(old.ordinal!==row.ordinal){db.prepare('UPDATE framework_entities SET ordinal=? WHERE collection=? AND entity_key=?').run(row.ordinal,row.collection,row.storageKey);changed++;}
+      if(row.collection==='notifications'?reorderedNotifications:old.ordinal!==row.ordinal){db.prepare('UPDATE framework_entities SET ordinal=? WHERE collection=? AND entity_key=?').run(row.ordinal,row.collection,row.storageKey);changed++;}
       continue;
     }
     const p=row.projected;
-    putEntity.run(row.collection,row.storageKey,row.ordinal,after.encode(row.collection,row.key,row.value),row.identity,p.ownerId,p.holderId,p.state,p.status,p.cardId,p.variantId,p.lineId,p.rarityId,p.poolId,p.providerId,p.createdAt,p.name,p.search,p.cardType);
+    const ordinal=row.collection==='notifications'&&!reorderedNotifications?(db.prepare("SELECT ordinal FROM framework_entities WHERE collection='notifications' AND entity_key=?").get(row.storageKey)?.ordinal??db.prepare("SELECT COALESCE(MAX(ordinal)+1,0) AS n FROM framework_entities WHERE collection='notifications'").get().n):row.ordinal;
+    putEntity.run(row.collection,row.storageKey,ordinal,after.encode(row.collection,row.key,row.value),row.identity,p.ownerId,p.holderId,p.state,p.status,p.cardId,p.variantId,p.lineId,p.rarityId,p.poolId,p.providerId,p.createdAt,p.name,p.search,p.cardType);
     if(row.collection==='codes')writeCodeHolders(db,row);
     changed++;
   }
@@ -149,7 +158,7 @@ export function sqliteQueries(db,codec,identityHash,keyHash,onDecode=()=>{}) {
     fieldName(field);const kind=db.prepare('SELECT kind,payload FROM framework_fields WHERE name=?').get(field);if(!kind)return undefined;
     if(kind.kind==='scalar'){onDecode();return decodeRecord(codec,kind.payload,field,null);}
     const result=kind.kind==='array'?[]:{};
-    for(const row of db.prepare('SELECT collection,entity_key,payload FROM framework_entities WHERE collection=? ORDER BY ordinal').all(field)){onDecode();const envelope=decodeEnvelope(codec,row.payload,row.collection,row.entity_key,keyHash);Object.defineProperty(result,envelope.key,{value:envelope.value,writable:true,enumerable:true,configurable:true});}
+    for(const row of db.prepare('SELECT collection,entity_key,payload FROM framework_entities WHERE collection=? ORDER BY ordinal').all(field)){onDecode();const envelope=decodeEnvelope(codec,row.payload,row.collection,row.entity_key,keyHash);if(field==='notifications')result.push(envelope.value);else Object.defineProperty(result,envelope.key,{value:envelope.value,writable:true,enumerable:true,configurable:true});}
     return result;
   };
   const page=(collection,input)=>{
@@ -177,6 +186,10 @@ export function sqliteQueries(db,codec,identityHash,keyHash,onDecode=()=>{}) {
   };
   const count=(collection,column,id,extra='')=>db.prepare(`SELECT COUNT(*) AS count FROM framework_entities WHERE collection=? AND ${column}=?${extra}`).get(collection,id).count;
   return {get,value,
+    notifications(ownerId){
+      if(db.prepare('PRAGMA user_version').get().user_version<4)return (value('notifications')??[]).filter(row=>row.userId===ownerId);
+      return db.prepare("SELECT collection,entity_key,payload FROM framework_entities INDEXED BY framework_notification_owner_order WHERE collection='notifications' AND owner_id=? ORDER BY ordinal").all(ownerId).map(row=>{const item=decode(row);check(item.userId===ownerId,'INVALID_STATE','Notification owner index mismatch',500);return item;});
+    },
     codeHistoryEntries(holderId) {
       check(typeof holderId==='string','INVALID_INPUT','Invalid holder identifier');
       return db.prepare(`SELECT e.collection,e.entity_key,e.payload,c.entity_key AS copy_key,c.payload AS copy_payload FROM framework_code_holders h

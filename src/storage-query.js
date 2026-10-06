@@ -44,10 +44,10 @@ export function queryOptions(collection, input = {}) {
 export function projection(collection, key, value) {
   // Only queried domain entities contribute plaintext operational indexes. Identity,
   // arbitrary extension records and private metadata remain inside their payloads.
-  const row = ['copies','packs','codes','externalPurchases'].includes(collection) && value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const row = ['copies','packs','codes','externalPurchases','notifications'].includes(collection) && value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const name = collection === 'copies' ? row.definition?.name ?? '' : '';
   return {
-    key, ownerId: row.ownerId ?? null, holderId: row.holderId ?? null,
+    key, ownerId: (collection==='notifications'?row.userId:row.ownerId) ?? null, holderId: row.holderId ?? null,
     state: row.state ?? null,
     status: collection === 'packs' ? (row.openedAt ? 'opened' : 'unopened') : row.status ?? row.state ?? null,
     cardId: row.cardId ?? null, variantId: row.variantId ?? row.variant?.id ?? null,
@@ -88,6 +88,7 @@ export function memoryQueries(state) {
   };
   return {
     get,
+    notifications:ownerId=>structuredClone((state.notifications??[]).filter(row=>row.userId===ownerId)),
     codeHistoryEntries(holderId) {
       check(typeof holderId==='string','INVALID_INPUT','Invalid holder identifier');
       return Object.values(state.codes??{}).filter(row=>row.holderId===holderId||(row.holderHistory??[]).includes(holderId)).flatMap(code=>{

@@ -8,6 +8,7 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {Worker} from 'node:worker_threads';
 import {SQLiteStore} from '../src/sqlite.js';
+import {schemaSqlV3,encodeState,writeDifference} from '../src/indexed-storage.js';
 import {initialState,MemoryStore} from '../src/store.js';
 import {createStateCodec} from '../src/encryption.js';
 import {SessionStore} from '../src/auth.js';
@@ -30,14 +31,14 @@ test('schema 2 holder migration preserves ciphertext, state and history through 
   x.core.acceptTrade(x.bob,{key:'accept',tradeId:offer.id});
   const logical=x.store.read(s=>s),expected=x.core.codeHistory(x.alice);x.core.close();
   const old=new DatabaseSync(path);
-  old.exec('DROP TABLE framework_code_holders; PRAGMA user_version=2; CREATE TABLE authentication_sentinel(id TEXT PRIMARY KEY,value TEXT);');
+  old.exec('DROP TABLE framework_code_holders; DROP INDEX framework_notification_owner_order; PRAGMA user_version=2; CREATE TABLE authentication_sentinel(id TEXT PRIMARY KEY,value TEXT);');
   old.prepare('INSERT INTO authentication_sentinel VALUES(?,?)').run('session','retained');
   old.prepare('UPDATE framework_meta SET schema_version=2,codec_check=?').run(codec.encode({format:'digital-card.indexed-state',version:2,recordKeys:'blind-v1'}));
   const payloads=old.prepare('SELECT collection,entity_key,payload FROM framework_entities ORDER BY collection,entity_key').all();old.close();
   const before=files(dir);assert.throws(()=>new SQLiteStore(path,{encryptionKey:randomBytes(32)}));assert.deepEqual(files(dir),before);
   assert.throws(()=>new SQLiteStore(path,{encryptionKey:key,readOnly:true}),/migration requires writable/);
   for(const stage of ['before-schema','after-records','before-commit']){
-    assert.throws(()=>new SQLiteStore(path,{encryptionKey:key,onMigration:event=>{assert.equal(event.from,2);assert.equal(event.to,3);if(event.stage===stage)throw Error('interrupted projection migration');}}),/interrupted projection migration/);
+    assert.throws(()=>new SQLiteStore(path,{encryptionKey:key,onMigration:event=>{assert.equal(event.from,2);assert.equal(event.to,4);if(event.stage===stage)throw Error('interrupted projection migration');}}),/interrupted projection migration/);
     const stopped=new DatabaseSync(path,{readOnly:true});
     assert.equal(stopped.prepare('PRAGMA user_version').get().user_version,2);
     assert.equal(stopped.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='framework_code_holders'").get().n,0);
@@ -46,7 +47,7 @@ test('schema 2 holder migration preserves ciphertext, state and history through 
   const current=new SQLiteStore(path,{encryptionKey:key});assert.deepEqual(current.read(s=>s),logical);
   assert.equal(current.query(q=>q.codeHistoryEntries(x.alice.userId)).length,expected.total);current.close();
   const raw=new DatabaseSync(path,{readOnly:true});
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version,3);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version,4);
   assert.deepEqual(raw.prepare('SELECT collection,entity_key,payload FROM framework_entities ORDER BY collection,entity_key').all(),payloads);
   assert.equal(raw.prepare('SELECT value FROM authentication_sentinel').get().value,'retained');
   const hashes=raw.prepare('SELECT holder_hash FROM framework_code_holders').all();assert(hashes.length===2&&hashes.every(row=>/^[a-f0-9]{64}$/.test(row.holder_hash)));
@@ -64,7 +65,7 @@ test('ordered legacy migration preserves logical state, encrypted material and s
   const dir=directory(t),path=join(dir,'legacy.sqlite'),key=randomBytes(32),state=populated(),stages=[];legacy(path,state,key);
   const store=new SQLiteStore(path,{encryptionKey:key,onMigration:event=>stages.push(event.stage)});
   assert.deepEqual(store.read(s=>s),state);assert.deepEqual(stages,['before-schema','after-records','before-commit']);assert.equal(store.query(q=>q.userByIdentity('private-provider','private-subject')).id,'u1');store.close();
-  const db=new DatabaseSync(path,{readOnly:true});assert.equal(db.prepare('PRAGMA user_version').get().user_version,3);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='framework_state'").get().n,0);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM framework_entities WHERE collection='codes'").get().n,1);db.close();
+  const db=new DatabaseSync(path,{readOnly:true});assert.equal(db.prepare('PRAGMA user_version').get().user_version,4);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='framework_state'").get().n,0);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM framework_entities WHERE collection='codes'").get().n,1);db.close();
   const bytes=Buffer.concat(Object.keys(files(dir)).map(name=>readFileSync(join(dir,name))));for(const secret of ['private-provider','private-subject','private-display','private-email','private-alias','private-code','private-event'])assert(!bytes.includes(Buffer.from(secret)),secret+' must remain encrypted');
   const reopened=new SQLiteStore(path,{encryptionKey:key,readOnly:true});assert.deepEqual(reopened.read(s=>s),state);assert.throws(()=>reopened.transact(()=>{}),/read-only/);reopened.close();
 });
@@ -186,4 +187,26 @@ test('inventory free-text and locale-name compatibility uses account records and
   const store=new SQLiteStore(),x=fixture({store});t.after(()=>store.close());x.open('common',x.alice,3);x.open('common',x.bob,2);
   store.transact(s=>{Object.values(s.copies).filter(c=>c.ownerId===x.alice.userId).forEach((copy,i)=>{copy.definition.name=['Zeta','äster','Alpha'][i];copy.definition.description=i===1?'visible-description-needle':'Example';});});
   const inventory=x.core.inventory(x.alice),before=store.diagnostics();for(const options of [{sort:'name',limit:2},{search:'visible-description-needle',limit:1},{search:'alpha',sort:'name'}])assert.deepEqual(x.core.inventoryPage(x.alice,options),page(inventory,options));assert.equal(store.diagnostics().compatibilityMaterializations,before.compatibilityMaterializations);
+});
+
+function notificationV3(path,state,key){
+ const codec=createStateCodec(key),db=new DatabaseSync(path),hash=(collection,id)=>createHmac('sha256',key).update(JSON.stringify(['digital-card.record-key.v1',collection,id])).digest('hex');
+ try{db.exec(schemaSqlV3);db.prepare('INSERT INTO framework_meta VALUES(1,3,?)').run(codec.encode({format:'digital-card.indexed-state',version:3,recordKeys:'blind-v1'}));
+  const encoded=encodeState(state,codec,()=>null,hash);for(const [token,row]of [...encoded.entities])if(row.collection==='notifications'){encoded.entities.delete(token);row.key=String(row.ordinal);row.storageKey=hash('notifications',row.key);row.projected.ownerId=null;encoded.entities.set(JSON.stringify(['notifications',row.key]),row);}
+  writeDifference(db,{fields:new Map(),entities:new Map()},encoded);db.exec('PRAGMA user_version=3');
+ }finally{db.close();}
+}
+test('notification schema 3 migration is atomic, preserves order and permits prior read-only inspection',t=>{
+ const dir=directory(t),path=join(dir,'notifications.sqlite'),key=randomBytes(32),state=populated();state.notifications=Array.from({length:8},(_,i)=>({id:'notification-'+i,userId:i%2?'u2':'u1',at:'2026-01-01',type:'private',data:{body:'private-notification-body'},read:false}));notificationV3(path,state,key);
+ const inspect=new SQLiteStore(path,{encryptionKey:key,readOnly:true});assert.deepEqual(inspect.read(s=>s),state);assert.equal(inspect.query(q=>q.notifications('u1')).length,4);inspect.close();
+ const original=durableFiles(dir);assert.throws(()=>new SQLiteStore(path,{encryptionKey:key,maxStateBytes:1}),error=>error.code==='STORAGE_CAPACITY');assert.deepEqual(durableFiles(dir),original);
+ for(const stage of ['before-schema','after-records','before-commit']){
+  assert.throws(()=>new SQLiteStore(path,{encryptionKey:key,onMigration:event=>{if(event.stage===stage)throw Error('migration interrupted');}}),/migration interrupted/);
+  assert.deepEqual(durableFiles(dir),original);
+ }
+ const store=new SQLiteStore(path,{encryptionKey:key});assert.deepEqual(store.read(s=>s),state);assert.deepEqual(store.query(q=>q.notifications('u2')),state.notifications.filter(n=>n.userId==='u2'));store.close();
+ const db=new DatabaseSync(path,{readOnly:true});assert.equal(db.prepare('PRAGMA user_version').get().user_version,4);
+ const records=db.prepare("SELECT entity_key,payload FROM framework_entities WHERE collection='notifications' ORDER BY ordinal").all();assert.deepEqual(records.map(row=>createStateCodec(key).decode(row.payload).key),state.notifications.map(n=>n.id));assert(records.every(row=>/^[a-f0-9]{64}$/.test(row.entity_key)));
+ const plan=db.prepare("EXPLAIN QUERY PLAN SELECT entity_key FROM framework_entities INDEXED BY framework_notification_owner_order WHERE collection='notifications' AND owner_id=? ORDER BY ordinal LIMIT 1").all('u1');assert(plan.some(row=>/SEARCH.*framework_notification_owner_order/.test(row.detail)));db.close();
+ const reopened=new SQLiteStore(path,{encryptionKey:key,onMigration:()=>{throw Error('Migration must be idempotent');}});assert.deepEqual(reopened.read(s=>s),state);reopened.close();
 });

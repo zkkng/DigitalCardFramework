@@ -12,14 +12,14 @@ import {FrameworkError,check} from './catalog.js';
 import {initialState} from './store.js';
 import {cloneResult,completionBytes,querySnapshot} from './storage-query.js';
 import {copySnapshotFiles} from './storage-snapshot.js';
-import {STORAGE_SCHEMA,schemaSql,schemaSqlV2,codeHolderSchemaSql,migrateCodeHolders,encodeState,readState,writeDifference,sqliteQueries,storageRecordKey,decodeRecordEnvelope,encodedRecordBytes,encodeRecordPayload,encodeEntity} from './indexed-storage.js';
+import {STORAGE_SCHEMA,schemaSql,schemaSqlV2,schemaSqlV3,notificationSchemaSql,codeHolderSchemaSql,migrateCodeHolders,encodeState,readState,writeDifference,sqliteQueries,storageRecordKey,decodeRecordEnvelope,encodedRecordBytes,encodeRecordPayload,encodeEntity} from './indexed-storage.js';
 
 const emptyRecords=()=>({fields:new Map(),entities:new Map(),usedBytes:0});
 const marker={format:'digital-card.indexed-state',version:STORAGE_SCHEMA,recordKeys:'blind-v1'};
 const expectedSchemas=new Map();
 const schemaEntries=db=>db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().filter(row=>row.name.startsWith('framework_')||row.tbl_name.startsWith('framework_')).map(row=>({...row,sql:row.sql?.replace(/\s+/g,' ').trim()}));
 function validateSchema(db,storageVersion) {
-  if(!expectedSchemas.has(storageVersion)){const model=new DatabaseSync(':memory:');try{model.exec(storageVersion===2?schemaSqlV2:schemaSql);expectedSchemas.set(storageVersion,schemaEntries(model));}finally{model.close();}}
+  if(!expectedSchemas.has(storageVersion)){const model=new DatabaseSync(':memory:');try{model.exec(storageVersion===2?schemaSqlV2:storageVersion===3?schemaSqlV3:schemaSql);expectedSchemas.set(storageVersion,schemaEntries(model));}finally{model.close();}}
   if(!isDeepStrictEqual(schemaEntries(db),expectedSchemas.get(storageVersion)))throw new Error('Database schema does not match its declared version');
 }
 function version(db) {
@@ -28,7 +28,7 @@ function version(db) {
   const tables=new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name));
   if(tables.has('framework_meta')){
     const row=db.prepare('SELECT schema_version,codec_check FROM framework_meta WHERE id=1').get();
-    if(!row||![2,STORAGE_SCHEMA].includes(row.schema_version)||pragma!==row.schema_version||tables.has('framework_state'))throw new Error('Unsupported database schema version');
+    if(!row||![2,3,STORAGE_SCHEMA].includes(row.schema_version)||pragma!==row.schema_version||tables.has('framework_state'))throw new Error('Unsupported database schema version');
     validateSchema(db,row.schema_version);
     return {version:row.schema_version,check:row.codec_check};
   }
@@ -71,7 +71,7 @@ function inspect(path,authenticate) {
 
 /** Indexed durable queries with serialized commands. Legacy command callbacks materialize state. */
 export class SQLiteStore {
-  #db;#codec;#maxBytes;#maxCompletionBytes;#identity;#recordKey;#readOnly;#active=false;#decoded=0;#materializations=0;#writes=0;
+  #db;#codec;#maxBytes;#maxCompletionBytes;#identity;#recordKey;#readOnly;#storageVersion=STORAGE_SCHEMA;#active=false;#decoded=0;#materializations=0;#writes=0;
   constructor(path=':memory:',{encryptionKey,maxStateBytes=64*1024*1024,maxCompletionBytes=64*1024*1024,readOnly=false,onMigration}={}) {
     if(!Number.isSafeInteger(maxStateBytes)||maxStateBytes<1)throw new Error('Invalid storage capacity');
     if(!Number.isSafeInteger(maxCompletionBytes)||maxCompletionBytes<1)throw new Error('Invalid completion capacity');this.#maxCompletionBytes=maxCompletionBytes;
@@ -87,17 +87,32 @@ export class SQLiteStore {
     this.#db=new DatabaseSync(path,{readOnly,timeout:5000});
     try {
       this.#db.exec('PRAGMA foreign_keys=ON;');
-      if(readOnly){this.#db.exec('BEGIN');const found=version(this.#db);this.#authenticate(found);if(found.version!==STORAGE_SCHEMA)throw new Error('Database migration requires writable access');this.#db.exec('COMMIT');return;}
+      if(readOnly){this.#db.exec('BEGIN');const found=version(this.#db);this.#storageVersion=found.version;this.#authenticate(found);if(![3,STORAGE_SCHEMA].includes(found.version))throw new Error('Database migration requires writable access');this.#db.exec('COMMIT');return;}
       this.#db.exec('BEGIN IMMEDIATE');
       try {
         const found=version(this.#db);this.#authenticate(found);
         if(found.version!==STORAGE_SCHEMA){
-          const state=found.version===2?readState(this.#db,this.#codec,this.#recordKey):found.version===1?this.#codec.decode(found.body):initialState();
+          const state=found.version>=2?readState(this.#db,this.#codec,this.#recordKey):found.version===1?this.#codec.decode(found.body):initialState();
           if(onMigration)cloneResult(onMigration({from:found.version,to:STORAGE_SCHEMA,stage:'before-schema'}));
           const encoded=encodeState(state,this.#codec,this.#identity,this.#recordKey);
-          if(found.version===2){
-            this.#db.exec(codeHolderSchemaSql);
-            migrateCodeHolders(this.#db,encoded);
+          if(found.version>=2){
+            if(found.version===2)this.#db.exec(codeHolderSchemaSql);
+            this.#db.exec(notificationSchemaSql);
+            if(found.version===2)migrateCodeHolders(this.#db,encoded);
+            if(this.#db.prepare("SELECT payload,owner_id FROM framework_entities WHERE collection='notifications'").all().some(row=>{const envelope=this.#codec.decode(row.payload);return envelope.key!==envelope.value.id||row.owner_id!==envelope.value.userId;})){
+              const oldBytes=this.#db.prepare("SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) AS n FROM framework_entities WHERE collection='notifications'").get().n;
+              const newBytes=[...encoded.entities.values()].filter(row=>row.collection==='notifications').reduce((n,row)=>n+row.bytes,0);
+              const accounting=this.#db.prepare('SELECT payload FROM framework_fields WHERE name=?').get(recordAccountingField);
+              const previousBytes=this.#db.prepare("SELECT (SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) FROM framework_entities)+(SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) FROM framework_fields) AS n").get().n;
+              const nextBytes=previousBytes+newBytes-oldBytes-Buffer.byteLength(accounting?.payload??'');
+              check(nextBytes<=previousBytes||nextBytes+completionBytes(state)<=this.#maxBytes,'STORAGE_CAPACITY','Notification identity migration needs additional maxStateBytes; reopen read-only or increase the configured budget',507);
+              check(nextBytes+completionBytes(state)+completionPool(state).reservedBytes<=this.#maxBytes+this.#maxCompletionBytes,'COMPLETION_CAPACITY','Notification identity migration needs additional storage or completion capacity',507);
+              this.#db.exec("DELETE FROM framework_entities WHERE collection='notifications'");
+              const rows={fields:new Map([['notifications',encoded.fields.get('notifications')]]),entities:new Map([...encoded.entities].filter(([,row])=>row.collection==='notifications')),encode:encoded.encode};
+              writeDifference(this.#db,emptyRecords(),rows);
+              // Cached encoded-byte totals belong to the previous record identities.
+              this.#db.prepare('DELETE FROM framework_fields WHERE name=?').run(recordAccountingField);
+            }
             this.#db.prepare('UPDATE framework_meta SET schema_version=?,codec_check=? WHERE id=1').run(STORAGE_SCHEMA,this.#codec.encode(marker));
           }else{
             this.#db.exec(schemaSql);
@@ -187,6 +202,7 @@ export class SQLiteStore {
         count:name=>this.#db.prepare('SELECT COUNT(*) AS n FROM framework_entities WHERE collection=?').get(name).n,
         nextOrdinal:name=>this.#db.prepare('SELECT COALESCE(MAX(ordinal)+1,0) AS n FROM framework_entities WHERE collection=?').get(name).n,
         ownerCounts:ownerId=>sqliteQueries(this.#db,this.#codec,this.#identity,this.#recordKey).collectionCounts(ownerId),
+        notificationOverflow:(ownerId,keep,charge)=>{const count=this.#db.prepare("SELECT COUNT(*) AS n FROM framework_entities WHERE collection='notifications' AND owner_id=?").get(ownerId).n;charge(0);const rows=this.#db.prepare("SELECT entity_key,ordinal,payload FROM framework_entities INDEXED BY framework_notification_owner_order WHERE collection='notifications' AND owner_id=? ORDER BY ordinal LIMIT ?").all(ownerId,Math.max(0,count-keep));return rows.map(row=>({key:decode(row,'notifications',row.entity_key,charge).key}));},
         ownedVariantCount:(ownerId,variantIds)=>variantIds.length?this.#db.prepare("SELECT COUNT(*) AS n FROM framework_entities INDEXED BY framework_owner_variant WHERE collection='copies' AND owner_id=? AND state='owned' AND variant_id IN ("+variantIds.map(()=>'?').join(',')+")").get(ownerId,...variantIds).n:0,
       };
       scope=createRecordTransaction(backend,options);
@@ -202,12 +218,12 @@ export class SQLiteStore {
         for(const row of plan.changes){
           const metadata=plan.fields.get(row.collection),kind=metadata?.kind??(row.array?'array':'object');
           if(metadata)before.fields.set(row.collection,{kind,raw:null});after.fields.set(row.collection,{kind,raw:null});
-          const key=JSON.stringify([row.collection,row.key]),encoded=encodeEntity(row.collection,row.key,row.value,row.ordinal,this.#codec,this.#identity,this.#recordKey);
-          after.entities.set(key,encoded);delta+=encoded.bytes;
+          const key=JSON.stringify([row.collection,row.key]);
+          if(row.value!==undefined){const encoded=encodeEntity(row.collection,row.key,row.value,row.ordinal,this.#codec,this.#identity,this.#recordKey);after.entities.set(key,encoded);delta+=encoded.bytes;}
           if(row.old){const old=encodeEntity(row.collection,row.key,row.old.value,row.old.ordinal,this.#codec,this.#identity,this.#recordKey);before.entities.set(key,old);delta-=old.bytes;previousPartial[row.collection]??=kind==='array'?[]:Object.create(null);if(kind==='array')previousPartial[row.collection].push(row.old.value);else previousPartial[row.collection][row.key]=row.old.value;}
-          else summary.counts[row.collection]=(summary.counts[row.collection]??0)+1;
+          summary.counts[row.collection]=(summary.counts[row.collection]??0)+Number(row.value!==undefined)-Number(!!row.old);
           partial[row.collection]??=kind==='array'?[]:Object.create(null);
-          if(kind==='array')partial[row.collection].push(row.value);else partial[row.collection][row.key]=row.value;
+          if(row.value!==undefined){if(kind==='array')partial[row.collection].push(row.value);else partial[row.collection][row.key]=row.value;}
           if(row.collection==='events')check(row.value.sequence===row.ordinal+1,'INVALID_STATE','Event sequence differs from append position',500);
         }
         const oldPart=summarizeRecords(previousPartial);
@@ -242,7 +258,7 @@ export class SQLiteStore {
     }catch(error){try{this.#db.exec('ROLLBACK');}catch{}throw error;}
     finally{scope?.close();this.#active=false;}
   }
-  diagnostics(){return {storageSchema:STORAGE_SCHEMA,decodedQueryRecords:this.#decoded,compatibilityMaterializations:this.#materializations,recordWrites:this.#writes,readOnly:this.#readOnly};}
+  diagnostics(){return {storageSchema:this.#storageVersion,decodedQueryRecords:this.#decoded,compatibilityMaterializations:this.#materializations,recordWrites:this.#writes,readOnly:this.#readOnly};}
   integrity(){return this.#db.prepare('PRAGMA quick_check').all().every(row=>row.quick_check==='ok');}
   async backup(path){if(existsSync(path))throw new Error('Backup destination must not already exist');await backup(this.#db,path);return {path,revision:this.query(q=>q.value('revision'))};}
   close(){this.#db.close();}

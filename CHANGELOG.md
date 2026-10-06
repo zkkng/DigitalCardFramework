@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Upgraded SQLite storage to schema 4 with stable notification identities, indexed account reads and bounded history trimming during pack opening. Stop writers and back up the database and encryption keys before upgrading; older applications cannot open the upgraded database.
+
 ### Added
 
 - Added visual pack front/back authoring, optional reveal artwork, reviewed product revisions and reusable pack renderers. Allocated packs retain their original artwork and design references.
