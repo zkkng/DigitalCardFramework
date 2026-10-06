@@ -107,6 +107,67 @@ try {
       .scenes.get("scenes/front.json")
       .nodes.some((n) => n.text === "Collection title"),
   );
+  await page.getByText("Styled text spans", { exact: true }).click();
+  await page.getByLabel("Span 1 text", { exact: true }).fill("<b>Hello</b>");
+  await page.getByLabel("Span 1 text", { exact: true }).press("Tab");
+  await page.getByRole("button", { name: "Add text span", exact: true }).click();
+  await page.getByLabel("Span 2 text", { exact: true }).fill(" World");
+  await page.getByLabel("Span 2 text", { exact: true }).press("Tab");
+  const beforeInvalidSpan = await page.evaluate(() => window.studio.getProject().serialize());
+  await page.getByLabel("Span 1 weight", { exact: true }).fill("2000");
+  await page.getByLabel("Span 1 weight", { exact: true }).press("Tab");
+  await page.waitForFunction(() => document.querySelector(".dcs-status").textContent.includes("Invalid span weight"));
+  assert.deepEqual(await page.evaluate(() => window.studio.getProject().serialize()), beforeInvalidSpan);
+  await page.getByLabel("Span 1 weight", { exact: true }).fill("700");
+  await page.getByLabel("Span 1 weight", { exact: true }).press("Tab");
+  await page.waitForFunction(() => window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.runs)?.runs[0].weight === 700);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  assert.equal(await page.getByLabel("Span 1 weight", { exact: true }).inputValue(), "");
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  assert.equal(await page.getByLabel("Span 1 weight", { exact: true }).inputValue(), "700");
+  assert.equal(await page.evaluate(async () => {
+    const { importPackage } = await import("/src/presentation/package.js"),
+      { createProject } = await import("/src/presentation/project.js"),
+      restored = createProject(await importPackage((await window.studio.getProject().export({retainSources:true})).archive));
+    return restored.scenes.get("scenes/front.json").nodes.find(n=>n.runs).runs[0].weight;
+  }), 700);
+  await page.getByLabel("Span 1 style", { exact: true }).selectOption("italic");
+  await page.getByLabel("Span 1 color", { exact: true }).fill("#ff0000");
+  await page.getByLabel("Span 1 color", { exact: true }).press("Tab");
+  const inlineIcon = await page.evaluate(() => window.studio.getProject().manifest.assets.find(a=>a.mediaType.startsWith("image/")).id);
+  await page.getByLabel("Span 1 icon", { exact: true }).selectOption(inlineIcon);
+  await page.getByRole("button", { name: "Move span 1 later", exact: true }).click();
+  await page.getByRole("button", { name: "Reset span 2 formatting", exact: true }).click();
+  const spanSource = await page.evaluate(async () => {
+    const p = window.studio.getProject(),
+      { importPackage } = await import("/src/presentation/package.js"),
+      decoded = await importPackage((await p.export({ retainSources: true })).archive);
+    return decoded.scenes.get("scenes/front.json").nodes.find(n=>n.runs)?.runs;
+  });
+  assert.deepEqual(spanSource, [{ text: " World" }, { text: "<b>Hello</b>", icon: inlineIcon }]);
+  await page.getByRole("button", { name: "Remove span 1", exact: true }).click();
+  await page.screenshot({ path: resolve(output, "styled-spans.png"), fullPage: true });
+  await page.getByRole("button", { name: "Convert spans to plain text", exact: true }).click();
+  assert.equal(await page.getByLabel("Text content", { exact: true }).inputValue(), "<b>Hello</b>");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  assert.equal(await page.getByLabel("Span 1 icon", { exact: true }).inputValue(), inlineIcon);
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await page.getByLabel("Text content", { exact: true }).fill("Collection title");
+  await page.getByLabel("Text content", { exact: true }).press("Tab");
+  await page.evaluate(async () => {
+    const p = window.studio.getProject();
+    p.edit(() => { p.scenes.get("scenes/front.json").nodes.find(n=>n.type === "text").runs = Array.from({length:128}, ()=>({text:"x"})); });
+    await window.studio.refreshPolicy();
+  });
+  assert(await page.getByRole("button", { name: "Add text span", exact: true }).isDisabled());
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.getByText("Arrange layers", { exact: true }).click();
+  await page.getByRole("button", { name: "Lock selected", exact: true }).click();
+  assert(await page.getByLabel("Span 1 text", { exact: true }).isDisabled());
+  assert(await page.getByRole("button", { name: "Add text span", exact: true }).isDisabled());
+  await page.getByText("Arrange layers", { exact: true }).click();
+  await page.getByRole("button", { name: "Unlock selected", exact: true }).click();
+  checks.push("artist spans, rejected-edit recovery, emphasis/icon/reorder/reset/remove, portable round trip, undo/redo and locked/bounded controls");
   const fontChooser = page.waitForEvent("filechooser");
   await page
     .getByRole("button", { name: "Add custom font", exact: true })
@@ -184,6 +245,9 @@ try {
   await page.getByLabel("Enabled", { exact: true }).selectOption("");
   await page.waitForFunction(() => !Object.hasOwn(window.studio.getProject().manifest.authoring.values.card, "enabled"));
   await page.getByRole("button", { name: "Add Variant score to card", exact: true }).click();
+  await page.getByText("Styled text spans", { exact: true }).click();
+  await page.getByText("Bound text comes from its stat field. Use the stat formatting controls to change its display.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Add text span", exact: true }).count(), 0);
   await page.getByLabel("Stat label", { exact: true }).fill("Edition");
   await page.getByLabel("Stat label", { exact: true }).press("Tab");
   await page.waitForFunction(() => document.querySelector('[role="img"]')?.getAttribute("aria-label")?.includes("Edition 99"));

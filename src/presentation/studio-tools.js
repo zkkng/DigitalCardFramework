@@ -60,6 +60,7 @@ export function mountAuthoringTools({
   root.className = "dcs-authoring";
   status.setAttribute("role", "status");
   const pending = new Set();
+  const expandedSpans = new Set();
   let mountedPanels = [];
   const disposePanels = () => {
     for (const panel of mountedPanels) panel.dispose?.();
@@ -107,10 +108,15 @@ export function mountAuthoringTools({
     parent.append(wrap);
     return e;
   }
-  function edit(fn) {
+  async function edit(fn) {
     const p = getProject();
     if (!p) throw new Error("Open a card first");
-    p.edit(fn);
+    try {
+      p.edit(fn);
+    } catch (error) {
+      await rebuild();
+      throw error;
+    }
     return rebuild();
   }
   function chosen() {
@@ -251,7 +257,7 @@ export function mountAuthoringTools({
       input(
         box,
         "Text content",
-        n.text,
+        n.runs?.map(span=>span.text).join("") ?? n.text,
         (v) =>
           editText(() => {
             n.text = v;
@@ -382,9 +388,65 @@ export function mountAuthoringTools({
       });
       const rich = el("details");
       rich.append(el("summary", "Styled text spans"));
+      const spanPanelKey = getSide() + ":" + n.id;
+      rich.open = expandedSpans.has(spanPanelKey);
+      rich.ontoggle = () => rich.open ? expandedSpans.add(spanPanelKey) : expandedSpans.delete(spanPanelKey);
       box.append(rich);
-      input(
-        rich,
+      if (n.stat) {
+        rich.append(el("p", "Bound text comes from its stat field. Use the stat formatting controls to change its display."));
+      } else {
+        const spans = n.runs ?? [{ text: n.text ?? "" }],
+          changeSpan = (index, key, value) => editText(() => {
+            n.runs ??= [{ text: n.text ?? "" }];
+            if (value === undefined) delete n.runs[index][key];
+            else n.runs[index][key] = value;
+          });
+        rich.append(el("p", "Spans contain plain text and optional overrides. Inherited properties follow the layer's typography. Image icons use embedded card assets."));
+        for (const [index, span] of spans.entries()) {
+          const row = el("fieldset"), number = index + 1;
+          row.append(el("legend", "Span " + number));
+          rich.append(row);
+          input(row, "Span " + number + " text", span.text, v=>changeSpan(index, "text", v), { type: "textarea", disabled });
+          input(row, "Span " + number + " weight", span.weight ?? "", v=>changeSpan(index, "weight", v === "" ? undefined : Number(v)), { type: "number", disabled });
+          input(row, "Span " + number + " style", span.style ?? "", v=>changeSpan(index, "style", v || undefined), {
+            choices: [{id:"",name:"Inherit style"}, "normal", "italic", "oblique"], disabled,
+          });
+          input(row, "Span " + number + " color", span.color ?? n.typography?.color ?? n.color ?? "#ffffff",
+            v=>changeSpan(index, "color", v), { type: "color", disabled });
+          input(row, "Span " + number + " icon", span.icon ?? "", v=>changeSpan(index, "icon", v || undefined), {
+            choices: [{id:"",name:"No icon"}, ...p.manifest.assets.filter(a=>a.mediaType.startsWith("image/")).map(a=>({id:a.id,name:a.id}))], disabled,
+          });
+          button(row, "Reset span " + number + " formatting", () => editText(() => {
+            n.runs ??= [{ text: n.text ?? "" }];
+            for (const key of ["weight", "style", "color"]) delete n.runs[index][key];
+          })).disabled = disabled;
+          for (const [label, offset] of [["Move span " + number + " earlier", -1], ["Move span " + number + " later", 1]]) {
+            button(row, label, () => editText(() => {
+              n.runs ??= [{ text: n.text ?? "" }];
+              const other = index + offset;
+              [n.runs[index], n.runs[other]] = [n.runs[other], n.runs[index]];
+            })).disabled = disabled || index + offset < 0 || index + offset >= spans.length;
+          }
+          button(row, "Remove span " + number, () => editText(() => {
+            n.runs ??= [{ text: n.text ?? "" }];
+            n.runs.splice(index, 1);
+            if (!n.runs.length) { n.text = ""; delete n.runs; }
+          })).disabled = disabled;
+        }
+        button(rich, "Add text span", () => editText(() => {
+          n.runs ??= [{ text: n.text ?? "" }];
+          if (n.runs.length >= 128) throw new Error("A text layer supports at most 128 spans");
+          n.runs.push({ text: "" });
+        })).disabled = disabled || spans.length >= 128;
+        button(rich, "Convert spans to plain text", () => editText(() => {
+          n.text = (n.runs ?? [{text:n.text ?? ""}]).map(span=>span.text).join("");
+          delete n.runs;
+        })).disabled = disabled || !n.runs;
+        const advanced = el("details");
+        advanced.append(el("summary", "Advanced span JSON"));
+        rich.append(advanced);
+        input(
+        advanced,
         "Text spans (JSON)",
         JSON.stringify(n.runs ?? [{ text: n.text }], null, 2),
         (v) => editText(() => (n.runs = JSON.parse(v))),
@@ -396,6 +458,7 @@ export function mountAuthoringTools({
           "Each span can include text, color, weight, style and an image asset ID as icon.",
         ),
       );
+      }
       if (n.stat) {
         input(
           box,
