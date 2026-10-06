@@ -10,6 +10,12 @@ Catalog card names, line names, rarity names, product names and currency names s
 
 Default precedence is default CSS < host theme/CSS < explicit card/variant asset references. Variant back overrides definition back, which overrides the CSS back. A supplied backRenderer replaces asset/default back markup. There is no automatic deep merge of arrays: sections explicitly replaces the default order.
 
+## Pack artwork renderer
+
+`mountFramework(root,{packRenderer})` replaces the individual pack artwork surface in Discover and My packs. The function receives `(product,{small,lineName,previewCards})` and returns a DOM node or `{node,dispose}`. Each mount receives the product appropriate to that surface: current catalog products in Discover, immutable allocated product snapshots in My packs. Cleanup runs on refresh, navigation and unmount. Keep renderer state local to each returned instance.
+
+The exported `renderPack(product,options)` returns `{node,setSide,dispose}` and supports independent front/back controls, a load-error fallback and terminal disposal. `examples/alternate.js` demonstrates a targeted replacement that composes this renderer with a different border and label. Supply trusted host code for a completely different component. `mountOpener` accepts `packArtwork(packId)` for reveal artwork; use the owned pack snapshot rather than a later catalog product.
+
 ## Reorder, insert or remove features
 
 sections:['collection','albums','wallet','shop'] hides pack/trade sections and rearranges the remaining sections. A sections entry may be a callback (model,{client,inspect,refresh}) returning a host DOM node. This inserts or replaces any whole section. The host can instead mount only mountOpener inside a sidebar, modal or existing page.
@@ -99,6 +105,7 @@ The bundled `examples/app.js` is an executable public-API composition with colle
 | Individual camera | `inspectorRenderer(copy,options)`, public `renderInspector`/`render3DInspector`; `renderTiltInspector` preserves compact legacy interaction | Reference inspector and orbit tests |
 | Shared/card combinations | `comparisonRenderer(copies,options)`; `inspectTogether(copies)` | Horizon pair in `examples/catalog.js`, default shared stage |
 | Metadata/stats/layers | Catalog fields/schemas/displayFields; `metadataRenderer`, `cardRenderer`, `backRenderer` | JSON/YAML Moonbridge patches and alternate renderer |
+| Pack front/back/reveal | `products[].artwork`, visual pack destination, `packRenderer`, exported `renderPack`, `mountOpener({packArtwork})` | Sky Discovery product and alternate pack renderer; artist publication and lifecycle tests |
 | Creator experience | `renderStudio` or own preview/publish view calling client previewImport/commitImport | Reference studio, real preview/stale-generation tests |
 | Administration | `renderAdminPanel`, standalone `mountAdminPanel`, headless `createAdminController`, or complete `views.admin` replacement | [Administration guide](admin-panel.md); `examples/admin-headless.mjs`; reviewed settings and inventory workflows |
 | Account/social | `renderActivity` or own preferences/notification view | Reference app and authorization tests |

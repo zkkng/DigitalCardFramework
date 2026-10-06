@@ -3,13 +3,49 @@ import assert from 'node:assert/strict';
 import {Window} from 'happy-dom';
 import {randomUUID} from 'node:crypto';
 import {fixture} from './helpers.js';
-import {renderCard,renderAlbum,renderInspector,mountFramework} from '../src/ui.js';
+import {renderCard,renderAlbum,renderInspector,mountFramework,mountOpener,renderPack} from '../src/ui.js';
 import {renderTrading} from '../src/trading-ui.js';
 import {renderAlbums,renderCollection} from '../src/collection-ui.js';
 import {renderStudio} from '../src/studio-ui.js';
-import {createCommandRunner} from '../src/client.js';
+import {createCommandRunner,createRevealController} from '../src/client.js';
 
 const settle=async()=>{for(let i=0;i<4;i++)await new Promise(r=>setImmediate(r));};
+
+test('pack artwork instances retain independent sides, fallback and terminal disposal',()=>{
+  const x=setup();
+  try {
+    const product={id:'pack',name:'Sky pack',lineId:'sky',artwork:{front:'/front.png',back:'/back.png',alt:'Printed sky packaging'}},
+      first=renderPack(product),second=renderPack(product),firstImage=first.node.querySelector('img'),secondImage=second.node.querySelector('img');
+    firstImage.dispatchEvent(new x.window.Event('load'));assert.equal(first.node.dataset.artworkState,'ready');
+    first.setSide('back');assert(firstImage.src.endsWith('/back.png'));assert(secondImage.src.endsWith('/front.png'));
+    firstImage.dispatchEvent(new x.window.Event('error'));assert.equal(first.node.dataset.artworkState,'fallback');
+    const retained=first.setSide;first.dispose();retained('front');firstImage.dispatchEvent(new x.window.Event('load'));
+    assert.equal(first.node.childNodes.length,0);assert(second.node.childNodes.length>0);second.dispose();
+    const invalid=renderPack({...product,artwork:{front:'javascript:alert(1)'}});assert.equal(invalid.node.dataset.artworkState,'fallback');assert.equal(invalid.node.querySelector('img').getAttribute('src'),null);invalid.dispose();
+  }finally{x.close();}
+});
+
+test('pack renderer hooks dispose on refresh and independently across simultaneous frameworks',async()=>{
+  const x=setup();
+  try{
+    const roots=[document.createElement('main'),document.createElement('main')],calls=[{mounts:0,disposes:0},{mounts:0,disposes:0}];roots.forEach(root=>document.body.append(root));
+    const frameworks=roots.map((root,index)=>mountFramework(root,{client:x.client,sections:['shop'],packRenderer:product=>{calls[index].mounts++;const node=document.createElement('div');node.textContent='Custom '+product.name;return {node,dispose(){calls[index].disposes++;}};}}));
+    await Promise.all(frameworks.map(framework=>framework.ready));const firstCount=calls[0].mounts,secondCount=calls[1].mounts;assert(firstCount>0&&secondCount>0);
+    await frameworks[0].refresh();assert.equal(calls[0].disposes,firstCount);assert.equal(calls[1].disposes,0);
+    frameworks[0].dispose();assert.equal(calls[0].disposes,calls[0].mounts);assert(roots[1].textContent.includes('Custom'));
+    frameworks[1].dispose();assert.equal(calls[1].disposes,secondCount);
+  }finally{x.close();}
+});
+
+test('opener resolves reveal artwork from the owned pack and cleans image work on disposal',async()=>{
+  const x=setup();
+  try{
+    const owned=x.buy('sky.basic').packs[0],receipt=x.core.openPack(x.alice,{packId:owned.id,key:'snapshot-reveal'}),root=document.createElement('div');document.body.append(root);
+    const controller=createRevealController({open:async()=>receipt}),dispose=mountOpener(root,{controller,packArtwork:id=>id===owned.id?owned.product.artwork:undefined});
+    await controller.load(owned.id);const image=root.querySelector('.dc-reveal-artwork');assert(image.src.endsWith(owned.product.artwork.reveal));
+    dispose();assert.equal(image.getAttribute('src'),null);assert.equal(root.childElementCount,0);controller.dispose();
+  }finally{x.close();}
+});
 
 test('a price changed after rendering requires another purchase decision',async()=>{
   const x=setup();

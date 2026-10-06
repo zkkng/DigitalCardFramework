@@ -32,6 +32,7 @@ export const sampleCatalog = {
   ],
   products:[
     {id:'sky.basic',lineId:'sky',name:'Sky · Discovery',revision:1,price:{currencyId:'credits',amount:100},
+      artwork:{front:'/demo/art/dawn.svg',back:'/demo/art/cloud.svg',reveal:'/demo/art/aurora.svg',alt:'Sky Atlas illustrated pack'},
       duplicatePolicy:{scope:'pack',fallback:'allow'},slots:[{count:3,pool:[
         {variantId:'dawn.standard',weight:45},{variantId:'cloud.standard',weight:45},{variantId:'aurora.holo',weight:9},{variantId:'solstice.unique',weight:1}]}]},
     {id:'sky.premium',lineId:'sky',name:'Sky · Holo',revision:1,price:{currencyId:'gems',amount:3},

@@ -3,6 +3,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import standalone from 'ajv/dist/standalone/index.js';
 import {_Code} from 'ajv/dist/compile/codegen/code.js';
 import {openapi} from '../src/contracts.js';
+import {assetFormats} from '../src/asset-contracts.js';
 
 function dateTime(value){
   const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
@@ -13,9 +14,10 @@ function dateTime(value){
   const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
   return m>=1&&m<=12&&d>=1&&d<=days[m-1]&&Number(hour)<24&&Number(minute)<60&&Number(second)<60&&Number(offsetHour)<24&&Number(offsetMinute)<60;
 }
-const formatCode=new _Code('({"date-time":'+dateTime.toString()+'})');
+const formatCode=new _Code('({"date-time":'+dateTime.toString()+','+Object.entries(assetFormats).map(([key,fn])=>JSON.stringify(key)+':'+fn.toString()).join(',')+'})');
 const ajv=new Ajv2020({strict:false,allErrors:true,inlineRefs:false,code:{source:true,esm:true,formats:formatCode}});
 ajv.addFormat('date-time',dateTime);
+for(const [key,format]of Object.entries(assetFormats))ajv.addFormat(key,format);
 const root='https://digital-card.invalid/wire';
 ajv.addSchema({$id:root,components:openapi.components});
 const exports={},entries={};

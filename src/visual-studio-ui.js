@@ -17,10 +17,14 @@ export function mountVisualStudio(
   let studio,
     disposed = false,
     destination = model.catalog.cards[0]?.id,
-    variantId;
+    variantId,packArtworkDraft={},editorGeneration=0,cancelReview;
   const abort = new AbortController(),
     status = document.createElement("p"),
     select = document.createElement("select"),
+    kind = document.createElement("select"),
+    packFields = document.createElement("fieldset"),
+    reveal = document.createElement("input"),
+    artworkAlt = document.createElement("input"),
     variants = document.createElement("select"),
     launch = document.createElement("button"),
     fresh = document.createElement("button"),
@@ -28,12 +32,26 @@ export function mountVisualStudio(
   status.setAttribute("role", "status");
   select.setAttribute("aria-label", "Destination card");
   variants.setAttribute("aria-label", "Destination variant");
-  for (const card of model.catalog.cards) {
+  kind.setAttribute("aria-label","Design destination");
+  for(const [value,label] of [["card","Card or variant"],["pack","Pack artwork"]]){const option=document.createElement("option");option.value=value;option.textContent=label;kind.append(option);}
+  const legend=document.createElement("legend");legend.textContent="Pack artwork";
+  reveal.setAttribute("aria-label","Pack reveal artwork URL");reveal.placeholder="https://assets.example/reveal.webp";
+  artworkAlt.setAttribute("aria-label","Pack artwork description");artworkAlt.maxLength=200;
+  reveal.oninput=()=>{if(reveal.value)packArtworkDraft.reveal=reveal.value;else delete packArtworkDraft.reveal;};
+  artworkAlt.oninput=()=>{if(artworkAlt.value)packArtworkDraft.alt=artworkAlt.value;else delete packArtworkDraft.alt;};
+  packFields.append(legend,reveal,artworkAlt);packFields.hidden=true;
+  function destinationOptions(){
+  select.replaceChildren();
+  select.setAttribute("aria-label",kind.value==="pack"?"Destination pack":"Destination card");
+  for (const card of kind.value==="pack"?model.catalog.products:model.catalog.cards) {
     const option = document.createElement("option");
     option.value = card.id;
     option.textContent = card.name;
     select.append(option);
   }
+  destination=select.value;
+  }
+  destinationOptions();
   function variantOptions() {
     variants.replaceChildren();
     const all = document.createElement("option");
@@ -51,14 +69,31 @@ export function mountVisualStudio(
     variantId = undefined;
   }
   variantOptions();
+  function resetEditor(){
+    if(disposed)return;
+    editorGeneration++;cancelReview?.();studio?.dispose();studio=undefined;canvas.replaceChildren();
+    launch.disabled=fresh.disabled=kind.disabled=select.disabled=variants.disabled=false;
+    canvas.inert=false;canvas.removeAttribute("aria-busy");
+    status.textContent="Open the selected destination to edit its design.";
+  }
   select.onchange = () => {
+    if(disposed)return;
+    resetEditor();
     destination = select.value;
     variantOptions();
-    studio?.refreshPolicy().catch((e) => (status.textContent = e.message));
   };
   variants.onchange = () => {
+    if(disposed)return;
+    resetEditor();
     variantId = variants.value || undefined;
-    studio?.refreshPolicy().catch((e) => (status.textContent = e.message));
+  };
+  kind.onchange=()=>{
+    if(disposed)return;
+    resetEditor();
+    destinationOptions();variantOptions();variants.hidden=kind.value==="pack";
+    packFields.hidden=kind.value!=="pack";
+    launch.textContent=kind.value==="pack"?"Open visual pack editor":"Open visual card editor";
+    fresh.textContent=kind.value==="pack"?"Start a new pack design":"Start a new card design";
   };
   launch.textContent = "Open visual card editor";
   fresh.textContent = "Start a new card design";
@@ -66,15 +101,16 @@ export function mountVisualStudio(
   const stylesheet = document.createElement("link");
   stylesheet.rel = "stylesheet";
   stylesheet.href = new URL("./presentation/studio.css", import.meta.url).href;
-  root.append(stylesheet, select, variants, launch, fresh, status, canvas);
+  root.append(stylesheet, kind, select, variants, packFields, launch, fresh, status, canvas);
   const canShare =
     model.me.role === "admin" ||
     model.me.permissions?.includes("card-policies.manage");
-  const destinationPolicy = () =>
+  const getDestinationPolicy = target => target.kind==="pack"?Promise.resolve(null):
     client.effectiveCardPolicy({
-      cardId: destination,
-      ...(variantId ? { variantId } : {}),
+      cardId: target.id,
+      ...(target.variantId ? { variantId:target.variantId } : {}),
     });
+  const destinationPolicy=()=>getDestinationPolicy({kind:kind.value,id:destination,variantId});
   async function json(url, options = {}) {
     const response = await fetch(url, {
       credentials: "same-origin",
@@ -131,6 +167,7 @@ export function mountVisualStudio(
     client: {
       ...client,
       cardPolicies: async () => {
+        if(kind.value==="pack")return client.cardPolicies();
         const e = await destinationPolicy();
         return { revision: e.revision, resources: e.resources };
       },
@@ -139,31 +176,37 @@ export function mountVisualStudio(
     download,
   });
   const library = combineLibraries(createLocalLibrary(), shared, { canShare });
-  async function publish(pkg) {
-    const target = destination,
-      targetVariant = variantId;
+  async function publish(pkg,mountedTarget) {
+    const target = mountedTarget.id,
+      targetVariant = mountedTarget.variantId,targetKind=mountedTarget.kind,publishingStudio=studio,draftArtwork=structuredClone(packArtworkDraft),
+      current=()=>!disposed&&mountedTarget.generation===editorGeneration&&studio===publishingStudio;
+    if(!current())return false;
+    kind.disabled=select.disabled=variants.disabled=true;
+    try {
     await upload(pkg);
+    if(!current())return false;
     const base = await client.operatorCatalog(),
       card = base.cards.find((c) => c.id === target);
-    if (!card) throw new Error("Choose a destination card");
-    const values = studio.getProject().manifest.authoring?.values ?? {},
+    if(!current())return false;
+    if (targetKind==="card"&&!card) throw new Error("Choose a destination card");
+    const values = publishingStudio.getProject().manifest.authoring?.values ?? {},
       presentation = {
         contract: "digital-card@0.1",
         digest: pkg.digest,
         baseURL: location.origin + "/presentations/" + pkg.digest + "/files/",
       };
-    const revised = {
+    const revised = targetKind==="card"?{
       ...card,
       name: pkg.manifest.title,
       stats: values.card ?? {},
       ...(!targetVariant ? { presentation } : {}),
-    };
+    }:null;
     const variant = targetVariant
       ? base.variants.find((v) => v.id === targetVariant && v.cardId === target)
       : null;
     if (targetVariant && !variant)
       throw new Error("Destination variant changed");
-    const source = {
+    let source = {
       cards: [revised],
       ...(variant
         ? {
@@ -173,39 +216,52 @@ export function mountVisualStudio(
           }
         : {}),
     };
+    let product;
+    if(targetKind==="pack"){
+      product=base.products.find(p=>p.id===target);if(!product)throw new Error("Choose a destination pack");
+      const poster=face=>presentation.baseURL+pkg.manifest.assets.find(a=>a.id===pkg.manifest.faces[face].poster).path;
+      source={products:[{...product,name:pkg.manifest.title,revision:product.revision+1,artwork:{...product.artwork,...draftArtwork,front:poster("front"),back:poster("back"),design:presentation}}]};
+      if(!draftArtwork.reveal)delete source.products[0].artwork.reveal;
+      if(!draftArtwork.alt)delete source.products[0].artwork.alt;
+    }
     const prepared = await client.previewImport({
       source,
       expectedVersion: base.version,
     });
+    if(!current())return false;
     const review = document.createElement("dialog"),
       message = document.createElement("p"),
       commit = document.createElement("button"),
       cancel = document.createElement("button");
-    message.textContent =
+    message.textContent = targetKind==="pack"?
+      "Publish "+pkg.manifest.title+" as pack revision "+(product.revision+1)+"? Already allocated packs retain their prior artwork.":
       "Publish " +
-      revised.name +
+      (revised?.name??pkg.manifest.title) +
       " under policy revision " +
       prepared.policyRevision +
       "? Existing copies retain their recorded content.";
-    commit.textContent = "Publish reviewed card";
+    commit.textContent = targetKind==="pack"?"Publish reviewed pack artwork":"Publish reviewed card";
     cancel.textContent = "Keep as draft";
     review.append(message, commit, cancel);
     root.append(review);
     review.showModal();
-    return new Promise((resolve, reject) => {
+    return await new Promise((resolve, reject) => {
       const cleanup = () => {
         review.close();
         review.remove();
         abort.signal.removeEventListener("abort", cancelled);
+        if(cancelReview===cancelled)cancelReview=undefined;
       };
       const cancelled = () => {
         cleanup();
         resolve(false);
       };
       cancel.onclick = cancelled;
+      cancelReview=cancelled;
       review.addEventListener("cancel", cancelled, { once: true });
       abort.signal.addEventListener("abort", cancelled, { once: true });
       commit.onclick = async () => {
+        if(!current()){cancelled();return;}
         commit.disabled = true;
         try {
           await client.commitImport({
@@ -216,8 +272,10 @@ export function mountVisualStudio(
             policyRevision: prepared.policyRevision,
           });
           cleanup();
-          status.textContent = "Card published.";
-          onCatalogChange();
+          if(current()){
+            status.textContent = targetKind==="pack"?"Pack artwork published. Existing packs retain their artwork.":"Card published.";
+            onCatalogChange();
+          }
           resolve(true);
         } catch (e) {
           cleanup();
@@ -225,45 +283,52 @@ export function mountVisualStudio(
         }
       };
     });
+    } finally {if(current())kind.disabled=select.disabled=variants.disabled=false;}
   }
   async function open(makeNew = false) {
     if (disposed) return;
+    resetEditor();
+    const target={kind:kind.value,id:destination,variantId,generation:++editorGeneration},current=()=>!disposed&&target.generation===editorGeneration;
     launch.disabled = fresh.disabled = true;
+    kind.disabled=select.disabled=variants.disabled=true;
     canvas.inert = true;
     canvas.setAttribute("aria-busy", "true");
     try {
       const catalog = await client.operatorCatalog();
-      if (disposed) return;
-      const card = catalog.cards.find((c) => c.id === destination),
-        variant = catalog.variants.find((v) => v.id === variantId),
-        policy = await destinationPolicy();
-      if (disposed) return;
-      const ref = variant?.presentation ?? card?.presentation;
+      if (!current()) return;
+      const card = catalog.cards.find((c) => c.id === target.id),
+        product=target.kind==="pack"?catalog.products.find(p=>p.id===target.id):undefined,
+        variant = catalog.variants.find((v) => v.id === target.variantId),
+        policy = await getDestinationPolicy(target);
+      if (!current()) return;
+      const ref = product?.artwork?.design ?? variant?.presentation ?? card?.presentation;
       let initialPackage;
       if (!makeNew && ref)
         initialPackage = await importPackage(await download(ref.digest));
-      else if (policy.policy.defaults.template) {
+      else if (policy?.policy.defaults.template) {
         const entry = await library.get(policy.policy.defaults.template, true);
+        if(!current())return;
         if (!entry) throw new Error("Default template is unavailable");
         initialPackage = await loadTemplate(entry);
       } else initialPackage = await blankPackage();
-      if (disposed) return;
-      initialPackage.manifest.title = card?.name ?? "Untitled card";
+      if (!current()) return;
+      initialPackage.manifest.title = product?.name ?? card?.name ?? "Untitled card";
+      if(product){packArtworkDraft=structuredClone(product.artwork??{});reveal.value=packArtworkDraft.reveal??"";artworkAlt.value=packArtworkDraft.alt??"";}
       studio?.dispose();
       studio = mountStudio(canvas, {
         initialPackage,
-        policyProvider: destinationPolicy,
+        policyProvider: target.kind==="card"?()=>getDestinationPolicy(target):undefined,
         library,
-        onPublish: publish,
+        onPublish: pkg=>publish(pkg,target),
       });
       await studio.ready;
-      if (disposed) return;
-      configureAuthoring(studio.getProject(), {
+      if (!current()) return;
+      if(policy)configureAuthoring(studio.getProject(), {
         policy: policy.policy,
         policyRevision: policy.revision,
         context: policy.context,
       });
-      studio.getProject().edit((p) => {
+      if(policy)studio.getProject().edit((p) => {
         p.manifest.authoring.values.card = {
           ...p.manifest.authoring.values.card,
           ...card?.stats,
@@ -274,14 +339,15 @@ export function mountVisualStudio(
         };
       });
       await studio.refreshPolicy();
-      if (disposed) return;
+      if (!current()) return;
       status.textContent =
-        "Edit the card, capture its posters, then publish a reviewed revision.";
+        product?"Edit pack front and back, capture posters, then publish reviewed artwork. Reveal art is an optional image URL.":"Edit the card, capture its posters, then publish a reviewed revision.";
     } catch (e) {
-      if (!disposed) status.textContent = e.message;
+      if (current()) status.textContent = e.message;
     } finally {
-      if (!disposed) {
+      if (current()) {
         launch.disabled = fresh.disabled = false;
+        kind.disabled=select.disabled=variants.disabled=false;
         canvas.inert = false;
         canvas.removeAttribute("aria-busy");
       }
@@ -302,6 +368,7 @@ export function mountVisualStudio(
   return {
     dispose() {
       disposed = true;
+      editorGeneration++;cancelReview?.();
       abort.abort();
       studio?.dispose();
       admin?.dispose();

@@ -1667,8 +1667,14 @@ schemas.Quote.properties.adminRevision={type:'integer',minimum:0};
 // Acquisition responses expose public pack views, never their sealed copy IDs.
 const safeInteger={type:'integer',minimum:0,maximum:Number.MAX_SAFE_INTEGER};
 schemas.Money={type:'object',additionalProperties:false,required:['currencyId','amount'],properties:{currencyId:str,amount:{...safeInteger,minimum:1}}};
+schemas.PresentationReference={type:'object',additionalProperties:false,required:['contract','digest','baseURL'],properties:{contract:{const:'digital-card@0.1'},digest:{type:'string',pattern:'^sha256:[0-9a-f]{64}$'},baseURL:{type:'string',maxLength:2048,format:'dc-presentation-location'}}};
+schemas.PackArtwork={type:'object',additionalProperties:false,properties:{...Object.fromEntries(['front','back','reveal'].map(key=>[key,{type:'string',maxLength:2000,format:'dc-asset-reference'}])),alt:{type:'string',maxLength:200,format:'dc-pack-description'},design:ref('PresentationReference')}};
+schemas.CatalogManifest.properties.products.items.properties.artwork=ref('PackArtwork');
+schemas.PackProductSnapshot={type:'object',required:['id'],properties:{id:str,lineId:str,name:str,revision:{...safeInteger,minimum:1},price:ref('Money'),slots:{type:'array',items:{...schemas.PackSlot,properties:{...schemas.PackSlot.properties,pool:{type:'array',items:{type:'object',required:['variantId','weight'],properties:{variantId:codeId,weight:{type:'number',exclusiveMinimum:0,maximum:2147483647}}}}}}},metadata:{type:'object'},maxQuantity:{type:'integer',minimum:1,maximum:100},duplicatePolicy:{type:'object',properties:{scope:{enum:['none','pack','inventory']},fallback:{enum:['allow','reject']}}},enabled:{type:'boolean'},adminRevision:safeInteger,artwork:ref('PackArtwork')}};
 schemas.PackView={type:'object',required:['id','ownerId','productId','productRevision','lineId','catalogVersion','product','purchaseId','batchIndex','metadata','createdAt','openedAt','cardCount'],properties:{id:str,ownerId:str,productId:str,productRevision:{...safeInteger,minimum:1},lineId:str,catalogVersion:{...safeInteger,minimum:1},product:{type:'object'},purchaseId:{type:['string','null']},batchIndex:safeInteger,metadata:{type:'object'},createdAt:{type:'string',format:'date-time'},openedAt:{type:['string','null'],format:'date-time'},cardCount:safeInteger},not:{anyOf:[{required:['copyIds']},{required:['receipt']}]}};
 schemas.PurchaseResult={type:'object',additionalProperties:false,required:['id','packs','paid'],properties:{id:str,packs:{type:'array',items:ref('PackView'),minItems:1,maxItems:100},paid:ref('Money')}};
+schemas.PackView.properties.product=ref('PackProductSnapshot');
+openapi.paths['/packs'].get.responses['200'].content['application/json'].schema={type:'array',items:ref('PackView')};
 schemas.Quote.additionalProperties=false;
 schemas.Quote.required.push('adminRevision');
 schemas.Quote.properties.quantity.maximum=100;
@@ -1694,6 +1700,7 @@ Object.assign(openapi.paths,{
   '/operator/admin/cards':route('post','administerCards',ref('AdminMutation'),{requestSchema:ref('AdminCardsCommand'),description:'Requires admin.cards. Grant finite-supply copies or remove available owned copies; reserved and sealed copies cannot be removed. History is retained.'})
 });
 Object.assign(schemas,readModelDefinitions);
+schemas.AdminProduct.properties.artwork=ref('PackArtwork');
 Object.assign(schemas.Copy.properties,{definition:ref('CardDefinitionView'),variant:ref('CardVariantView'),bindings:{type:'object',additionalProperties:ref('CardBindingView')},version:{...safeInteger,minimum:1},acquiredAt:{type:'string',format:'date-time'},openedByName:{type:['string','null']},codes:{type:'array',items:ref('CodeSummary')}});
 openapi.paths['/inventory'].get.responses['200'].content['application/json'].schema={oneOf:[{type:'array',items:ref('InventoryCopy')},ref('InventoryPage')]};
 openapi.paths['/users/{userId}/inventory'].get.responses['200'].content['application/json'].schema=ref('TradeInventoryPage');

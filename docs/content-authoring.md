@@ -22,6 +22,18 @@ Published currency/line/rarity/card/variant/product/recipe IDs are retained. Car
 
 JSON duplicate keys are rejected. YAML uses the core schema with duplicate checks and aliases disabled; warnings/unknown tags fail. Input is bounded plain JSON-compatible data: no prototype keys, cycles, excessive nesting, nonfinite numbers or executable code. Import source/HTTP operator bodies are capped at 8 MiB; JSON escaping contributes to request size. Each section has at most 20,000 rows and the complete validated manifest also has structured data limits.
 
+## Pack front, back and reveal artwork
+
+In Creator studio, choose **Pack artwork** under **Design destination**, select a pack, and open the visual pack editor. Build the front with the existing image, text, mask and material tools; use **Front / back** to edit the reverse. Add an optional **Pack reveal artwork URL** and description, capture posters, then publish the reviewed pack artwork revision. The editor retains the editable `.dcard` design reference and publishes both captured posters. Reopening that pack retrieves the saved design.
+
+For an existing asset workflow, import `products[].artwork` with `front`, `back`, `reveal` and `alt`. Image references accept relative or HTTP(S) URLs without embedded credentials. An optional `design` uses the existing pinned digital-card reference contract. Artwork changes require an increased product revision. Already allocated packs retain their product and artwork snapshot; keep those asset URLs stable and retain referenced design digests when cleaning presentation storage.
+
+```json
+{"artwork":{"front":"/demo/art/dawn.svg","back":"/demo/art/cloud.svg","reveal":"/demo/art/aurora.svg","alt":"Sky Atlas illustrated pack"}}
+```
+
+The runnable Sky Discovery product in `examples/catalog.js` uses these three image surfaces. Discover shows the front and offers a back view. My packs and its reveal use the owned pack's snapshot. Missing or invalid images fall back to the default pack artwork or omit the optional reveal image; purchasing and revealing remain available.
+
 ## Creator-defined fields
 
 `cards[].stats` and card/variant/copy metadata are plain objects. Namespaced fields avoid collisions. Card definitions and their metadata are public. Sensitive codes belong in owner-only bindings, not stats/metadata.

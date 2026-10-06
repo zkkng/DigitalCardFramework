@@ -16,6 +16,24 @@ import { maskLayout } from "../src/presentation/webgl.js";
 import { saveMask, applyMask } from "../src/presentation/authoring-tools.js";
 import { analyzePerformance } from "../src/presentation/performance.js";
 
+test("pack artwork validates asset origins and editable design references", () => {
+  const {c}=fixture(),product=c.products[0];
+  product.artwork={front:"/assets/pack-front.webp",back:"https://assets.example/pack-back.webp",reveal:"/assets/reveal.png",alt:"Sky pack",design:{contract:"digital-card@0.1",digest:"sha256:"+"a".repeat(64),baseURL:"https://assets.example/design/"}};
+  assert.deepEqual(validateCatalog(c).products[0].artwork,product.artwork);
+  for(const invalid of [{front:"javascript:alert(1)"},{back:"data:image/png;base64,a"},{reveal:Object.assign(new URL('https://assets.example/art.png'),{username:'test-user',password:'test-password'}).href},{front:"/art.png",arbitrary:1},{alt:"a".repeat(201)},{design:{contract:"unknown"}}]) {
+    const changed=structuredClone(c);changed.products[0].artwork=invalid;assert.throws(()=>validateCatalog(changed));
+  }
+});
+
+test("allocated pack artwork survives a later product revision and opening",()=>{
+  const {core,alice,buy}=fixture(),catalog=core.operatorCatalog(admin),product=catalog.products[0],owned=buy(product.id).packs[0],original=structuredClone(owned.product.artwork);
+  catalog.version++;catalog.products[0].revision++;catalog.products[0].artwork={front:"/next/front.png",back:"/next/back.png",reveal:"/next/reveal.png"};core.publishCatalog(admin,catalog);
+  assert.deepEqual(core.packs(alice).find(pack=>pack.id===owned.id).product.artwork,original);
+  core.openPack(alice,{packId:owned.id,key:"retained-artwork-open"});
+  assert.deepEqual(core.packs(alice).find(pack=>pack.id===owned.id).product.artwork,original);
+  core.close();
+});
+
 test("group isolation requires explicit capability and bounds and preserves grouped mask export", async () => {
   const project=createProject(await build(presentationFixture())),scene=()=>project.scenes.get(project.manifest.faces.front.scene),
     group={id:"isolated",type:"group",isolate:true,width:100,height:100,children:[structuredClone(scene().nodes[0])],opacity:0.5,mask:{polygon:[[0,0],[1,0],[1,1]]}};

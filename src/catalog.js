@@ -135,6 +135,13 @@ export function validateCatalog(input) {
     text(x.name,'pack name'); integer(x.revision,'product revision');
     jsonObject(x.metadata??={});
     if(x.enabled!==undefined)check(typeof x.enabled==='boolean','INVALID_CATALOG','Invalid product enabled flag');
+    if(x.artwork!==undefined) {
+      jsonObject(x.artwork,'pack artwork');
+      check(Object.keys(x.artwork).every(key=>['front','back','reveal','alt','design'].includes(key)),'INVALID_CATALOG','Unknown pack artwork field');
+      for(const key of ['front','back','reveal'])if(x.artwork[key]!==undefined)assetReference(x.artwork[key],'pack '+key+' artwork');
+      if(x.artwork.alt!==undefined)text(x.artwork.alt,'pack artwork description',200);
+      if(x.artwork.design!==undefined){try{validatePresentationReference(x.artwork.design);}catch(error){check(false,'INVALID_CATALOG',error.message);}}
+    }
     for(const key of ['availableFrom','availableUntil'])if(x[key]!==undefined)check(typeof x[key]==='string'&&Number.isFinite(Date.parse(x[key])),'INVALID_CATALOG','Invalid product availability time');
     if(x.availableFrom&&x.availableUntil)check(Date.parse(x.availableUntil)>Date.parse(x.availableFrom),'INVALID_CATALOG','Product availability must have positive duration');
     integer(x.price.amount,'price',1); integer(x.maxQuantity??=20,'max quantity',1,100);

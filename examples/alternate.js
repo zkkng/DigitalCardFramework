@@ -1,5 +1,5 @@
 import {createClient,createRevealController} from '/src/client.js';
-import {mountFramework,mountOpener,installStyles,renderCard,element} from '/src/ui.js';
+import {mountFramework,mountOpener,installStyles,renderCard,renderPack,element} from '/src/ui.js';
 const client=createClient();
 const users=await (await fetch('/demo/users')).json();
 await fetch('/demo/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:users[0].id})});
@@ -11,7 +11,13 @@ function albumRenderer(model,{cardRenderer,onSelect}) {
   for(const {copy}of model.cards){const page=element('article');page.append(cardRenderer(copy,{onSelect}),element('p','',copy.definition.name));node.append(page);}
   return node;
 }
-const app=mountFramework(document.querySelector('#framework'),{client,theme,backRenderer,metadataRenderer,albumRenderer,
+function packRenderer(product,options) {
+  const rendered=renderPack(product,{...options,lineName:'Atlas editions'});
+  rendered.node.style.border='2px solid #3c6849';
+  rendered.node.style.borderRadius='14px';
+  return rendered;
+}
+const app=mountFramework(document.querySelector('#framework'),{client,theme,backRenderer,metadataRenderer,albumRenderer,packRenderer,
   sections:['collection','albums','wallet','shop']});
 await app.ready;
 const modal=document.querySelector('#modal'),modalRoot=document.querySelector('#modal-root');

@@ -838,6 +838,49 @@ try {
   checks.push(
     "visual editor uploads, registers, previews and commits through authenticated policy gate",
   );
+  const oldProduct=core.operatorCatalog(admin).products[0],ownedBefore=core.purchase(alice,{...core.quote(alice,{productId:oldProduct.id,quantity:1}),key:"pack-art-before"}).packs[0];
+  await page.getByLabel("Design destination",{exact:true}).selectOption("pack");
+  await page.getByRole("button",{name:"Open visual pack editor",exact:true}).click();
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Open visual pack editor'&&!button.disabled));
+  await page.getByLabel("Pack reveal artwork URL",{exact:true}).fill("/fixture.dcard");
+  await page.getByLabel("Pack artwork description",{exact:true}).fill("Printed sky pack");
+  await page.getByRole("button",{name:"Add text",exact:true}).click();await idle();
+  await page.getByLabel("Text content",{exact:true}).fill("Pack jacket");await page.getByLabel("Text content",{exact:true}).press("Tab");await idle();
+  await page.getByRole("button",{name:"Capture posters",exact:true}).click();await idle();
+  await page.getByRole("button",{name:"Publish",exact:true}).click();
+  await page.getByRole("button",{name:"Publish reviewed pack artwork",exact:true}).click();await idle();
+  await page.getByText("Pack artwork published. Existing packs retain their artwork.",{exact:true}).waitFor();
+  const publishedProduct=core.operatorCatalog(admin).products.find(product=>product.id===oldProduct.id);
+  assert.equal(publishedProduct.revision,oldProduct.revision+1);assert(publishedProduct.artwork.design.digest);assert(publishedProduct.artwork.front.includes('/presentations/'));
+  assert.deepEqual(core.packs(alice).find(pack=>pack.id===ownedBefore.id).product.artwork,oldProduct.artwork);
+  const packRendererResult=await page.evaluate(async product=>{
+    const {renderPack}=await import('/src/ui.js'),one=renderPack(product),two=renderPack(product);document.body.append(one.node,two.node);
+    await Promise.all([one,two].map(pack=>new Promise((resolve,reject)=>{const image=pack.node.querySelector('img');if(image.complete&&image.naturalWidth)resolve();else{image.addEventListener('load',resolve,{once:true});image.addEventListener('error',()=>reject(new Error('Published pack poster unavailable')),{once:true});}})));
+    one.setSide('back');const independent=two.node.querySelector('img').src.endsWith(product.artwork.front);
+    const retained=one.setSide;one.dispose();retained('front');const disposed=one.node.childNodes.length===0;
+    const invalid=renderPack({...product,artwork:{front:'javascript:alert(1)'}}),fallback=invalid.node.dataset.artworkState;
+    const broken=renderPack({...product,artwork:{front:'/fixture.dcard'}});document.body.append(broken.node);await new Promise(resolve=>broken.node.querySelector('img').addEventListener('error',resolve,{once:true}));
+    const loadFailure=broken.node.dataset.artworkState;one.node.remove();two.dispose();two.node.remove();invalid.dispose();broken.dispose();broken.node.remove();return {independent,disposed,fallback,loadFailure};
+  },publishedProduct);
+  assert.deepEqual(packRendererResult,{independent:true,disposed:true,fallback:'fallback',loadFailure:'fallback'});
+  const targetFencing=await page.evaluate(async()=>{
+    const {mountVisualStudio}=await import('/src/visual-studio-ui.js'),catalog=await window.client.operatorCatalog(),me=await window.client.me(),root=document.createElement('div');document.body.append(root);
+    let finishCatalog,policyCalls=0;const waiting=new Promise(resolve=>{finishCatalog=resolve;}),view=mountVisualStudio(root,{model:{me:{...me,role:'artist'},catalog},client:{operatorCatalog:()=>waiting,effectiveCardPolicy:()=>{policyCalls++;throw new Error('Stale destination policy requested');}}}),
+      launch=[...root.querySelectorAll('button')].find(button=>button.textContent==='Open visual card editor'),opening=launch.onclick(),kind=root.querySelector('[aria-label="Design destination"]'),loadingLocked=kind.disabled;
+    kind.value='pack';kind.onchange();finishCatalog(catalog);await opening;
+    const switched={loadingLocked,policyCalls,editors:root.querySelectorAll('.dcard-studio').length,kind:kind.value};view.dispose();root.remove();
+    const previewRoot=document.createElement('div');document.body.append(previewRoot);let finishPreview,previewStarted,previewCalls=0;
+    const pending=new Promise(resolve=>{finishPreview=resolve;}),entered=new Promise(resolve=>{previewStarted=resolve;}),previewView=mountVisualStudio(previewRoot,{model:{me:{...me,role:'artist'},catalog},client:{...window.client,previewImport:()=>{previewCalls++;previewStarted();return pending;}}}),packKind=previewRoot.querySelector('[aria-label="Design destination"]');
+    packKind.value='pack';packKind.onchange();await [...previewRoot.querySelectorAll('button')].find(button=>button.textContent==='Open visual pack editor').onclick();
+    const publishing=[...previewRoot.querySelectorAll('button')].find(button=>button.textContent==='Publish').onclick();
+    let timeout;await Promise.race([entered,new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('Pack preview did not start: '+previewRoot.textContent)),30000);})]);clearTimeout(timeout);
+    const reviewLocked=packKind.disabled;previewView.dispose();finishPreview({});await publishing;
+    const disposed={previewCalls,reviewLocked,children:previewRoot.childElementCount,dialogs:previewRoot.querySelectorAll('dialog').length};previewRoot.remove();return {switched,disposed};
+  });
+  assert.deepEqual(targetFencing.switched,{loadingLocked:true,policyCalls:0,editors:0,kind:'pack'});
+  assert.deepEqual(targetFencing.disposed,{previewCalls:1,reviewLocked:true,children:0,dialogs:0});
+  checks.push("pack artist front/back publication, immutable allocated artwork, two independent public renderers and invalid/missing-image fallback");
+  await page.getByLabel("Design destination",{exact:true}).selectOption("card");
   await page
     .getByText("Administrator card policies", { exact: true })
     .first()
