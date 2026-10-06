@@ -8,7 +8,47 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { vault, codesFixture } from './codes-fixtures.mjs';
+import { codeSummary } from '../src/codes.js';
+import { page } from '../src/data.js';
 const gift = (x, copy, from=x.alice,to=x.bob) => x.core.proposeTrade(from,{key:'gift-'+copy.id,toUserId:to.userId,give:{copyIds:[copy.id],currencies:[]},receive:{copyIds:[],currencies:[]}});
+
+for(const adapter of ['memory','sqlite'])test('indexed code history preserves former holders, privacy and page semantics: '+adapter,()=>{
+  const store=adapter==='memory'?new MemoryStore():new SQLiteStore(':memory:',{encryptionKey:Buffer.alloc(32,41)});
+  let at='2026-09-30T12:00:00Z';
+  const x=codesFixture({store,stock:200,transfer:'follow-unrevealed',clock:()=>at});
+  const emptyActor={userId:x.core.registerUser(admin,{provider:'test',subject:'no-codes',displayName:'No codes'}).id};
+  try{
+    const first=x.openCode(),second=x.openCode();x.buy('bundle',x.alice,1,'sealed-history');
+    const trade=gift(x,first);x.core.acceptTrade(x.bob,{key:'accept-history',tradeId:trade.id});
+    store.transact(s=>{s.codes[second.codes[0].id].expiresAt='2026-09-30T13:00:00Z';s.codes[second.codes[0].id].metadata={privateLabel:'holder-search-only'};});
+    at='2026-09-30T14:00:00Z';
+    const options=[{}, {sort:'name'}, {sort:'newest',limit:1}, {search:'holder-search-only'}, {search:'expired'}, {search:'another holder'}, {search:'SECRET-REWARD'}];
+    const expected=new Map();
+    for(const actor of [x.alice,x.bob])for(const input of options){
+      expected.set(JSON.stringify([actor.userId,input]),store.read(s=>page(Object.values(s.codes).filter(row=>s.copies[row.copyId]?.state!=='sealed'&&(row.holderId===actor.userId||row.holderHistory.includes(actor.userId))).map(row=>({...codeSummary(s,row,actor.userId,at),copyId:row.copyId,name:s.copies[row.copyId].definition.name,createdAt:row.allocatedAt})),input)));
+    }
+    const before=store.diagnostics?.();
+    store.read=()=>{throw Error('History must not materialize the installation');};
+    for(const actor of [x.alice,x.bob])for(const input of options)assert.deepEqual(x.core.codeHistory(actor,input),expected.get(JSON.stringify([actor.userId,input])));
+    const alice=x.core.codeHistory(x.alice),bob=x.core.codeHistory(x.bob);
+    assert.equal(alice.total,2);assert.equal(bob.total,1);
+    const former=alice.items.find(row=>row.id===first.codes[0].id);
+    assert.equal(former.canReveal,false);assert.equal(former.metadata,undefined);assert.equal(former.history,undefined);
+    assert(!JSON.stringify([alice,bob]).includes('SECRET-REWARD'));
+    const one=x.core.codeHistory(x.alice,{limit:1}),two=x.core.codeHistory(x.alice,{limit:1,after:one.next});
+    assert.deepEqual([...one.items,...two.items],alice.items);assert.equal(two.next,null);
+    assert.throws(()=>x.core.codeHistory(x.alice,{after:'missing'}),code('INVALID_CURSOR'));
+    assert.throws(()=>x.core.codeHistory({...x.alice,disabled:true}),code('UNAUTHENTICATED'));
+    assert.throws(()=>x.core.codeHistory({userId:'missing'}),code('UNAUTHENTICATED'));
+    if(before){
+      assert.equal(store.diagnostics().compatibilityMaterializations,before.compatibilityMaterializations);
+      const start=store.diagnostics();x.core.codeHistory(x.alice);
+      assert.equal(store.diagnostics().decodedQueryRecords-start.decodedQueryRecords,5);
+      const empty=store.diagnostics();assert.equal(x.core.codeHistory(emptyActor).total,0);
+      assert.equal(store.diagnostics().decodedQueryRecords-empty.decodedQueryRecords,1);
+    }
+  }finally{x.core.close();}
+});
 
 test('one unique code insert per pack; allocation, opening and provenance survive retries',()=>{
   const x=codesFixture();const bought=x.buy('bundle',x.alice,3,'multi');

@@ -273,6 +273,14 @@ export class CodeService {
     })),options));
   }
   history(actor, options = {}) {
+    if(typeof this.#store.query==='function')return this.#store.query(q=>{
+      check(actor?.disabled!==true&&typeof actor?.userId==='string','UNAUTHENTICATED','A verified user is required',401);
+      const s={users:{},copies:{}};
+      if(actor?.userId){const found=q.get('users',actor.userId);if(found)s.users[found.id]=found;}
+      const u=user(s,actor),entries=q.codeHistoryEntries(u.id);
+      for(const {copy} of entries)s.copies[copy.id]=copy;
+      return page(entries.map(({code:row,copy})=>({...codeSummary(s,row,u.id,this.#clock()),copyId:row.copyId,name:copy.definition.name,createdAt:row.allocatedAt})),options);
+    });
     return this.#store.read(s => {
       const u = user(s, actor);
       const rows = Object.values(s.codes ?? {}).filter(row => s.copies[row.copyId]?.state !== 'sealed' && (row.holderId === u.id || row.holderHistory.includes(u.id)))

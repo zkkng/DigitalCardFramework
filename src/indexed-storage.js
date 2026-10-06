@@ -1,8 +1,8 @@
 import {check} from './catalog.js';
 import {projection, queryOptions} from './storage-query.js';
 
-export const STORAGE_SCHEMA = 2;
-export const schemaSql = `
+export const STORAGE_SCHEMA = 3;
+export const schemaSqlV2 = `
 CREATE TABLE framework_meta(id INTEGER PRIMARY KEY CHECK(id=1),schema_version INTEGER NOT NULL,codec_check TEXT NOT NULL) STRICT;
 CREATE TABLE framework_fields(name TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('object','array','scalar')),payload TEXT) STRICT;
 CREATE TABLE framework_entities(collection TEXT NOT NULL,entity_key TEXT NOT NULL,ordinal INTEGER NOT NULL,payload TEXT NOT NULL,
@@ -25,6 +25,12 @@ CREATE INDEX framework_created ON framework_entities(collection,created_at DESC,
 CREATE INDEX framework_name ON framework_entities(collection,name_sort,entity_key);
 CREATE INDEX framework_order ON framework_entities(collection,ordinal);
 `;
+export const codeHolderSchemaSql = `
+CREATE TABLE framework_code_holders(collection TEXT NOT NULL CHECK(collection='codes'),code_id TEXT NOT NULL,holder_hash TEXT NOT NULL,copy_id TEXT,
+ PRIMARY KEY(holder_hash,code_id),FOREIGN KEY(collection,code_id) REFERENCES framework_entities(collection,entity_key) ON DELETE CASCADE) STRICT;
+CREATE INDEX framework_code_membership ON framework_code_holders(collection,code_id);
+`;
+export const schemaSql = schemaSqlV2 + codeHolderSchemaSql;
 
 const fieldName = value => {
   check(typeof value === 'string' && value.length <= 200 && !['__proto__','constructor','prototype'].includes(value), 'INVALID_STATE', 'Invalid state field', 500);
@@ -59,7 +65,8 @@ export function encodeState(state, codec, identityHash, keyHash) {
       const identity = name === 'users' && typeof item?.provider === 'string' && typeof item?.subject === 'string'
         ? identityHash(item.provider, item.subject) : null;
       entities.set(JSON.stringify([name,key]), {collection:name, key, storageKey:recordKey(name,key,keyHash), value:item, ordinal:ordinal++, raw:JSON.stringify(item),
-        bytes:encodedBytes(codec,wrapper(name,key,item)), identity, projected});
+        bytes:encodedBytes(codec,wrapper(name,key,item)), identity, projected,
+        holders:name==='codes'?[...new Set([item.holderId,...(item.holderHistory??[])].filter(id=>typeof id==='string'))].map(id=>keyHash('code-holder',id)):[]});
     }
   }
   const usedBytes = [...fields.values()].reduce((n,row) => n + row.bytes,0)
@@ -108,9 +115,19 @@ export function writeDifference(db, before, after) {
     }
     const p=row.projected;
     putEntity.run(row.collection,row.storageKey,row.ordinal,after.encode(row.collection,row.key,row.value),row.identity,p.ownerId,p.holderId,p.state,p.status,p.cardId,p.variantId,p.lineId,p.rarityId,p.poolId,p.providerId,p.createdAt,p.name,p.search,p.cardType);
+    if(row.collection==='codes')writeCodeHolders(db,row);
     changed++;
   }
   return changed;
+}
+
+function writeCodeHolders(db,row) {
+  db.prepare("DELETE FROM framework_code_holders WHERE collection='codes' AND code_id=?").run(row.storageKey);
+  const insert=db.prepare("INSERT INTO framework_code_holders VALUES('codes',?,?,?)");
+  for(const holder of row.holders)insert.run(row.storageKey,holder,row.value.copyId??null);
+}
+export function migrateCodeHolders(db,encoded) {
+  for(const row of encoded.entities.values())if(row.collection==='codes')writeCodeHolders(db,row);
 }
 
 const columns={ownerId:'owner_id',holderId:'holder_id',state:'state',status:'status',cardId:'card_id',variantId:'variant_id',lineId:'line_id',rarityId:'rarity_id',poolId:'pool_id',providerId:'provider_id'};
@@ -149,6 +166,18 @@ export function sqliteQueries(db,codec,identityHash,keyHash,onDecode=()=>{}) {
   };
   const count=(collection,column,id,extra='')=>db.prepare(`SELECT COUNT(*) AS count FROM framework_entities WHERE collection=? AND ${column}=?${extra}`).get(collection,id).count;
   return {get,value,
+    codeHistoryEntries(holderId) {
+      check(typeof holderId==='string','INVALID_INPUT','Invalid holder identifier');
+      return db.prepare(`SELECT e.collection,e.entity_key,e.payload,c.entity_key AS copy_key,c.payload AS copy_payload FROM framework_code_holders h
+        JOIN framework_entities e ON e.collection=h.collection AND e.entity_key=h.code_id
+        JOIN framework_entities c ON c.collection='copies' AND c.entity_key=h.copy_id
+        WHERE h.holder_hash=? AND c.state!='sealed' ORDER BY e.ordinal`).all(keyHash('code-holder',holderId)).map(record=>{
+          const code=decode(record),copy=decode({collection:'copies',entity_key:record.copy_key,payload:record.copy_payload});
+          check(code.holderId===holderId||(code.holderHistory??[]).includes(holderId),'INVALID_STATE','Indexed code holder differs',500);
+          check(code.copyId===copy.id&&copy.state!=='sealed','INVALID_STATE','Indexed code copy differs',500);
+          return {code,copy};
+        });
+    },
     records(field,{ids}) {check(Array.isArray(ids)&&ids.length<=2000&&ids.every(id=>typeof id==='string'),'INVALID_INPUT','Invalid record identifiers');return Object.fromEntries([...new Set(ids)].flatMap(id=>{const result=get(field,id);return result===undefined?[]:[[id,result]];}));},
     userByIdentity(provider,subject){const row=db.prepare("SELECT collection,entity_key,payload FROM framework_entities WHERE collection='users' AND identity_hash=?").get(identityHash(provider,subject));if(!row)return undefined;const user=decode(row);check(user.provider===provider&&user.subject===subject,'INVALID_STATE','Indexed identity differs',500);return user;},
     providerIdentity(userId){const user=get('users',userId);return user?{provider:user.provider,subject:user.subject}:undefined;},
