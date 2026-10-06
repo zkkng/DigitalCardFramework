@@ -1022,7 +1022,13 @@ export function mountStudio(
     },
     { signal: events.signal },
   );
-  const authoring = mountAuthoringTools({toolbar,getProject:()=>project,getSide:()=>side,getSelected:()=>selected,select:id=>{selected=id;},rebuild,open,report,library,policyProvider,context,panels});
+  const authoring = mountAuthoringTools({toolbar,getProject:()=>project,getSide:()=>side,getSelected:()=>selected,select:(id, face)=>{
+    const destination = face ?? [side, ...Object.keys(project.manifest.faces).filter(f=>f!==side)].find(f=>
+      allNodes(project.scenes.get(project.manifest.faces[f].scene).nodes).some(n=>n.id===id));
+    if (!destination) return;
+    side = destination;
+    selected = id;
+  },rebuild,open,report,library,policyProvider,context,panels});
   root.append(authoring.root);
   const ready = initialPackage
     ? open(initialPackage)

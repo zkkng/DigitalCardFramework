@@ -436,6 +436,7 @@ export function mountAuthoringTools({
     stats.append(el("summary", "Card stats"));
     root.append(stats);
     const fields = p.manifest.authoring?.fields ?? [];
+    const fieldControls = new Map();
     if (!fields.length)
       stats.append(
         el("p", "Add a field or load the destination policy to begin."),
@@ -455,7 +456,7 @@ export function mountAuthoringTools({
         id: JSON.stringify(v),
         name: String(v),
       }));
-      input(
+      const control = input(
         stats,
         f.label + (f.required ? " *" : ""),
         choices
@@ -489,7 +490,14 @@ export function mountAuthoringTools({
           disabled,
         },
       );
-      if (error) stats.append(el("p", f.label + ": " + error));
+      fieldControls.set(scope + ".stats." + f.key, control);
+      if (error) {
+        const message = el("p", f.label + ": " + error);
+        message.id = "dcs-field-error-" + crypto.randomUUID();
+        control.setAttribute("aria-invalid", "true");
+        control.setAttribute("aria-describedby", message.id);
+        stats.append(message);
+      }
       if (value === null) stats.append(el("p", f.label + ": null"));
       if (!disabled && f.nullable)
         button(stats, "Set " + f.label + " to null", async () => {
@@ -744,6 +752,61 @@ export function mountAuthoringTools({
         });
       file.click();
     });
+    const layouts = {}, textDiagnostics = [], fontCache = new Map();
+    for (const [face, definition] of Object.entries(p.manifest.faces)) {
+      for (const node of flattenNodes(p.scenes.get(definition.scene).nodes).filter(n=>n.type === "text")) {
+        const asset = p.manifest.assets.find(a=>a.id === node.typography?.fontAsset);
+        if (!asset) continue;
+        try {
+          if (!fontCache.has(asset.id)) fontCache.set(asset.id, inspectFont(p.assets.get(asset.path), asset.mediaType).font);
+          const font = fontCache.get(asset.id), text = textValue(node, p.manifest),
+            layout = layoutText(node, text, fontMeasure(font, node));
+          layouts[face + ":" + node.id] = { ...layout, nodeId: node.id, face };
+          for (const issue of fontDiagnostics(font, node, text)) textDiagnostics.push({ face, node, message: issue.message });
+          if (layout.overflow) textDiagnostics.push({ face, node, message: "Text overflows its box." });
+        } catch (error) {
+          textDiagnostics.push({ face, node, message: error.message });
+        }
+      }
+    }
+    const focusField = (control) => {
+      stats.open = true;
+      const target = control.disabled ? control.parentElement : control;
+      if (control.disabled) target.tabIndex = -1;
+      target.focus();
+      target.scrollIntoView({ block: "nearest" });
+    };
+    const navigateIssue = async (issue) => {
+      const control = fieldControls.get(issue.path);
+      if (control) return focusField(control);
+      const faces = [...new Set([issue.face, getSide(), ...Object.keys(p.manifest.faces)].filter(Boolean))];
+      const candidates = faces.flatMap(face => flattenNodes(p.scenes.get(p.manifest.faces[face].scene).nodes).map(node=>({ face, node })));
+      const exact = candidates.filter(({node})=>issue.path === node.id);
+      const matches = exact.length ? exact : candidates.filter(({node})=>issue.path.startsWith(node.id + "."))
+        .sort((a,b)=>b.node.id.length-a.node.id.length);
+      const chosen = issue.face ? matches.find(candidate=>candidate.face===issue.face) : matches[0];
+      const navigate = async ({ node, face }) => {
+        select(node.id, face);
+        await rebuild();
+        root.querySelector("fieldset input:not(:disabled), fieldset textarea:not(:disabled), fieldset select:not(:disabled)")?.focus();
+      };
+      if (!issue.face && chosen && matches.filter(candidate=>candidate.node.id===chosen.node.id).length > 1) {
+        const dialog = el("dialog");
+        dialog.append(el("p", "This layer ID is used on multiple faces. Choose the layer to inspect."));
+        for (const candidate of matches.filter(candidate=>candidate.node.id===chosen.node.id))
+          button(dialog, "Inspect " + candidate.face + " / " + (candidate.node.name ?? candidate.node.id), async () => {
+            dialog.close();
+            dialog.remove();
+            await navigate(candidate);
+          });
+        button(dialog, "Cancel layer selection", () => { dialog.close(); dialog.remove(); });
+        root.append(dialog);
+        dialog.showModal();
+        return;
+      }
+      if (chosen) return navigate(chosen);
+      report(issue.message + " · Rule: " + (issue.rule ?? issue.code));
+    };
     const rules = el("details");
     rules.append(el("summary", "Card policy"));
     root.append(rules);
@@ -766,18 +829,23 @@ export function mountAuthoringTools({
       const issues = inspectCardPolicy(effective.policy, {
         card: { ...context, stats: p.manifest.authoring?.values?.card ?? {} },
         variant: { stats: p.manifest.authoring?.values?.variant ?? {} },
-        presentation: { manifest: p.manifest, scenes: p.scenes },
+        presentation: { manifest: p.manifest, scenes: p.scenes, layouts },
         templates:
           effective.resources
             ?.filter((r) => r.kind === "template")
             .map((r) => r.document) ?? [],
       });
-      for (const issue of issues) {
-        const b = button(rules, issue.path + ": " + issue.message, () => {
-          select(issue.path.split(".")[0]);
-          return rebuild();
-        });
+      const projected = issues.flatMap(issue => issue.code === "TEXT_OVERFLOW"
+        ? Object.values(layouts).filter(layout=>layout.nodeId===issue.path && layout.overflow).map(layout=>({ ...issue, face: layout.face }))
+        : [issue]);
+      const shown = new Set();
+      for (const issue of projected) {
+        const key = JSON.stringify([issue.code, issue.path, issue.rule, issue.face]);
+        if (shown.has(key)) continue;
+        shown.add(key);
+        const b = button(rules, (issue.face ? issue.face + " / " : "") + issue.path + ": " + issue.message, () => navigateIssue(issue));
         b.className = "dcs-issue";
+        rules.append(el("p", "Rule: " + issue.rule + " · Policies: " + issue.policies.join(", ")));
       }
     } else
       rules.append(
@@ -788,25 +856,9 @@ export function mountAuthoringTools({
       );
     const diagnostics = el("div");
     root.append(diagnostics, status);
-    for (const node of nodes.filter((n) => n.type === "text")) {
-      const asset = p.manifest.assets.find(
-        (a) => a.id === node.typography?.fontAsset,
-      );
-      if (!asset) continue;
-      try {
-        const { font } = inspectFont(p.assets.get(asset.path), asset.mediaType),
-          text = textValue(node, p.manifest),
-          layout = layoutText(node, text, fontMeasure(font, node));
-        for (const d of fontDiagnostics(font, node, text))
-          diagnostics.append(el("p", d.message));
-        if (layout.overflow)
-          diagnostics.append(
-            el("p", (node.name ?? node.id) + ": text overflows its box."),
-          );
-      } catch (e) {
-        diagnostics.append(el("p", e.message));
-      }
-    }
+    for (const diagnostic of textDiagnostics)
+      button(diagnostics, diagnostic.face + " / " + (diagnostic.node.name ?? diagnostic.node.id) + ": " + diagnostic.message,
+        () => navigateIssue({ path: diagnostic.node.id, ...diagnostic }));
     for (const panel of panels) {
       const contribution = panel({
         project: p,

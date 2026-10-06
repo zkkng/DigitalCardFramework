@@ -274,6 +274,51 @@ try {
   checks.push("variant-specific artwork overrides the base design in the public renderer");
 
   await page.evaluate(async () => {
+    const { mountStudio } = await import("/src/presentation/studio.js"),
+      { createProject } = await import("/src/presentation/project.js"),
+      { addText, createMemoryLibrary } = await import("/src/presentation/authoring-tools.js"),
+      { importPackage } = await import("/src/presentation/package.js");
+    const p = createProject(await importPackage(new Uint8Array(await (await fetch("/fixture.dcard")).arrayBuffer())));
+    const asset = await p.addFont(new File([await (await fetch("/font.ttf")).arrayBuffer()], "Test.ttf", { type: "font/ttf" }));
+    addText(p, "front", { id: "foo", text: "Prefix layer" });
+    addText(p, "front", { id: "foo.bar", text: "Short", width: 200, height: 100,
+      typography: { fontAsset: asset.id, size: 12, overflow: "wrap" } });
+    window.overflowLayer = addText(p, "back", { id: "foo.bar", text: "A title too long for its box", width: 10, height: 10,
+      typography: { fontAsset: asset.id, size: 30, overflow: "wrap" } });
+    window.studio.dispose();
+    window.studio = mountStudio(document.querySelector("#root"), {
+      initialPackage: await p.export({ retainSources: true }), library: createMemoryLibrary(),
+      policyProvider: async () => ({ revision: 1, policy: {
+        fields: [{ key: "museum.catalog", label: "Catalog number", type: "integer", required: true }],
+        defaults: {}, requirements: { rejectOverflow: true, minimumFontSize: 20 }, provenance: {}, references: ["museum.cards@1"],
+      } }),
+    });
+    await window.studio.ready;
+    await window.studio.refreshPolicy();
+  });
+  await page.getByText("Card policy", { exact: true }).click();
+  await page.getByRole("button", { name: "foo.bar: Text is below the minimum size", exact: true }).click();
+  await page.getByRole("dialog").getByText("This layer ID is used on multiple faces. Choose the layer to inspect.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Inspect front / Text", exact: true }).click();
+  assert.equal(await page.getByLabel("Text content", { exact: true }).inputValue(), "Short");
+  await page.getByText("Card policy", { exact: true }).click();
+  const overflowId = await page.evaluate(() => window.overflowLayer);
+  const overflowIssue = page.getByRole("button", { name: "back / " + overflowId + ": Text overflows its box", exact: true });
+  assert.equal(await overflowIssue.count(), 1);
+  await overflowIssue.focus();
+  await overflowIssue.press("Enter");
+  await page.getByRole("heading", { name: "Back layers", exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Text content", { exact: true }).inputValue(), "A title too long for its box");
+  await page.getByText("Card policy", { exact: true }).click();
+  await page.getByRole("button", { name: "card.stats.museum.catalog: Required field is missing", exact: true }).click();
+  const catalogInput = page.getByLabel("Catalog number *", { exact: true });
+  assert.equal(await catalogInput.getAttribute("aria-invalid"), "true");
+  assert(await catalogInput.evaluate(el => document.activeElement === el));
+  assert(await catalogInput.getAttribute("aria-describedby"));
+  await page.screenshot({ path: resolve(output, "policy-diagnostics.png"), fullPage: true });
+  checks.push("face-specific overflow, exact dotted layer IDs, explicit duplicate-ID choice, keyboard navigation and focused required-field errors");
+
+  await page.evaluate(async () => {
     window.studio.dispose();
     const { createClient } = await import("/src/client.js"),
       { mountVisualStudio } = await import("/src/visual-studio-ui.js");

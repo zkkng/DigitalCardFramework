@@ -16,6 +16,10 @@ In **Card stats**, enter policy-defined values or define a custom field. Add an 
 
 Boolean and enumeration controls start with **No value** for an absent field. Nullable fields offer **Set … to null**; clearing a field removes it. Select a bound layer to change its public card/variant source, label, unit, missing-value text, number locale and decimal places. Bar layers also expose minimum and maximum. These properties format the value without changing its authoritative source. Locked layers require unlocking before text or style edits.
 
+Open **Card policy** to review errors and their governing rule/policy references. Activate a field error to open **Card stats** and focus its control; activate a layer error to select its face and open its typography controls. Required and invalid values have accessible error descriptions. Embedded-font layout diagnostics cover both faces, including overflow rejected by the destination policy. System-font layout still needs server validation; editor diagnostics do not approve publication.
+
+Overflow errors identify their face. When another rule identifies a layer ID reused on both faces, choose the face in the layer-selection dialog. Layer IDs containing periods are preserved in navigation.
+
 Save `.dcproject` for editable source and local draft data. Exported `.dcard` files omit declared private fields/values and unused source assets. Public art supports card/variant snapshots; private and per-copy data belong in an authorized host view. Capture posters after editing so the fallback depicts the same revision.
 
 ## Reuse a design
