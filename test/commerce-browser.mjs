@@ -1,14 +1,13 @@
 import { createServer } from "node:http";
-import { readFile, mkdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import assert from "node:assert/strict";
 import * as playwright from "playwright";
 import { fixture, admin } from "./helpers.js";
 import { createApiHandler } from "../src/http.js";
+import {serveReference} from '../src/static.js';
 const engine = process.env.BROWSER_ENGINE ?? "chromium",
-  output = path.resolve(process.argv[2] ?? "../PortableCardQA/commerce"),
-  root = fileURLToPath(new URL("../src/", import.meta.url));
+  output = path.resolve(process.argv[2] ?? "../PortableCardQA/commerce");
 const x = fixture(),
   seller = { ...x.alice, role: "admin" },
   shop = x.core.createShop(seller, {
@@ -32,25 +31,13 @@ const server = createServer(async (req, res) => {
     if (!name) {
       res.setHeader("Content-Type", "text/html");
       res.end(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><main id="root"></main><script type="module">
-import {renderMarketplace} from '/marketplace-ui.js';import {createClient} from '/client.js';import {defaultCSS} from '/styles.js';
+import {renderMarketplace} from '/src/marketplace-ui.js';import {createClient} from '/src/client.js';import {defaultCSS} from '/src/styles.js';
 const client=createClient(),me=await client.me(),catalog=await client.catalog(),inventory=await client.inventory(),packs=await client.packs();const style=document.createElement('style');style.textContent=defaultCSS;document.head.append(style);const root=document.querySelector('#root');root.className='dc-root';window.view=renderMarketplace({me,catalog,inventory,packs},{client,cardRenderer:copy=>{const node=document.createElement('p');node.textContent=copy.definition.name+' · '+copy.id;return node;}});root.append(view.node);await view.ready;window.ready=true;
 </script></body></html>`);
       return;
     }
-    if (
-      ![
-        "marketplace-ui.js",
-        "ui-kit.js",
-        "client.js",
-        "styles.js",
-        "atelier-styles.js",
-      ].includes(name)
-    ) {
-      res.writeHead(404).end();
-      return;
-    }
-    res.setHeader("Content-Type", "text/javascript");
-    res.end(await readFile(path.join(root, name)));
+    if(await serveReference(req,res))return;
+    res.writeHead(404).end();
   } catch {
     res.writeHead(500).end();
   }
@@ -79,6 +66,7 @@ try {
   });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  page.on('response',response=>{if(response.status()>=400)errors.push(response.status()+' '+response.url());});
   await page.goto(origin);
   await page.waitForFunction(() => window.ready);
   assert.equal(x.core.wallet(x.bob).credits, 10000);
