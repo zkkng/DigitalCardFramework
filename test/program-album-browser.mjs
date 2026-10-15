@@ -13,14 +13,19 @@ import {serveReference} from '../src/static.js';
 import {programHeaders} from '../src/presentation/program.js';
 
 async function keyTo(page,target){
+  let steps=0;const visited=[];
+  try{
   await target.waitFor({state:'visible'});
   const deadline=Date.now()+15000;
   while(!await target.evaluate(node=>node===document.activeElement)){
     assert(Date.now()<deadline,'Keyboard traversal must reach the intended control');
-    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');steps++;
+    visited.push(await target.evaluate(()=>({tag:document.activeElement?.tagName,label:document.activeElement?.getAttribute('aria-label'),text:['BUTTON','SUMMARY'].includes(document.activeElement?.tagName)?document.activeElement.textContent?.slice(0,60):undefined,documentFocus:document.hasFocus()})));if(visited.length>16)visited.shift();
   }
   assert(await target.evaluate(node=>{const r=node.getBoundingClientRect();return node.matches(':focus-visible')&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;}),'Keyboard target must have visible focus in the viewport');
+  }catch(error){error.albumKeyboard={steps,visited,state:await keyboardState(target).catch(()=>null)};console.error('Album keyboard failure',JSON.stringify(error.albumKeyboard));throw error;}
 }
+async function keyboardState(target){return target.evaluate(node=>{const modal=document.querySelector('dialog:modal'),scope=modal??document,controls=[...scope.querySelectorAll('button,input,select,textarea,summary,a[href],iframe,[tabindex]')].filter(item=>!item.matches(':disabled')&&item.tabIndex>=0&&item.getClientRects().length),identify=item=>({tag:item?.tagName,label:item?.getAttribute('aria-label')??item?.labels?.[0]?.textContent,text:['BUTTON','SUMMARY'].includes(item?.tagName)?item.textContent?.slice(0,60):undefined});return {target:{...identify(node),connected:node.isConnected,disabled:node.matches(':disabled'),inert:!!node.closest('[inert]'),rect:node.getBoundingClientRect().toJSON()},active:identify(document.activeElement),documentFocus:document.hasFocus(),modal:!!modal,targetInModal:!!modal?.contains(node),rootBusy:document.querySelector('#root')?.hasAttribute('aria-busy'),controlCount:controls.length,targetPosition:controls.indexOf(node),activePosition:controls.indexOf(document.activeElement),scrollY};});}
 async function keyActivate(page,target,key='Enter'){await keyTo(page,target);await page.keyboard.press(key);}
 async function keyText(page,target,value){await keyTo(page,target);await page.keyboard.press('ControlOrMeta+A');await page.keyboard.type(value);}
 
@@ -96,6 +101,7 @@ try{
   await page.getByLabel('Page 1 title',{exact:true}).fill('Edited first page');
   await page.getByRole('button',{name:'Move page 1 later',exact:true}).click();
   await page.locator('.dc-arrange-tile').filter({has:page.getByRole('button',{name:'Move Dawn earlier',exact:true})}).getByRole('combobox').selectOption('second');
+  await writeFile(resolve(output,'album-name-keyboard-entry.json'),JSON.stringify({engine,language,state:await keyboardState(page.getByLabel('Album name',{exact:true}))},null,2));
   await keyText(page,page.getByLabel('Album name',{exact:true}),'Edited private album');await page.keyboard.press('Tab');
   await page.getByRole('button',{name:'Preview album',exact:true}).click();await album.scrollIntoViewIfNeeded();await album.frameLocator('iframe').locator('html[data-dc-album-state="ready"]').waitFor();
   await keyActivate(page,page.getByRole('button',{name:'Save album',exact:true}));await page.waitForFunction(()=>!document.querySelector('#root').hasAttribute('aria-busy'));assert.equal(saves.length,1,await page.locator('.dc-status').textContent());
@@ -143,7 +149,7 @@ try{
   await page.screenshot({path:resolve(output,'album-program.png'),fullPage:true});await page.evaluate(()=>{window.albumTest.gateRenderer.dispose();window.albumTest.gateRenderer.setEnabled(true);});assert.equal(await page.locator('#probes iframe').count(),0);
   checks.push('All 1000 projected placements render without truncation; optional previews arrive once per bounded batch; disabled late preview cannot update an obsolete session, fresh remount works and final disposal is terminal');
   assert.deepEqual(errors,[]);await writeFile(resolve(output,'result.json'),JSON.stringify({engine,language,checks,errors},null,2));console.log(JSON.stringify({engine,language,checks,errors}));return {engine,language,checks,errors};
-}catch(error){const page=browser?.contexts()[0]?.pages()[0];if(page)await writeFile(resolve(output,'failure.json'),JSON.stringify({message:error.message,errors,status:await page.locator('.dc-status').allTextContents(),editorErrors:await page.locator('.dc-error').allTextContents()},null,2));throw error;
+}catch(error){const page=browser?.contexts()[0]?.pages()[0];if(page)await writeFile(resolve(output,'failure.json'),JSON.stringify({message:error.message,errors,keyboard:error.albumKeyboard,status:await page.locator('.dc-status').allTextContents(),editorErrors:await page.locator('.dc-error').allTextContents()},null,2));throw error;
 }finally{await browser?.close();for(const item of paused)if(!item.response.destroyed)item.response.end(item.bytes);for(const server of [hostServer,programServer]){server.closeAllConnections();if(server.listening)await new Promise(resolve=>server.close(resolve));}x.core.close();await rm(temp,{recursive:true,force:true});}
 
 }
