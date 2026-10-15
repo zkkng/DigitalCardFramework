@@ -89,7 +89,7 @@ export async function validateInWorker(
     const abort = () =>
       finish(new DOMException("Import cancelled", "AbortError"));
     const timer = setTimeout(
-      () => finish(new Error("Import worker time limit exceeded")),
+      () => finish(new PresentationError("IMPORT", "Import worker time limit exceeded")),
       timeoutMs,
     );
     worker.once("error", (error) => finish(error));
@@ -307,7 +307,7 @@ export async function createPresentationStore({
               reject(new DOMException("Import cancelled", "AbortError"));
             controller.signal.addEventListener("abort", abort, { once: true });
             timer = setTimeout(() => {
-              reject(new Error("Media scan time limit exceeded"));
+              reject(new PresentationError("IMPORT", "Media scan time limit exceeded"));
               controller.abort();
             }, scanTimeoutMs);
             if (controller.signal.aborted) abort();
@@ -323,7 +323,8 @@ export async function createPresentationStore({
       job.state = "ready";
     } catch (error) {
       job.state = controller.signal.aborted ? "cancelled" : "rejected";
-      job.error = publicMessage(error);
+      job.error = controller.signal.aborted && !expectedError(error)
+        ? "Import cancelled" : publicMessage(error);
       job.errorSafe = true;
     } finally {
       try {

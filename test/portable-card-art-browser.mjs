@@ -35,7 +35,7 @@ async function keyTo(page,target,direction='Tab'){
   await page.screenshot({path:resolve(output,'artist-keyboard-failure.png'),fullPage:true}).catch(()=>{});throw error;
  }
 }
-async function keyActivate(page,target,key='Enter'){await keyTo(page,target);await page.keyboard.press(key);}
+async function keyActivate(page,target,key='Enter',direction='Tab'){await keyTo(page,target,direction);await page.keyboard.press(key);}
 async function keyText(page,target,value,direction='Tab'){await keyTo(page,target,direction);await page.keyboard.press('ControlOrMeta+A');await page.keyboard.type(value);}
 
 const output=resolve(process.argv[2]??'test-results/portable-card-art'),engine=process.env.BROWSER_ENGINE??'chromium',language=process.env.DC_ART_LANGUAGE??'python';
@@ -131,7 +131,8 @@ try{
   assert.equal(await page.getByLabel('x',{exact:true}).inputValue(),'17');
   await keyText(page,page.getByLabel('x',{exact:true}),'42');await page.getByLabel('x',{exact:true}).press('Tab');await idle();
   await keyText(page,page.getByLabel('Card title',{exact:true}),'Celestial Study · published','Shift+Tab');await page.getByLabel('Card title',{exact:true}).press('Tab');await idle();
-  await keyActivate(page,page.getByRole('button',{name:'Capture posters',exact:true}));await idle();
+  // The capture toolbar precedes the property fields in keyboard order.
+  await keyActivate(page,page.getByRole('button',{name:'Capture posters',exact:true}),'Enter','Shift+Tab');await idle();
   await page.getByText('Both face posters captured from the renderer.',{exact:true}).waitFor();
   assert.deepEqual(x.core.operatorCatalog(admin),before,'Editing/capture must not publish the catalog');
   checks.push('Generated portable archive opens through file chooser, retains foil/motion, and allows native layer editing and two-face capture');
