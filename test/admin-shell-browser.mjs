@@ -25,37 +25,35 @@ function captureAdminKeyboard(){
  const observer=new MutationObserver(records=>trace.domMutations+=records.length);observer.observe(document.querySelector('#root')??document.body,{childList:true,subtree:true});
  window.adminKeyboardProbe={trace,stop(){events.abort();observer.disconnect();if(HTMLElement.prototype.focus===watchedFocus)HTMLElement.prototype.focus=focus;if(Event.prototype.preventDefault===watchedPrevent)Event.prototype.preventDefault=prevent;}};record('installed');
 }
-async function compareAdminGeometry(page){
- const before=await page.evaluate(()=>{
-  const controls=[...document.querySelectorAll('button,input,select,textarea,[tabindex]')].filter(node=>!node.matches(':disabled')&&node.tabIndex>=0&&node.getClientRects().length),ancestors=[];
-  const describe=node=>{const css=getComputedStyle(node);return {tag:node.tagName,id:node.id,classes:typeof node.className==='string'?node.className.slice(0,100):undefined,role:node.getAttribute('role'),tabindex:node.getAttribute('tabindex'),tabIndex:node.tabIndex,inert:node.inert,hidden:node.hidden,root:node.getRootNode().constructor.name,shadow:!!node.shadowRoot,rect:node.getBoundingClientRect().toJSON(),css:{display:css.display,visibility:css.visibility,contentVisibility:css.contentVisibility,overflowX:css.overflowX,overflowY:css.overflowY,position:css.position,pointerEvents:css.pointerEvents}};};
-  const items=controls.slice(0,12).map(node=>{const chain=[];for(let parent=node.parentElement;parent&&chain.length<8;parent=parent.parentElement){if(!ancestors.includes(parent))ancestors.push(parent);chain.push(ancestors.indexOf(parent));}return {...describe(node),text:node.tagName==='BUTTON'?node.textContent.slice(0,60):undefined,active:node===document.activeElement,ancestors:chain};});
-  return {controlCount:controls.length,controls:items,ancestors:ancestors.map(describe),dialogs:[...document.querySelectorAll('dialog')].slice(0,4).map(node=>({open:node.open,modal:node.matches(':modal'),...describe(node)})),frames:[...document.querySelectorAll('iframe')].slice(0,4).map(describe),documentFocus:document.hasFocus()};
+async function compareAdminStaticClone(page){
+ const setup=await page.evaluate(async()=>{
+  window.adminKeyboardProbe?.stop();
+  const original=document.querySelector('#root'),clone=original.cloneNode(true),structureCopied=original.isEqualNode(clone),scroll={x:scrollX,y:scrollY};
+  const originalNodes=[original,...original.querySelectorAll('*')],cloneNodes=[clone,...clone.querySelectorAll('*')],positions=originalNodes.map((node,index)=>({node:cloneNodes[index],top:node.scrollTop,left:node.scrollLeft}));
+  const styleRecords=[...document.querySelectorAll('style')].map(node=>({node,copy:node.cloneNode(true),inside:original.contains(node),parent:node.parentNode,next:node.nextSibling})),styleTexts=styleRecords.map(({node})=>node.textContent);
+  const describe=()=>{const controls=[...document.querySelectorAll('#root button,#root input,#root select,#root textarea,#root summary,#root a[href],#root iframe,#root [tabindex]')].filter(node=>!node.matches(':disabled')&&node.tabIndex>=0&&node.getClientRects().length);return {documentFocus:document.hasFocus(),active:{tag:document.activeElement?.tagName,view:document.activeElement?.dataset.view},scroll:{x:scrollX,y:scrollY},controlCount:controls.length,controls:controls.slice(0,12).map(node=>({tag:node.tagName,view:node.dataset.view,text:['BUTTON','SUMMARY'].includes(node.tagName)?node.textContent.slice(0,60):undefined,disabled:node.matches(':disabled'),tabIndex:node.tabIndex,rect:node.getBoundingClientRect().toJSON()}))};};
+  const before=describe();let inlineHandlersRemoved=0,externalStylesRestored=0;
+  for(const node of cloneNodes)for(const attribute of [...node.attributes])if(attribute.name.startsWith('on')){node.removeAttribute(attribute.name);inlineHandlersRemoved++;}
+  adminShell.app.dispose();original.replaceWith(clone);
+  for(const record of styleRecords)if(!record.inside&&!record.node.isConnected&&record.parent.isConnected){record.parent.insertBefore(record.copy,record.next?.parentNode===record.parent?record.next:null);externalStylesRestored++;}
+  for(const position of positions){position.node.scrollTop=position.top;position.node.scrollLeft=position.left;}scrollTo(scroll.x,scroll.y);
+  await new Promise(resolve=>requestAnimationFrame(resolve));
+  const afterTexts=[...document.querySelectorAll('style')].map(node=>node.textContent);
+  return {before,after:describe(),structureCopied,inlineHandlersRemoved,externalStylesRestored,styleTextsPreserved:styleTexts.length===afterTexts.length&&styleTexts.every((text,index)=>text===afterTexts[index]),stylesBefore:styleTexts.length,stylesAfter:afterTexts.length,styleLengths:styleTexts.slice(0,32).map(text=>text.length),elementCount:cloneNodes.length};
  });
- const nav=await page.locator('#root [data-dc-region="navigation"]').elementHandle(),original=await page.evaluate(()=>({x:scrollX,y:scrollY})),active=await page.evaluateHandle(()=>document.activeElement),steps=async()=>{const states=[];for(let i=0;i<4;i++){await page.keyboard.press('Shift+Tab');states.push(await page.evaluate(()=>({tag:document.activeElement?.tagName,view:document.activeElement?.getAttribute('data-view'),text:document.activeElement?.tagName==='BUTTON'?document.activeElement.textContent.slice(0,60):undefined,documentFocus:document.hasFocus()})));}return states;};
- const result={before,originalScroll:original,unchanged:await steps()};
- try{
-  if(result.unchanged.every(state=>state.view==='admin')&&await active.evaluate(node=>node===document.activeElement&&node.getAttribute('data-view')==='admin')){
-   result.scrolled=await nav.evaluate(async node=>{const before=node.getBoundingClientRect().toJSON();scrollBy(0,Math.max(0,before.bottom-innerHeight));await new Promise(resolve=>requestAnimationFrame(resolve));return {before,after:node.getBoundingClientRect().toJSON(),scroll:{x:scrollX,y:scrollY},buttons:[...node.querySelectorAll('button')].map(button=>button.getBoundingClientRect().toJSON())};});result.visible=await steps();
-  }
- }finally{await page.evaluate(value=>scrollTo(value.x,value.y),original).catch(()=>{});await active.dispose();await nav.dispose();}
- await writeFile(resolve(output,'admin-geometry-comparison.json'),JSON.stringify(result,null,2)+'\n');console.error('Operator navigation geometry comparison',JSON.stringify(result));
+ const result={setup,entry:[],reverse:[]};
+ if(setup.structureCopied&&setup.styleTextsPreserved&&setup.after.active.tag==='BODY'){
+  await page.evaluate(captureAdminKeyboard);
+  const observe=()=>page.evaluate(()=>({tag:document.activeElement?.tagName,view:document.activeElement?.getAttribute('data-view'),text:['BUTTON','SUMMARY'].includes(document.activeElement?.tagName)?document.activeElement.textContent.slice(0,60):undefined,documentFocus:document.hasFocus()}));
+  try{
+   for(let step=0;step<8;step++){await page.keyboard.press('Tab');const state=await observe();result.entry.push(state);if(state.view==='admin')break;}
+   for(let step=0;step<8;step++){await page.keyboard.press('Shift+Tab');result.reverse.push(await observe());}
+   result.trace=await page.evaluate(()=>adminKeyboardProbe.trace);
+  }finally{await page.evaluate(()=>adminKeyboardProbe.stop()).catch(()=>{});}
+ }else result.skipped='Static clone structure, styles or native BODY entry could not be established';
+ await writeFile(resolve(output,'admin-static-clone-comparison.json'),JSON.stringify({engine,result},null,2)+'\n');console.error('Static administration keyboard comparison',JSON.stringify({engine,result}));
 }
-async function plainAdminKeyboard(page){
- await page.evaluate(()=>{window.adminKeyboardProbe?.stop();adminShell.app.dispose();document.body.replaceChildren();const root=document.createElement('main');root.style.cssText='display:flex;flex-direction:column;gap:24px;padding:16px';
-  const button=(parent,id,text)=>{const node=document.createElement('button');node.id=id;node.type='button';node.textContent=text;parent.append(node);};
-  const recovery=document.createElement('section'),content=document.createElement('section'),nav=document.createElement('nav');nav.style.display='flex';
-  button(recovery,'plain-recover','Recover original settings change');button(content,'plain-retry','Retry same change');
-  for(const [id,label]of [['plain-collection','Collection'],['plain-admin','Administration']]){const group=document.createElement('div');group.setAttribute('role','group');button(group,id,label);nav.append(group);}root.append(recovery,content,nav);document.body.append(root);
- });
- const comparisons=[];
- for(const direction of ['Shift+Tab','Tab']){
-  await page.locator('#plain-admin').click();await page.evaluate(captureAdminKeyboard);const states=[];
-  for(let step=0;step<4;step++){await page.keyboard.press(direction);states.push(await page.evaluate(()=>({active:document.activeElement?.id??document.activeElement?.tagName,documentFocus:document.hasFocus()})));}
-  comparisons.push({direction,states,trace:await page.evaluate(()=>adminKeyboardProbe.trace)});await page.evaluate(()=>adminKeyboardProbe.stop());
- }
- await writeFile(resolve(output,'plain-admin-keyboard.json'),JSON.stringify({engine,comparisons},null,2)+'\n');console.error('Plain operator keyboard comparison',JSON.stringify({engine,comparisons}));
-}
+
 async function keyTo(page,target,direction='Tab'){
  const visited=[];let steps=0;
  try{
@@ -72,7 +70,7 @@ async function keyTo(page,target,direction='Tab'){
   const state=await target.evaluate(node=>{const controls=[...document.querySelectorAll('button,input,select,textarea,[tabindex]')].filter(item=>!item.disabled&&item.tabIndex>=0&&item.getClientRects().length),identify=item=>({tag:item?.tagName,label:item?.getAttribute('aria-label'),text:item?.tagName==='BUTTON'?item.textContent?.slice(0,60):undefined});return {target:{...identify(node),disabled:node.disabled,connected:node.isConnected,inert:!!node.closest('[inert]'),focused:node===document.activeElement,focusVisible:node.matches(':focus-visible'),rect:node.getBoundingClientRect().toJSON()},active:identify(document.activeElement),documentFocus:document.hasFocus(),visibility:document.visibilityState,viewport:{width:innerWidth,height:innerHeight},scroll:{x:scrollX,y:scrollY},controlCount:controls.length,targetPosition:controls.indexOf(node),activePosition:controls.indexOf(document.activeElement),navigation:[...document.querySelectorAll('#root [data-dc-region="navigation"] button')].map(button=>({view:button.dataset.view,current:button.getAttribute('aria-current'),disabled:button.disabled})),review:!!document.querySelector('.da-review'),status:[...document.querySelectorAll('.da-status')].map(status=>({kind:status.dataset.kind,text:status.textContent?.slice(0,100)}))};}).catch(()=>null);
   const trace=await page.evaluate(()=>window.adminKeyboardProbe?.trace).catch(()=>null);
   console.error('Administration keyboard failure',JSON.stringify({profile:[...manifests.keys()][cases.length],direction,steps,visited,lostReplies,state,trace}));await mkdir(output,{recursive:true});await page.screenshot({path:resolve(output,'admin-keyboard-failure.png'),fullPage:true}).catch(()=>{});
-  if(trace){try{await compareAdminGeometry(page);}catch(probeError){console.error('Operator geometry comparison failed',probeError.message);}try{await plainAdminKeyboard(page);}catch(probeError){console.error('Plain operator keyboard comparison failed',probeError.message);}}throw error;
+  if(trace)try{await compareAdminStaticClone(page);}catch(probeError){console.error('Static administration keyboard comparison failed',probeError.message);}throw error;
  }
 }
 async function keyActivate(page,target,key='Enter',direction='Tab'){await keyTo(page,target,direction);await page.keyboard.press(key);}
