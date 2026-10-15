@@ -25,31 +25,30 @@ function captureAdminKeyboard(){
  const observer=new MutationObserver(records=>trace.domMutations+=records.length);observer.observe(document.querySelector('#root')??document.body,{childList:true,subtree:true});
  window.adminKeyboardProbe={trace,stop(){events.abort();observer.disconnect();if(HTMLElement.prototype.focus===watchedFocus)HTMLElement.prototype.focus=focus;if(Event.prototype.preventDefault===watchedPrevent)Event.prototype.preventDefault=prevent;}};record('installed');
 }
-async function compareAdminSameRoot(page){
+async function compareAdminBlur(page){
  const setup=await page.evaluate(async()=>{
   window.adminKeyboardProbe?.stop();
   const original=document.querySelector('#root'),app=adminShell.app,parent=original.parentNode,next=original.nextSibling,previous=original.previousSibling,structure=original.outerHTML,scroll={x:scrollX,y:scrollY};
   const nodes=[original,...original.querySelectorAll('*')],positions=nodes.map(node=>({node,top:node.scrollTop,left:node.scrollLeft})),styles=[...document.querySelectorAll('style')],styleTexts=styles.map(node=>node.textContent);
   const enabled=()=>[...original.querySelectorAll('button,input,select,textarea,summary,a[href],iframe,[tabindex]')].filter(node=>!node.matches(':disabled')&&node.tabIndex>=0&&node.getClientRects().length),controls=enabled();
   const describe=()=>({documentFocus:document.hasFocus(),active:{tag:document.activeElement?.tagName,view:document.activeElement?.dataset.view},scroll:{x:scrollX,y:scrollY},controlCount:enabled().length,controls:enabled().slice(0,12).map(node=>({tag:node.tagName,view:node.dataset.view,text:['BUTTON','SUMMARY'].includes(node.tagName)?node.textContent.slice(0,60):undefined,disabled:node.matches(':disabled'),tabIndex:node.tabIndex,rect:node.getBoundingClientRect().toJSON()}))});
-  const before=describe(),marker=document.createComment('keyboard comparison');
-  try{original.replaceWith(marker);}finally{if(marker.parentNode)marker.replaceWith(original);}
-  for(const position of positions){position.node.scrollTop=position.top;position.node.scrollLeft=position.left;}scrollTo(scroll.x,scroll.y);
+  const before=describe(),focused=document.activeElement,blurApplied=focused?.tagName==='BUTTON'&&focused.dataset.view==='admin'&&original.contains(focused);
+  if(blurApplied)focused.blur();
   await new Promise(resolve=>requestAnimationFrame(resolve));
   const afterNodes=[original,...original.querySelectorAll('*')],afterStyles=[...document.querySelectorAll('style')],afterControls=enabled();
-  return {before,after:describe(),sameRoot:document.querySelector('#root')===original,sameApplication:adminShell.app===app,sameNodes:nodes.length===afterNodes.length&&nodes.every((node,index)=>node===afterNodes[index]),structurePreserved:original.outerHTML===structure,positionPreserved:original.parentNode===parent&&original.nextSibling===next&&original.previousSibling===previous,stylesPreserved:styles.length===afterStyles.length&&styles.every((node,index)=>node===afterStyles[index]&&node.textContent===styleTexts[index]),controlsPreserved:controls.length===4&&afterControls.length===controls.length&&controls.every((node,index)=>node===afterControls[index]),scrollPreserved:scrollX===scroll.x&&scrollY===scroll.y&&positions.every(({node,top,left})=>node.scrollTop===top&&node.scrollLeft===left),styleLengths:styleTexts.slice(0,32).map(text=>text.length),elementCount:nodes.length};
+  return {before,after:describe(),blurApplied,sameRoot:original.isConnected&&document.querySelector('#root')===original,sameApplication:adminShell.app===app,sameNodes:nodes.length===afterNodes.length&&nodes.every((node,index)=>node===afterNodes[index]),structurePreserved:original.outerHTML===structure,positionPreserved:original.parentNode===parent&&original.nextSibling===next&&original.previousSibling===previous,stylesPreserved:styles.length===afterStyles.length&&styles.every((node,index)=>node===afterStyles[index]&&node.textContent===styleTexts[index]),controlsPreserved:controls.length===4&&afterControls.length===controls.length&&controls.every((node,index)=>node===afterControls[index]),scrollPreserved:scrollX===scroll.x&&scrollY===scroll.y&&positions.every(({node,top,left})=>node.scrollTop===top&&node.scrollLeft===left),styleLengths:styleTexts.slice(0,32).map(text=>text.length),elementCount:nodes.length};
  });
  const result={setup,entry:[],reverse:[]};
- if(setup.sameRoot&&setup.sameApplication&&setup.sameNodes&&setup.structurePreserved&&setup.positionPreserved&&setup.stylesPreserved&&setup.controlsPreserved&&setup.scrollPreserved&&setup.after.active.tag==='BODY'){
+ if(setup.blurApplied&&setup.sameRoot&&setup.sameApplication&&setup.sameNodes&&setup.structurePreserved&&setup.positionPreserved&&setup.stylesPreserved&&setup.controlsPreserved&&setup.scrollPreserved&&setup.after.documentFocus&&setup.after.active.tag==='BODY'){
   await page.evaluate(captureAdminKeyboard);
   const observe=()=>page.evaluate(()=>({tag:document.activeElement?.tagName,view:document.activeElement?.getAttribute('data-view'),text:['BUTTON','SUMMARY'].includes(document.activeElement?.tagName)?document.activeElement.textContent.slice(0,60):undefined,documentFocus:document.hasFocus()}));
   try{
-   for(let step=0;step<8;step++){await page.keyboard.press('Tab');const state=await observe();result.entry.push(state);if(state.view==='admin')break;}
+   for(let step=0;step<4;step++){await page.keyboard.press('Tab');const state=await observe();result.entry.push(state);if(state.view==='admin')break;}
    for(let step=0;step<8;step++){await page.keyboard.press('Shift+Tab');result.reverse.push(await observe());}
    result.trace=await page.evaluate(()=>adminKeyboardProbe.trace);
   }finally{await page.evaluate(()=>adminKeyboardProbe.stop()).catch(()=>{});}
- }else result.skipped='Same live root, state preservation or native BODY entry could not be established';
- await writeFile(resolve(output,'admin-same-root-comparison.json'),JSON.stringify({engine,result},null,2)+'\n');console.error('Same-root administration keyboard comparison',JSON.stringify({engine,result}));
+ }else result.skipped='Focused administration blur, unchanged live root/state or focused-document BODY entry could not be established';
+ await writeFile(resolve(output,'admin-blur-comparison.json'),JSON.stringify({engine,result},null,2)+'\n');console.error('Blur-only administration keyboard comparison',JSON.stringify({engine,result}));
 }
 
 async function keyTo(page,target,direction='Tab'){
@@ -68,7 +67,7 @@ async function keyTo(page,target,direction='Tab'){
   const state=await target.evaluate(node=>{const controls=[...document.querySelectorAll('button,input,select,textarea,[tabindex]')].filter(item=>!item.disabled&&item.tabIndex>=0&&item.getClientRects().length),identify=item=>({tag:item?.tagName,label:item?.getAttribute('aria-label'),text:item?.tagName==='BUTTON'?item.textContent?.slice(0,60):undefined});return {target:{...identify(node),disabled:node.disabled,connected:node.isConnected,inert:!!node.closest('[inert]'),focused:node===document.activeElement,focusVisible:node.matches(':focus-visible'),rect:node.getBoundingClientRect().toJSON()},active:identify(document.activeElement),documentFocus:document.hasFocus(),visibility:document.visibilityState,viewport:{width:innerWidth,height:innerHeight},scroll:{x:scrollX,y:scrollY},controlCount:controls.length,targetPosition:controls.indexOf(node),activePosition:controls.indexOf(document.activeElement),navigation:[...document.querySelectorAll('#root [data-dc-region="navigation"] button')].map(button=>({view:button.dataset.view,current:button.getAttribute('aria-current'),disabled:button.disabled})),review:!!document.querySelector('.da-review'),status:[...document.querySelectorAll('.da-status')].map(status=>({kind:status.dataset.kind,text:status.textContent?.slice(0,100)}))};}).catch(()=>null);
   const trace=await page.evaluate(()=>window.adminKeyboardProbe?.trace).catch(()=>null);
   console.error('Administration keyboard failure',JSON.stringify({profile:[...manifests.keys()][cases.length],direction,steps,visited,lostReplies,state,trace}));await mkdir(output,{recursive:true});await page.screenshot({path:resolve(output,'admin-keyboard-failure.png'),fullPage:true}).catch(()=>{});
-  if(trace)try{await compareAdminSameRoot(page);}catch(probeError){console.error('Same-root administration keyboard comparison failed',probeError.message);}throw error;
+  if(trace)try{await compareAdminBlur(page);}catch(probeError){console.error('Blur-only administration keyboard comparison failed',probeError.message);}throw error;
  }
 }
 async function keyActivate(page,target,key='Enter',direction='Tab'){await keyTo(page,target,direction);await page.keyboard.press(key);}
