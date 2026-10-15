@@ -9,7 +9,7 @@ export async function serveReference(req,res,{production=false,assetOrigins=[]}=
   const path=new URL(req.url,'http://localhost').pathname;
   const files=new Map([['/','examples/index.html'],['/app.js','examples/app.js'],['/site.css','examples/site.css'],['/src/presentation/studio.css','src/presentation/studio.css'],...modules.map(x=>['/src/'+x+'.js','src/'+x+'.js']),...presentationModules.map(x=>['/src/presentation/'+x+'.js','src/presentation/'+x+'.js'])]);
   const file=files.get(path);if(!file||req.method!=='GET')return false;
-  res.setHeader('Content-Security-Policy',`default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' ${assetOrigins.join(' ')} blob:; media-src 'self' blob: ${assetOrigins.join(' ')}; connect-src 'self' ${assetOrigins.join(' ')}; font-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`);
+  res.setHeader('Content-Security-Policy',`default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' ${assetOrigins.join(' ')} blob:; media-src 'self' blob: ${assetOrigins.join(' ')}; connect-src 'self' blob: ${assetOrigins.join(' ')}; font-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`);
   res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript; charset=utf-8':file.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8');
   res.setHeader('Cache-Control',production?'public, max-age=0, must-revalidate':'no-store');res.end(await readFile(resolve(root,file)));return true;
 }
