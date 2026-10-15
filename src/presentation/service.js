@@ -19,11 +19,26 @@ import {
   parseJSON,
   text,
   safePath,
+  PresentationError,
 } from "./data.js";
+import { FrameworkError } from "../catalog.js";
 import { publishPackage } from "./compiler.js";
 import { performancePolicy, enforcePerformance } from "./performance.js";
 import { DEFAULT_LIMITS } from "./package.js";
 import { createImportExecutor } from "./import-executor.js";
+
+const expectedError = (error) => error instanceof PresentationError || error instanceof FrameworkError;
+const genericFailure = "Presentation operation could not be completed";
+const publicMessage = (error) => expectedError(error)
+  ? String(error.message).slice(0, 1000)
+  : genericFailure;
+const readContent = async (file, encoding) => {
+  try { return await readFile(file, encoding); }
+  catch (error) {
+    if (error.code === "ENOENT") throw new PresentationError("NOT_FOUND", "Presentation content not found");
+    throw error;
+  }
+};
 
 const atomic = async (file, value) => {
   const tmp = file + "." + randomUUID() + ".tmp";
@@ -85,16 +100,14 @@ export async function validateInWorker(
         outcome = { error: new Error("Import worker exited " + code) };
       outcome.error ? reject(outcome.error) : resolve(outcome.value);
     });
-    worker.once("message", (result) =>
-      result?.ok === true
-        ? finish(null, result)
-        : finish(
-            Object.assign(
-              new Error(result?.message ?? "Import worker failed"),
-              { code: result?.code ?? "IMPORT" },
-            ),
-          ),
-    );
+    worker.once("message", (result) => {
+      if (result?.ok === true) return finish(null, result);
+      const safe = result?.safeError === true && typeof result.code === "string" &&
+        /^[A-Z][A-Z0-9_]{0,63}(?![\s\S])/.test(result.code) &&
+        typeof result.message === "string" && result.message.length <= 1000;
+      finish(safe ? new PresentationError(result.code, result.message) :
+        Object.assign(new Error("Import worker failed"), { code: "IMPORT" }));
+    });
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
     else
@@ -194,9 +207,14 @@ export async function createPresentationStore({
     for (const file of await readdir(jobsDir))
       if (file.endsWith(".json")) {
         const job = parseJSON(await readFile(path.join(jobsDir, file), "utf8"));
+        if (job.error !== undefined && job.errorSafe !== true) {
+          job.error = genericFailure;
+          job.errorSafe = true;
+        }
         if (["received", "validating", "compiling"].includes(job.state)) {
           job.state = "rejected";
           job.error = "Worker interrupted; retry with a new import key";
+          job.errorSafe = true;
           await atomic(path.join(jobsDir, file), job);
         }
         jobs.set(job.id, job);
@@ -224,7 +242,7 @@ export async function createPresentationStore({
   const publicJob = (job) =>
     structuredClone(
       Object.fromEntries(
-        Object.entries(job).filter(([key]) => key !== "uploadPath"),
+        Object.entries(job).filter(([key]) => !["uploadPath", "errorSafe"].includes(key)),
       ),
     );
   function pump() {
@@ -238,6 +256,7 @@ export async function createPresentationStore({
         .catch(() => {
           job.state = "rejected";
           job.error = "Unable to persist import outcome";
+          job.errorSafe = true;
         })
         .finally(() => {
           tasks.delete(task);
@@ -304,7 +323,8 @@ export async function createPresentationStore({
       job.state = "ready";
     } catch (error) {
       job.state = controller.signal.aborted ? "cancelled" : "rejected";
-      job.error = String(error.message).slice(0, 1000);
+      job.error = publicMessage(error);
+      job.errorSafe = true;
     } finally {
       try {
         await save(job);
@@ -477,7 +497,7 @@ export async function createPresentationStore({
         "QUARANTINED",
         "Presentation unavailable",
       );
-      return parseJSON(await readFile(path.join(folder, "card.json"), "utf8"));
+      return parseJSON(await readContent(path.join(folder, "card.json"), "utf8"));
     },
     async file(digest, relative) {
       safePath(relative);
@@ -492,7 +512,7 @@ export async function createPresentationStore({
       ]);
       ensure(allowed.has(relative), "NOT_FOUND", "Unknown presentation file");
       return {
-        bytes: new Uint8Array(await readFile(path.join(folder, relative))),
+        bytes: new Uint8Array(await readContent(path.join(folder, relative))),
         mediaType:
           manifest.assets.find((a) => a.path === relative)?.mediaType ??
           (relative.endsWith(".json") ? "application/json" : "application/zip"),
@@ -644,15 +664,17 @@ export function presentationRoutes(
         headers: { "cache-control": "no-store" },
       });
     } catch (error) {
+      const code = expectedError(error) || ["FORBIDDEN", "NOT_FOUND", "LIMIT"].includes(error?.code)
+        ? error.code : "IMPORT";
       return Response.json(
-        { error: error.code ?? "IMPORT", message: error.message },
+        { error: code, message: publicMessage(error) },
         {
           status:
-            error.code === "FORBIDDEN"
+            code === "FORBIDDEN"
               ? 403
-              : error.code === "NOT_FOUND"
+              : code === "NOT_FOUND"
                 ? 404
-                : error.code === "LIMIT"
+                : code === "LIMIT"
                   ? 413
                   : 400,
         },
