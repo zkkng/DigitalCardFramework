@@ -50,6 +50,20 @@ createRevealController({open,key}) provides getState, subscribe, load, reveal, s
 
 mountOpener(root,{controller,view}) subscribes to that controller. view returns a DOM node, or {node,dispose} for a custom view with external resources. Dispose runs before replacement and unmount. Subscribe returns an unsubscribe function; disposal is terminal and suppresses outstanding loads. Later load, reveal, replay or subscription calls cannot restart that instance. examples/alternate.js renders all results instantly in a host-owned dialog. This does not grant new cards.
 
+## Default collection controls
+
+These controls filter the native view; they do not authorize a transfer or reserve a card. **My copies** lists owned-copy identities; **Card catalog & wishlist** lists definitions. Favorites refer to copy IDs, while wishlist entries refer to card IDs. **Include code cards and inserts** changes visibility, not entitlement access.
+
+| Control | Default and interpretation |
+| --- | --- |
+| Search, Line, Rarity, Finish | Empty search/all choices; search matches card names/tags, definition stats and card/variant metadata without case distinction |
+| Sort | Newest first by creation time; name uses browser locale ordering, rarity uses descending rank |
+| Show | All cards; duplicates compare variant IDs, favorites use copy IDs, available-for-trade also requires the trading feature and the copy's tradable status |
+| Compare / Inspect together | At most 24 owned copies; selection and shared inspection do not merge ownership |
+| Show more | Extends the visible list from the supplied model; it does not create copies or change the server's query limits |
+
+Connected-card layouts and missing-piece behavior use the existing [combination contract](content-authoring.md#combinable-cards). A host can replace this renderer; these defaults do not impose controls on a custom view.
+
 ## Replace the album and all CSS
 
 saveAlbum stores layout:{id,columns,gap,...customData} plus ordered placements with per-placement data. The default renderer recognizes columns, gap and the bounded appearance fields described below. renderAlbum(model,{layouts:{journal:renderer}}) selects a trusted registered layout when layout.id is journal. Alternatively supply albumRenderer to replace the entire album, as the alternate example does.
@@ -374,6 +388,8 @@ The [display schema](album-display.schema.json) describes the content shape. Run
 The adapter uses native album fallback for denied grants or invalid content. Its viewport defaults to 640 pixels high and accepts 200–4,096; its active-frame limit defaults to two and accepts 1–32. `setEnabled(false)` disables the program; `dispose()` releases its resources. The standard bootstrap inserts labels as text and manages image object URLs. Custom web-compatible programs can use `connectProgram({onAlbumDisplay})` and `selectItem(snapshotId, handle)` with the same profile, grants and session checks.
 
 ## Album appearance
+
+A new native album editor starts with **Private** visibility, **Card gallery**, three columns, an 18-pixel gap and **Cards per album page** 12. Existing albums load their saved values. Columns accept integers from 1 to 12; gap accepts 0 to 100 pixels. **Panorama** forces zero gap. The Public option requires the host's public-album feature. **Additional layout JSON** retains custom data, but artwork and page size must use their dedicated controls.
 
 The default album renderer accepts `layout.appearance` with solid `background`, text `color`, `borderColor`, `padding`, `radius` and `borderWidth`. Colors accept hexadecimal RGB/RGBA, comma-separated integer `rgb()`/`rgba()`, or transparent/black/white/red/green/blue/gray/grey/yellow/orange/purple/pink/brown/navy/teal. RGB channels range from 0 to 255 and alpha from 0 to 1. Padding and radius range from 0 to 100 pixels; border width ranges from 0 to 12 pixels. Omitted properties use the reference styles. Appearance applies to the album grid, without changing ownership or placements.
 
