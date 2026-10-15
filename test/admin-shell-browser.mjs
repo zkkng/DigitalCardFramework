@@ -10,6 +10,36 @@ import {createApiHandler} from '../src/http.js';
 import {serveReference} from '../src/static.js';
 import {validateApplicationShell} from '../src/application-shell.js';
 
+function captureAdminKeyboard(){
+ const events=new AbortController(),trace={first:[],recent:[],keydown:0,keyup:0,preventedKeys:0,preventDefaultCalls:0,focusCalls:0,domMutations:0};
+ const identify=node=>({tag:node?.tagName,label:node?.getAttribute?.('aria-label'),text:node?.tagName==='BUTTON'?node.textContent?.slice(0,60):undefined});
+ const stack=()=>new Error().stack?.split('\n').slice(2,5).join('\n').slice(0,350);
+ const record=(type,details={})=>{const entry={type,at:performance.now(),active:identify(document.activeElement),documentFocus:document.hasFocus(),...details};if(trace.first.length<8)trace.first.push(entry);trace.recent.push(entry);if(trace.recent.length>16)trace.recent.shift();};
+ const focus=HTMLElement.prototype.focus,prevent=Event.prototype.preventDefault;
+ function watchedFocus(...args){trace.focusCalls++;record('script-focus',{target:identify(this),stack:stack()});return Reflect.apply(focus,this,args);}
+ function watchedPrevent(...args){if(this instanceof KeyboardEvent&&this.key==='Tab'){trace.preventDefaultCalls++;record('script-prevent',{shift:this.shiftKey,stack:stack()});}return Reflect.apply(prevent,this,args);}
+ HTMLElement.prototype.focus=watchedFocus;Event.prototype.preventDefault=watchedPrevent;
+ for(const capture of [true,false])window.addEventListener('keydown',event=>{if(event.key!=='Tab')return;if(capture)trace.keydown++;else if(event.defaultPrevented)trace.preventedKeys++;record(capture?'keydown-capture':'keydown-bubble',{shift:event.shiftKey,prevented:event.defaultPrevented,trusted:event.isTrusted,target:identify(event.target)});},{capture,passive:true,signal:events.signal});
+ window.addEventListener('keyup',event=>{if(event.key==='Tab'){trace.keyup++;record('keyup',{shift:event.shiftKey,prevented:event.defaultPrevented,target:identify(event.target)});}},{capture:true,passive:true,signal:events.signal});
+ for(const type of ['focusin','focusout'])document.addEventListener(type,event=>record(type,{target:identify(event.target)}),{capture:true,passive:true,signal:events.signal});
+ const observer=new MutationObserver(records=>trace.domMutations+=records.length);observer.observe(document.querySelector('#root')??document.body,{childList:true,subtree:true});
+ window.adminKeyboardProbe={trace,stop(){events.abort();observer.disconnect();if(HTMLElement.prototype.focus===watchedFocus)HTMLElement.prototype.focus=focus;if(Event.prototype.preventDefault===watchedPrevent)Event.prototype.preventDefault=prevent;}};record('installed');
+}
+async function plainAdminKeyboard(page){
+ await page.evaluate(()=>{window.adminKeyboardProbe?.stop();adminShell.app.dispose();document.body.replaceChildren();const root=document.createElement('main');root.style.cssText='display:flex;flex-direction:column;gap:24px;padding:16px';
+  const button=(parent,id,text)=>{const node=document.createElement('button');node.id=id;node.type='button';node.textContent=text;parent.append(node);};
+  const recovery=document.createElement('section'),content=document.createElement('section'),nav=document.createElement('nav');nav.style.display='flex';
+  button(recovery,'plain-recover','Recover original settings change');button(content,'plain-retry','Retry same change');
+  for(const [id,label]of [['plain-collection','Collection'],['plain-admin','Administration']]){const group=document.createElement('div');group.setAttribute('role','group');button(group,id,label);nav.append(group);}root.append(recovery,content,nav);document.body.append(root);
+ });
+ const comparisons=[];
+ for(const direction of ['Shift+Tab','Tab']){
+  await page.locator('#plain-admin').click();await page.evaluate(captureAdminKeyboard);const states=[];
+  for(let step=0;step<4;step++){await page.keyboard.press(direction);states.push(await page.evaluate(()=>({active:document.activeElement?.id??document.activeElement?.tagName,documentFocus:document.hasFocus()})));}
+  comparisons.push({direction,states,trace:await page.evaluate(()=>adminKeyboardProbe.trace)});await page.evaluate(()=>adminKeyboardProbe.stop());
+ }
+ await writeFile(resolve(output,'plain-admin-keyboard.json'),JSON.stringify({engine,comparisons},null,2)+'\n');console.error('Plain operator keyboard comparison',JSON.stringify({engine,comparisons}));
+}
 async function keyTo(page,target,direction='Tab'){
  const visited=[];let steps=0;
  try{
@@ -24,7 +54,9 @@ async function keyTo(page,target,direction='Tab'){
   assert(await target.evaluate(node=>{const r=node.getBoundingClientRect();return node.matches(':focus-visible')&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;}),'Keyboard target must have visible focus in the viewport');
  }catch(error){
   const state=await target.evaluate(node=>{const controls=[...document.querySelectorAll('button,input,select,textarea,[tabindex]')].filter(item=>!item.disabled&&item.tabIndex>=0&&item.getClientRects().length),identify=item=>({tag:item?.tagName,label:item?.getAttribute('aria-label'),text:item?.tagName==='BUTTON'?item.textContent?.slice(0,60):undefined});return {target:{...identify(node),disabled:node.disabled,connected:node.isConnected,inert:!!node.closest('[inert]'),focused:node===document.activeElement,focusVisible:node.matches(':focus-visible'),rect:node.getBoundingClientRect().toJSON()},active:identify(document.activeElement),documentFocus:document.hasFocus(),visibility:document.visibilityState,viewport:{width:innerWidth,height:innerHeight},scroll:{x:scrollX,y:scrollY},controlCount:controls.length,targetPosition:controls.indexOf(node),activePosition:controls.indexOf(document.activeElement),navigation:[...document.querySelectorAll('#root [data-dc-region="navigation"] button')].map(button=>({view:button.dataset.view,current:button.getAttribute('aria-current'),disabled:button.disabled})),review:!!document.querySelector('.da-review'),status:[...document.querySelectorAll('.da-status')].map(status=>({kind:status.dataset.kind,text:status.textContent?.slice(0,100)}))};}).catch(()=>null);
-  console.error('Administration keyboard failure',JSON.stringify({profile:[...manifests.keys()][cases.length],direction,steps,visited,lostReplies,state}));await mkdir(output,{recursive:true});await page.screenshot({path:resolve(output,'admin-keyboard-failure.png'),fullPage:true}).catch(()=>{});throw error;
+  const trace=await page.evaluate(()=>window.adminKeyboardProbe?.trace).catch(()=>null);
+  console.error('Administration keyboard failure',JSON.stringify({profile:[...manifests.keys()][cases.length],direction,steps,visited,lostReplies,state,trace}));await mkdir(output,{recursive:true});await page.screenshot({path:resolve(output,'admin-keyboard-failure.png'),fullPage:true}).catch(()=>{});
+  if(trace)try{await plainAdminKeyboard(page);}catch(probeError){console.error('Plain operator keyboard comparison failed',probeError.message);}throw error;
  }
 }
 async function keyActivate(page,target,key='Enter',direction='Tab'){await keyTo(page,target,direction);await page.keyboard.press(key);}
@@ -76,7 +108,8 @@ try{
     const lostBefore=lostReplies;dropExecute=true;await keyActivate(page,panel.getByRole('button',{name:'Save changes',exact:true}));await panel.locator('.da-status[data-kind="error"]').waitFor();await panel.getByRole('button',{name:'Retry same change',exact:true}).waitFor();assert.equal(lostReplies,lostBefore+1);assert.equal(executions.length,1);assert.equal(x.core.adminOverview(manager).revision,1);assert.equal(x.core.adminOverview(manager).site.tradingPaused,true);
     const intents=x.core.commandIntents(manager,{command:'configureAdmin'}).items;assert.equal(intents.length,1);const original=intents[0];assert.equal(original.state,'completed');assert.equal(executions[0].input.id,original.id);const {key,...terms}=original.input;assert.equal(typeof key,'string');assert.deepEqual(terms,{scope:'site',changes:{tradingPaused:true},reason,expectedRevision:0});
     const discoveryBefore=discoveries;assert(await page.evaluate(()=>localStorage.length+sessionStorage.length>0));await page.evaluate(()=>{adminShell.app.dispose();localStorage.clear();sessionStorage.clear();});assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),0);await mount(page,manifestPath);await nav.locator('[data-view="admin"]').click();await panel.getByRole('button',{name:'Retry same change',exact:true}).waitFor();assert(discoveries>discoveryBefore);assert.equal(executions.length,1);
-    await keyActivate(page,panel.getByRole('button',{name:'Retry same change',exact:true}),'Enter','Shift+Tab');await panel.locator('.da-review').waitFor({state:'detached'});await panel.getByRole('heading',{name:'A clear view of your community',exact:true}).waitFor();assert.equal(executions.length,2);assert.deepEqual(executions[0],executions[1]);assert(mutations.length>=1);for(const input of mutations)assert.deepEqual(input,original.input);assert.equal(x.core.adminOverview(manager).revision,1);const history=x.core.adminHistory(manager,{limit:10});assert.equal(history.items.length,1);assert.equal(history.items[0].reason,reason);assert.equal(history.items[0].after.tradingPaused,true);assert(await page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches));
+    await page.evaluate(captureAdminKeyboard);
+    await keyActivate(page,panel.getByRole('button',{name:'Retry same change',exact:true}),'Enter','Shift+Tab');await panel.locator('.da-review').waitFor({state:'detached'});await panel.getByRole('heading',{name:'A clear view of your community',exact:true}).waitFor();assert.equal(executions.length,2);assert.deepEqual(executions[0],executions[1]);assert(mutations.length>=1);for(const input of mutations)assert.deepEqual(input,original.input);assert.equal(x.core.adminOverview(manager).revision,1);const history=x.core.adminHistory(manager,{limit:10});assert.equal(history.items.length,1);assert.equal(history.items[0].reason,reason);assert.equal(history.items[0].after.tradingPaused,true);await page.evaluate(()=>adminKeyboardProbe.stop());assert(await page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches));
     actor={...x.alice,permissions:['admin.read']};await page.evaluate(()=>adminShell.app.refresh());await panel.getByRole('heading',{name:'A clear view of your community',exact:true}).waitFor();await panel.locator('[data-admin-tab="website"]').click();const trading=panel.getByLabel('Trading',{exact:true});await trading.waitFor();assert.equal(await trading.isChecked(),false);assert.equal(await trading.isDisabled(),true);assert.equal(await panel.getByRole('button',{name:'Review changes',exact:true}).isDisabled(),true);
     const deniedInput={key:'read-only-denied',scope:'site',expectedRevision:1,changes:{tradingPaused:false},reason:'Synthetic denied change'};for(const [path,input]of [['/api/operator/admin/settings',deniedInput],['/api/command-intents',{command:'configureAdmin',input:deniedInput}]]){
       const response=await fetch(origin+path,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json','X-DC-Principal':x.alice.userId},body:JSON.stringify({...input,role:'admin'})});assert.equal(response.status,403);assert.equal(response.headers.get('cache-control'),'no-store');
