@@ -57,7 +57,7 @@ const codeUnsubscribed:boolean=codeUnsubscribe();
 const codeOpened:Promise<string|undefined>=codeController.open();
 codeController.dispose();
 createCodeRevealController({codeId:'code',reveal:input=>{const id:string=input.codeId;const key:string=input.key;void [id,key];return {code:'example'};}});
-const codeReveal=renderCodeReveal({codeId:'code',mode:'scratch'},{reveal:client.revealCode,threshold:0.5,locale:'en',messages:{'codes.reveal':'Show code'}});
+const codeReveal=renderCodeReveal({codeId:'code',mode:'scratch'},{reveal:client.revealCode,threshold:0.5,locale:'en',messages:{'codes.reveal':'Show code'},isCurrent:()=>true});
 const codeRevealNode:HTMLElement=codeReveal.node;
 const codeViewOpen:Promise<string|undefined>=codeReveal.controller.open();
 document.body.append(codeRevealNode);codeReveal.dispose();
@@ -66,12 +66,17 @@ renderCodeReveal({codeId:'code',mode:'peel'},{reveal:client.revealCode}).dispose
 const codeHistory:CodeHistoryView=renderCodeHistory({}, {client});
 const codeHistoryReady:Promise<void>=codeHistory.ready;
 document.body.append(codeHistory.node);codeHistory.dispose();
-renderCodeHistory(null,{client:{codeHistory:client.codeHistory,revealCode:client.revealCode,reportCodeUsage:client.reportCodeUsage,requestKey:client.requestKey},codeRevealRenderer:(input,options)=>{
+renderCodeHistory(null,{client:{codeHistory:client.codeHistory,revealCode:client.revealCode,reportCodeUsage:client.reportCodeUsage,requestKey:client.requestKey},getPrincipal:()=>null,isCurrentModel:captured=>{const model:null=captured;return model===null;},codeRevealRenderer:(input,options)=>{
   const id:string=input.codeId;const mode:'open'|'scratch'|'peel'|undefined=input.mode;const key:string=options.key();const locale:string=options.localization.locale;
-  const response=options.reveal({codeId:id,key});void [mode,locale,response];
+  const response=options.reveal({codeId:id,key}),current:boolean=options.isCurrent?.()??true;void [mode,locale,response,current];
   return {node:document.createElement('output'),controller:createCodeRevealController({codeId:id,reveal:options.reveal}),dispose(){}};
 }}).dispose();
 renderCodeHistory(undefined,{client,codeRevealRenderer:()=>document.createElement('div')}).dispose();
+renderCodeHistory({opaque:true},{client,getPrincipal:client.principal,isCurrentModel:captured=>captured.opaque}).dispose();
+// @ts-expect-error Retry focus guards return booleans.
+renderCodeReveal({codeId:'code'},{reveal:client.revealCode,isCurrent:()=> 'current'});
+// @ts-expect-error Account callbacks identify a string principal or explicit logout.
+renderCodeHistory(null,{client,getPrincipal:()=>42});
 // @ts-expect-error Reveals require a host callback returning the code string.
 createCodeRevealController({codeId:'code',reveal:()=>({code:42})});
 // @ts-expect-error Reveal keys are generated as strings.
