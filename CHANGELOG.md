@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep keyboard focus on Save album after a successful save, while respecting navigation, account changes and deliberate focus movement.
 - Allow the default artwork editor to load its generated image URLs so local image imports can render and capture posters under the reference host's security policy.
 - Preserve keyboard focus when a shop quote becomes ready for purchase, without overriding deliberate focus movement or a changed account, view or quantity.
 - Hide internal filesystem and provider exception details in presentation responses and import-job results, including retained jobs from earlier versions; preserve safe validation diagnostics and return 404 for missing content.

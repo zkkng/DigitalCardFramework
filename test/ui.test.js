@@ -147,6 +147,37 @@ test('a price changed after rendering requires another purchase decision',async(
 });
 const click=(node,text)=>{const found=[...node.querySelectorAll('button')].find(b=>b.textContent===text);assert(found,'Missing button '+text);assert(!found.disabled,'Disabled button '+text);found.click();return found;};
 const field=(node,text)=>{const label=[...node.querySelectorAll('label')].find(l=>l.querySelector('span')?.textContent===text);assert(label,'Missing field '+text);return label.querySelector('input,textarea,select');};
+test('album save preserves only its initiating keyboard focus across its own refresh',async()=>{
+ for(const mode of ['restore','unfocused','other-control','other-control-then-blur','pointer','principal','view','refresh','dispose','missing-album','failure']){
+  const x=setup();let mounted,release,restoreObservers=()=>{};try{
+   let entered;const saved=new Promise(resolve=>entered=resolve);x.client.saveAlbum=async input=>{const result=mode==='failure'?null:x.core.saveAlbum(x.alice,input);entered();await new Promise(resolve=>release=resolve);if(mode==='failure')throw new Error('Album save rejected');return result;};
+   const root=document.createElement('main');document.body.append(root);mounted=mountFramework(root,{client:x.client,sections:['albums','collection'],navigation:'tabs'});await mounted.ready;
+   let observerCalls=0;
+   if(mode==='dispose'){
+    const add=document.addEventListener,remove=document.removeEventListener,wrapped=new Map();
+    document.addEventListener=function(type,listener,options){if(['focusin','pointerdown'].includes(type)){const original=listener;listener=function(event){observerCalls++;return original.call(this,event);};wrapped.set(original,listener);}return add.call(this,type,listener,options);};
+    document.removeEventListener=function(type,listener,options){return remove.call(this,type,wrapped.get(listener)??listener,options);};
+    restoreObservers=()=>{document.addEventListener=add;document.removeEventListener=remove;};
+   }
+   const original=[...root.querySelectorAll('button')].find(button=>button.textContent==='Save album'),name=field(root,'Album name');name.value='Keyboard saved album';
+   (mode==='unfocused'?name:original).focus();original.click();await settle();assert(release,root.querySelector('.dc-status').textContent);await saved;
+   if(mode==='other-control'||mode==='other-control-then-blur')name.focus();
+   if(mode==='other-control-then-blur')name.blur();
+   if(mode==='pointer')name.dispatchEvent(new x.window.Event('pointerdown',{bubbles:true}));
+   if(mode==='principal')x.setActor(x.bob);
+   if(mode==='view')root.querySelector('[data-view="collection"]').click();
+   if(mode==='refresh')await mounted.refresh();
+   if(mode==='dispose'){mounted.dispose();const before=observerCalls;document.dispatchEvent(new x.window.Event('focusin'));document.dispatchEvent(new x.window.Event('pointerdown'));assert.equal(observerCalls,before,'Disposal removes document focus observers before the pending save resolves');}
+   if(mode==='missing-album')x.client.albums=async()=>[];
+   release();await settle();assert.equal(x.core.albums(x.alice).length,mode==='failure'?0:1,mode);
+   if(mode==='failure'){assert(original.isConnected);assert.match(root.querySelector('.dc-status.dc-error').textContent,/Album save rejected/);continue;}
+   assert.equal(original.isConnected,false,mode);
+   const replacement=[...root.querySelectorAll('button')].find(button=>button.textContent==='Save album');
+   if(mode==='restore'){assert(replacement);assert.notEqual(replacement,original);assert(document.activeElement===replacement,mode);assert.equal(field(root,'Album name').value,'Keyboard saved album');}
+   else assert(document.activeElement!==replacement,mode);
+  }finally{release?.();await settle();mounted?.dispose();restoreObservers();x.close();}
+ }
+});
 function setup(){const window=new Window({url:'http://localhost/'});globalThis.document=window.document;globalThis.sessionStorage=window.sessionStorage;const x=fixture();x.open('common');x.open('rare');x.open('common',x.bob);
   const calls=[],client={requestKey:randomUUID};let actor=x.alice;
   for(const name of ['catalog','me','wallet','packs','inventory','albums','trades','availability','pityProgress'])client[name==='pityProgress'?'pity':name]=async()=>x.core[name](actor);
