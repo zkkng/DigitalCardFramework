@@ -18,17 +18,25 @@ import {validateEditorContribution} from '../src/presentation/editor-contributio
 
 // Real authoring, archive publication and catalog admission; the trusted identity
 // resolver supplies the artist's explicit grants, then the collector's account.
-async function keyTo(page,target){
+async function keyTo(page,target,direction='Tab'){
+ const visited=[];
+ try{
   await target.waitFor({state:'visible'});
   const deadline=Date.now()+15000;
-  while(!await target.evaluate(node=>node===document.activeElement)){
+  const inspect=node=>({focused:node===document.activeElement,active:document.activeElement?.getAttribute('aria-label')??(document.activeElement?.tagName==='BUTTON'?document.activeElement.textContent?.slice(0,60):document.activeElement?.tagName)});
+  let state=await target.evaluate(inspect);
+  while(!state.focused){
     assert(Date.now()<deadline,'Keyboard traversal must reach the intended control');
-    await page.keyboard.press('Tab');
+    await page.keyboard.press(direction);state=await target.evaluate(inspect);visited.push(state.active);if(visited.length>12)visited.shift();
   }
   assert(await target.evaluate(node=>{const r=node.getBoundingClientRect();return node.matches(':focus-visible')&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;}),'Keyboard target must have visible focus in the viewport');
+ }catch(error){
+  console.error('Artist keyboard failure',JSON.stringify({direction,visited,state:await target.evaluate(node=>({target:{tag:node.tagName,label:node.getAttribute('aria-label'),text:node.tagName==='BUTTON'?node.textContent:undefined,disabled:node.disabled,connected:node.isConnected,focused:node===document.activeElement,focusVisible:node.matches(':focus-visible'),rect:node.getBoundingClientRect().toJSON()},active:{tag:document.activeElement?.tagName,label:document.activeElement?.getAttribute('aria-label')},documentFocus:document.hasFocus(),viewport:{width:innerWidth,height:innerHeight},scroll:{x:scrollX,y:scrollY}})).catch(()=>null)}));
+  await page.screenshot({path:resolve(output,'artist-keyboard-failure.png'),fullPage:true}).catch(()=>{});throw error;
+ }
 }
 async function keyActivate(page,target,key='Enter'){await keyTo(page,target);await page.keyboard.press(key);}
-async function keyText(page,target,value){await keyTo(page,target);await page.keyboard.press('ControlOrMeta+A');await page.keyboard.type(value);}
+async function keyText(page,target,value,direction='Tab'){await keyTo(page,target,direction);await page.keyboard.press('ControlOrMeta+A');await page.keyboard.type(value);}
 
 const output=resolve(process.argv[2]??'test-results/portable-card-art'),engine=process.env.BROWSER_ENGINE??'chromium',language=process.env.DC_ART_LANGUAGE??'python';
 assert(['python','go'].includes(language),'Unsupported card-art generator');
@@ -122,7 +130,7 @@ try{
   await page.getByRole('button',{name:'Front emblem',exact:true}).click();await idle();
   assert.equal(await page.getByLabel('x',{exact:true}).inputValue(),'17');
   await keyText(page,page.getByLabel('x',{exact:true}),'42');await page.getByLabel('x',{exact:true}).press('Tab');await idle();
-  await keyText(page,page.getByLabel('Card title',{exact:true}),'Celestial Study · published');await page.getByLabel('Card title',{exact:true}).press('Tab');await idle();
+  await keyText(page,page.getByLabel('Card title',{exact:true}),'Celestial Study · published','Shift+Tab');await page.getByLabel('Card title',{exact:true}).press('Tab');await idle();
   await keyActivate(page,page.getByRole('button',{name:'Capture posters',exact:true}));await idle();
   await page.getByText('Both face posters captured from the renderer.',{exact:true}).waitFor();
   assert.deepEqual(x.core.operatorCatalog(admin),before,'Editing/capture must not publish the catalog');
@@ -141,7 +149,7 @@ try{
   await page.getByRole('button',{name:'Publish',exact:true}).click();await reviewed.waitFor();
   actor={...artist,permissions:artist.permissions.filter(permission=>permission!=='catalog.publish')};
   const deniedCommit=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/operator/import/commit');await reviewed.click();assert.equal((await deniedCommit).status(),403);await idle();assert.deepEqual(x.core.operatorCatalog(admin),before);
-  actor=artist;await keyActivate(page,page.getByRole('button',{name:'Publish',exact:true}));await reviewed.waitFor();
+  actor=artist;await page.keyboard.press('Shift+Tab');await keyActivate(page,page.getByRole('button',{name:'Publish',exact:true}));await reviewed.waitFor();
   const acceptedCommit=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/operator/import/commit');
   await keyActivate(page,reviewed);assert.equal((await acceptedCommit).status(),200);
   await page.locator('#root .dc-status.is-success').waitFor();

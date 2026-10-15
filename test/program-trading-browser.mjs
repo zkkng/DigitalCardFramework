@@ -14,13 +14,21 @@ import {programHeaders} from '../src/presentation/program.js';
 import {fixture as artworkFixture,build,pngRGBA} from './presentation-fixtures.mjs';
 import {tradingDisplayLimits} from '../src/presentation/trading-display.js';
 async function keyTo(page,target){
+ const visited=[];let steps=0;
+ try{
   await target.waitFor({state:'visible'});
   const deadline=Date.now()+15000;
-  while(!await target.evaluate(node=>node===document.activeElement)){
+  const inspect=node=>({focused:node===document.activeElement,active:document.activeElement?.getAttribute('aria-label')??(document.activeElement?.tagName==='BUTTON'?document.activeElement.textContent?.slice(0,60):document.activeElement?.tagName)});
+  let state=await target.evaluate(inspect);
+  while(!state.focused){
     assert(Date.now()<deadline,'Keyboard traversal must reach the intended control');
-    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');steps++;state=await target.evaluate(inspect);visited.push(state.active);if(visited.length>12)visited.shift();
   }
   assert(await target.evaluate(node=>{const r=node.getBoundingClientRect();return node.matches(':focus-visible')&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;}),'Keyboard target must have visible focus in the viewport');
+ }catch(error){
+  const child=await target.evaluate(node=>{const controls=[...document.querySelectorAll('button,input,select,textarea,[tabindex]')].filter(item=>!item.disabled&&item.tabIndex>=0&&item.getClientRects().length),identify=item=>({tag:item?.tagName,label:item?.getAttribute('aria-label'),text:item?.tagName==='BUTTON'?item.textContent?.slice(0,60):undefined});return {target:{...identify(node),disabled:node.disabled,connected:node.isConnected,focused:node===document.activeElement,focusVisible:node.matches(':focus-visible'),rect:node.getBoundingClientRect().toJSON()},active:identify(document.activeElement),documentFocus:document.hasFocus(),snapshotId:document.documentElement.getAttribute('data-dc-trading-snapshot'),controlCount:controls.length,targetPosition:controls.indexOf(node),activePosition:controls.indexOf(document.activeElement)};}).catch(()=>null),parent=await page.evaluate(()=>({snapshotId:tradingTest.payloads.at(-1)?.snapshotId,busy:tradingTest.payloads.at(-1)?.busy,phase:tradingTest.payloads.at(-1)?.phase,lastIntents:tradingTest.intents.slice(-3).map(item=>({intent:item.intent,snapshotId:item.snapshotId}))})).catch(()=>null);
+  console.error('Trading keyboard failure',JSON.stringify({steps,visited,child,parent}));await page.screenshot({path:resolve(output,'trading-keyboard-failure.png'),fullPage:true}).catch(()=>{});throw error;
+ }
 }
 async function keyActivate(page,target,key='Enter'){await keyTo(page,target);await page.keyboard.press(key);}
 async function keyText(page,target,value){await keyTo(page,target);await page.keyboard.press('ControlOrMeta+A');await page.keyboard.type(value);}
