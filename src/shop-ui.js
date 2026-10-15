@@ -23,7 +23,8 @@ export function renderShop(model,context={}, {productId,quantity:initialQuantity
     const currencyName=id=>model.catalog.currencies.find(c=>c.id===id)?.name??id, lineName=id=>model.catalog.lines.find(l=>l.id===id)?.name??id;
     const disposers=[],packArt=(product,small,onSelect)=>context.packArt?.(product,small,onSelect,undefined,fn=>disposers.push(fn))??element('div','dc-pack-art',product.name);
     let shopDisposed=false;const principal=context.getPrincipal?.()??model.me.userId;
-    const fence=()=>{if(shopDisposed||!node.isConnected||(context.getPrincipal?.()??principal)!==principal||(context.isCurrentModel?.(model)??true)===false||typeof client.principal==='function'&&client.principal()!==principal)throw new Error(t('shop.changedView'));};
+    const current=()=>!shopDisposed&&node.isConnected&&(context.getPrincipal?.()??principal)===principal&&(context.isCurrentModel?.(model)??true)!==false&&(typeof client.principal!=='function'||client.principal()===principal);
+    const fence=()=>{if(!current())throw new Error(t('shop.changedView'));};
     const node=section(t('shop.title'),t('shop.description'));
     const guide=element('div','dc-steps');
     for(const [n,title,description]of [['01','shop.stepBuy','shop.stepBuyDescription'],['02','shop.stepReveal','shop.stepRevealDescription'],['03','shop.stepCollect','shop.stepCollectDescription']]){const step=element('div');step.append(element('span','dc-step-number',n),element('strong','',t(title)),element('small','dc-muted',t(description)));guide.append(step);}node.append(guide);
@@ -45,17 +46,23 @@ export function renderShop(model,context={}, {productId,quantity:initialQuantity
       function showActivation(quote){activationNote.textContent=quote?.bindingActivation?t('shop.activation',{count:quote.bindingActivation.maximum}):'';if(!ticketDeck&&quote?.bindingActivation&&!allocationNote.parentNode)info.append(allocationNote);}
       if(recover){quantity.value=String(pendingPurchase.quantity);quantity.disabled=true;}
       const buy=button('',async()=>{
-        await action(async()=>{
+        const focused=document.activeElement===buy,dialog=buy.closest('dialog');let moved=false,reviewGeneration,result;
+        const onFocus=event=>{if(![buy,document.body,document.documentElement,dialog].includes(event.target))moved=true;},onPointer=()=>{moved=true;};
+        if(focused){document.addEventListener('focusin',onFocus,true);document.addEventListener('pointerdown',onPointer,true);}
+        try{result=await action(async()=>{
           fence();const current=++quoteGeneration,requestedQuantity=Number(quantity.value);
           try{
             const quote=recover?pendingPurchase:reviewedQuote??await client.quote({productId:product.id,quantity:requestedQuantity});fence();
             if(current!==quoteGeneration||requestedQuantity!==Number(quantity.value))throw new Error(t('shop.changedQuantity'));
-            if((ticketDeck||forceReview||quote.bindingActivation)&&!recover&&!reviewedQuote){reviewedQuote=structuredClone(quote);showActivation(reviewedQuote);allocationNote.textContent=[t('shop.review',{count:quote.quantity,amount:quote.price.amount,currency:currencyName(quote.price.currencyId)}),...(deckVersion>=3?[t('shop.reviewCodeSupply')]:[]),...(deckVersion>=4?[t('shop.feasibleTickets')]:[]),t('shop.reviewAllocation')].join(' ');return {review:true,activation:!!reviewedQuote.bindingActivation};}
+            if((ticketDeck||forceReview||quote.bindingActivation)&&!recover&&!reviewedQuote){reviewedQuote=structuredClone(quote);reviewGeneration=current;showActivation(reviewedQuote);allocationNote.textContent=[t('shop.review',{count:quote.quantity,amount:quote.price.amount,currency:currencyName(quote.price.currencyId)}),...(deckVersion>=3?[t('shop.reviewCodeSupply')]:[]),...(deckVersion>=4?[t('shop.feasibleTickets')]:[]),t('shop.reviewAllocation')].join(' ');return {review:true,activation:!!reviewedQuote.bindingActivation};}
             if(!ticketDeck&&!recover&&(quote.price.currencyId!==product.price.currencyId||quote.price.amount!==product.price.amount*requestedQuantity)){await refresh();throw new Error(t('shop.changedPrice'));}
             const original=commands.pending('purchase');const receipt=await (!recover&&original?._confirmed?commands.beginNew('purchase',quote):recover?commands.recover('purchase',quote):commands('purchase',quote));fence();context.onPurchased?.();if(ticketDeck||forceReview)await refresh();return receipt;
           }catch(error){if(!shopDisposed){reviewedQuote=null;if(ticketDeck&&['ALLOCATION_STALE','ALLOCATION_PENDING'].includes(error.code)){allocationBlocked=true;allocationNote.textContent=t('allocation.needsReview');}}throw error;}
         },{refreshAfter:!ticketDeck&&!forceReview,message:r=>r.review?t(r.activation?'shop.reviewActivationReady':'shop.reviewReady'):t('shop.purchased',{count:r.packs.length})+(r.bindingActivation?' '+t('shop.activationDelivered',{count:r.bindingActivation.count}):'')});
+        }finally{if(focused){document.removeEventListener('focusin',onFocus,true);document.removeEventListener('pointerdown',onPointer,true);}}
         if(!shopDisposed)update();
+        // A disabled quote button can lose native focus while its reviewed quote is loading.
+        if(result?.review&&focused&&!moved&&reviewGeneration===quoteGeneration&&current()&&!buy.disabled&&(!dialog||dialog.open&&buy.closest('dialog')===dialog)&&[document.body,document.documentElement,buy].includes(document.activeElement))buy.focus();
       });
       function update(){
         pendingPurchase=commands.pending('purchase');recover=pendingPurchase&&!pendingPurchase._confirmed&&pendingPurchase.productId===product.id;
