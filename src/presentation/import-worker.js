@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { importPackage, DEFAULT_LIMITS } from "./package.js";
 import { buildReport, publishPackage } from "./compiler.js";
+import { PresentationError } from "./data.js";
 async function execute(data) {
   let result;
   try {
@@ -27,6 +28,7 @@ async function execute(data) {
       ok: false,
       code: error.code ?? "IMPORT",
       message: String(error.message).slice(0, 1000),
+      safeError: error instanceof PresentationError,
     };
   }
   return result;

@@ -35,23 +35,25 @@ try{
   await page.evaluate(async()=>{
     const [{createPlayerStage,importPackage,browserResolver},{dotLottieAdapter}]=await Promise.all([import('/src/presentation/index.js'),import('/runtime/adapters.js')]);
     const packages={};for(const mode of ['angle','clock'])packages[mode]=await importPackage(new Uint8Array(await(await fetch('/'+mode+'.dcard')).arrayBuffer()));
-    const test=window.liveEffect={packages,createPlayerStage,browserResolver,dotLottieAdapter,records:[],events:[],views:[],resolvers:[]};
+    const test=window.liveEffect={packages,createPlayerStage,browserResolver,dotLottieAdapter,records:[],events:[],views:[],resolvers:[],assetOwners:new WeakMap()};
     test.adapter=()=>{
       const real=dotLottieAdapter({wasmURL:'/runtime/dotlottie-player.wasm'});
       return {...real,async create(context,data){
-        const instance=await real.create(context,data),record={instance,clock:!!data.clock,updates:0,disposed:0,last:null};test.records.push(record);
+        let owner;const instance=await real.create({...context,async asset(id){const resource=await context.asset(id),identity=test.assetOwners.get(resource);if(!identity||owner&&owner!==identity)throw Error('Adapter assets must belong to one mounted view');owner=identity;return resource;}},data).catch(error=>{test.releaseFirst?.();throw error;});if(test.reverseCreation&&owner==='first')await test.secondCreated;const record={instance,owner,clock:!!data.clock,updates:0,disposed:0,last:null};test.records.push(record);if(test.reverseCreation&&owner==='second')test.releaseFirst();
         return {...instance,update(input){record.updates++;record.last={angle:input.inputs.angle,time:input.activeTimeSeconds,staticMotion:input.staticMotion};return instance.update(input);},dispose(){record.disposed++;instance.dispose();}};
       }};
     };
     test.mount=async(mode='angle',options={})=>{
+      test.reverseCreation=!!options.reverseCreation;test.secondCreated=new Promise(resolve=>{test.releaseFirst=resolve;});
       const stage=test.stage=createPlayerStage({root:document.querySelector('#root'),adapters:options.adapters??[test.adapter()],...(options.motion?{motion:options.motion}:{})});
       test.views=[];test.resolvers=[];
       for(const target of [document.querySelector('#first'),...(options.two?[document.querySelector('#second')]:[])]){
-        const resolver=browserResolver(packages[mode]),view=stage.mount(target,{resolver},{inputMode:'drag',onEvent:event=>test.events.push(event)});test.resolvers.push(resolver);test.views.push(view);
+        const resolver=browserResolver(packages[mode]),asset=resolver.asset.bind(resolver);resolver.asset=async id=>{const resource={...await asset(id)};test.assetOwners.set(resource,target.id);return resource;};const view=stage.mount(target,{resolver},{inputMode:'drag',onEvent:event=>test.events.push(event)});test.resolvers.push(resolver);test.views.push(view);
       }
       return Promise.all(test.views.map(view=>view.ready));
     };
-    test.dispose=()=>{test.stage?.dispose();for(const resolver of test.resolvers)resolver.dispose();};
+    test.recordFor=owner=>test.records.findLast(record=>record.owner===owner&&!record.disposed);
+    test.dispose=()=>{test.releaseFirst?.();test.stage?.dispose();for(const resolver of test.resolvers)resolver.dispose();};
     test.pixels=async(view)=>{
       const blob=await view.snapshot(),image=await createImageBitmap(blob),canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;const context=canvas.getContext('2d');context.drawImage(image,0,0);image.close();const bytes=context.getImageData(0,0,canvas.width,canvas.height).data;
       const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(value=>value.toString(16).padStart(2,'0')).join('');let painted=0;for(let i=3;i<bytes.length;i+=4)if(bytes[i]>20)painted++;const center=(Math.floor(canvas.height/2)*canvas.width+Math.floor(canvas.width/2))*4,background=[...bytes.subarray(center,center+4)];canvas.width=canvas.height=0;return {hash,painted,background};
@@ -59,29 +61,30 @@ try{
     test.effectHash=async record=>{const canvas=record.instance.canvas,bytes=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(value=>value.toString(16).padStart(2,'0')).join('');};
     test.pause=milliseconds=>new Promise(resolve=>setTimeout(resolve,milliseconds));
   });
-  assert((await page.evaluate(()=>window.liveEffect.mount('angle',{two:true}))).every(result=>result.mode==='interactive'));
+  assert((await page.evaluate(()=>window.liveEffect.mount('angle',{two:true,reverseCreation:true}))).every(result=>result.mode==='interactive'));
   await page.waitForFunction(()=>window.liveEffect.records.filter(record=>!record.disposed).every(record=>record.updates>0));
+  assert.deepEqual(await page.evaluate(()=>liveEffect.records.map(record=>record.owner)),['second','first'],'Two real adapters complete in reversed view order');
   async function sampleAngle(x){
     await page.evaluate(x=>{const [first,second]=window.liveEffect.views;first.setInputs({tilt:{x,y:0}});second.setInputs({tilt:{x:0,y:0}});},x);
     // Loaded views and an earlier neutral update do not establish delivery of this input.
-    await page.waitForFunction(angle=>{const records=window.liveEffect.records;return records[0].last?.angle===angle&&records[1].last?.angle===0.5;},(x+1)/2);
-    return page.evaluate(async()=>{const test=window.liveEffect;return {pixels:await test.pixels(test.views[0]),effect:await test.effectHash(test.records[0]),other:await test.pixels(test.views[1]),delivered:test.records.slice(0,2).map(record=>record.last.angle)};});
+    await page.waitForFunction(angle=>{const test=window.liveEffect;return test.recordFor('first')?.last?.angle===angle&&test.recordFor('second')?.last?.angle===0.5;},(x+1)/2);
+    return page.evaluate(async()=>{const test=window.liveEffect;return {pixels:await test.pixels(test.views[0]),effect:await test.effectHash(test.recordFor('first')),other:await test.pixels(test.views[1]),delivered:['first','second'].map(owner=>test.recordFor(owner).last.angle)};});
   }
   const beforeAngle=await sampleAngle(-1),afterAngle=await sampleAngle(1);
   assert.deepEqual(beforeAngle.delivered,[0,0.5]);assert.deepEqual(afterAngle.delivered,[1,0.5]);
   const angle=await page.evaluate(({before,after})=>{
     const test=window.liveEffect;
-    const surface=test.records[0].instance.canvas,pixels=surface.getContext('2d').getImageData(0,0,surface.width,surface.height).data;let transparent=0,painted=0;for(let i=3;i<pixels.length;i+=4){if(pixels[i]===0)transparent++;if(pixels[i]>20)painted++;}
+    const surface=test.recordFor('first').instance.canvas,pixels=surface.getContext('2d').getImageData(0,0,surface.width,surface.height).data;let transparent=0,painted=0;for(let i=3;i<pixels.length;i+=4){if(pixels[i]===0)transparent++;if(pixels[i]>20)painted++;}
     return {before:before.pixels,after:after.pixels,effectBefore:before.effect,effectAfter:after.effect,other:before.other,unchanged:after.other,transparent,painted,diagnostics:test.stage.diagnostics()};
   },{before:beforeAngle,after:afterAngle});
   assert(angle.before.painted>1000);assert(angle.transparent>1000&&angle.painted>20,'Real vector surface contains both transparent and painted pixels');assert.equal(angle.after.background[3],255,'Native background remains visible through the transparent effect');assert.notEqual(angle.effectBefore,angle.effectAfter,'Tilt-derived angle changes the actual vector surface');assert.notEqual(angle.before.hash,angle.after.hash,'Live angle changes actual composited output');assert.equal(angle.other.hash,angle.unchanged.hash,'Second instance retains independent input');assert.equal(angle.diagnostics.views,2);
   // Keyboard input uses the stage's existing accessible drag mode.
-  await page.locator('#first [role="img"]').press('ArrowLeft');await page.waitForFunction(()=>window.liveEffect.records[0].last.angle<1);
+  await page.locator('#first [role="img"]').press('ArrowLeft');await page.waitForFunction(()=>window.liveEffect.recordFor('first').last.angle<1);
   await page.waitForFunction(()=>window.liveEffect.stage.diagnostics().scheduledFrames===0);
   const idle=await page.evaluate(async()=>{const test=window.liveEffect,frames=test.stage.diagnostics().frames;await test.pause(160);return test.stage.diagnostics().frames===frames;});assert(idle,'Angle effect sleeps at rest');
   await page.screenshot({path:resolve(output,'angle-effects.png')});
   const remount=await page.evaluate(async()=>{
-    const test=window.liveEffect,old=test.records.slice();await test.views[0].setQuality('poster');const disabled=old[0].disposed;const restored=await test.views[0].setQuality('standard');test.dispose();return {disabled,restored,records:test.records.map(record=>({disposed:record.disposed,width:record.instance.canvas.width,height:record.instance.canvas.height})),diagnostics:test.stage.diagnostics()};
+    const test=window.liveEffect,old=test.recordFor('first');await test.views[0].setQuality('poster');const disabled=old.disposed;const restored=await test.views[0].setQuality('standard');test.dispose();return {disabled,restored,records:test.records.map(record=>({disposed:record.disposed,width:record.instance.canvas.width,height:record.instance.canvas.height})),diagnostics:test.stage.diagnostics()};
   });
   assert.equal(remount.disabled,1);assert.equal(remount.restored.mode,'interactive');assert(remount.records.every(record=>record.disposed===1&&record.width===0&&record.height===0));assert.equal(remount.diagnostics.views,0);assert.equal(remount.diagnostics.assetReferences,0);
   checks.push('Independent Python-authored vector effect renders through real dotLottie/WASM and native WebGL compositing; tilt and keyboard change pixels, two instances stay independent, idle scheduling, poster disable/remount and disposal retain bounds');

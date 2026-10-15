@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Restore keyboard focus to the original Reveal code button after a failed request so it can be retried, without overriding account changes or deliberate focus movement.
+- Keep keyboard focus on Save album after a successful save, while respecting navigation, account changes and deliberate focus movement.
+- Allow the default artwork editor to load its generated image URLs so local image imports can render and capture posters under the reference host's security policy.
+- Preserve keyboard focus when a shop quote becomes ready for purchase, without overriding deliberate focus movement or a changed account, view or quantity.
+- Hide internal filesystem and provider exception details in presentation responses and import-job results, including retained jobs from earlier versions; preserve safe validation diagnostics and return 404 for missing content.
 - Restore keyboard focus to the original marketplace control after closing a review, while respecting account changes, disposal and deliberate focus movement.
 - Measure embedded-font letter spacing consistently across styled spans so overflow and drawing agree.
 - Add a runnable complete card-line example covering artwork, packs, albums, publication and purchase/opening replay.

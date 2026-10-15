@@ -55,7 +55,7 @@ try {
   assert.equal(await page.locator("#viewer canvas").count(), 0);
   }
   const moduleRoot = selfHosted ? "/src/presentation" : "/player";
-  let typography, flat, custom;
+  let typography, flat, custom, reducedMotion;
   if (typographyOnly) {
     typography = await page.evaluate(async moduleRoot => {
       const [{ imagePackage }, { createProject }, { addText }, { mountStudio }, { browserResolver }, { createPlayerStage }] = await Promise.all([
@@ -212,13 +212,50 @@ try {
   assert(custom.poster.visible);assert.equal(custom.poster.resources.textures,0);assert.equal(custom.poster.resources.assetReferences,0);assert(custom.posterCaptureRejected);
   assert(custom.restored.every(value=>value.mode==="interactive"));assert(custom.remounted.painted>100);assert.equal(custom.released.views,0);assert.equal(custom.released.textures,0);assert.equal(custom.released.assetReferences,0);
   }
+  if (recipeOnly) {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    const mounted = await page.evaluate(async moduleRoot => {
+      const [{ createAuthoring }, { browserResolver }, { createPlayerStage }] = await Promise.all([
+        import(moduleRoot + "/authoring.js"), import(moduleRoot + "/package.js"), import(moduleRoot + "/player.js"),
+      ]);
+      const source = document.createElement("canvas"); source.width = 32; source.height = 48;
+      source.getContext("2d").fillRect(0, 0, 32, 48);
+      const blob = await new Promise(resolve => source.toBlob(resolve, "image/png"));
+      const creator = createAuthoring({ effects: { "qualify.motion": node => ({ ...node,
+        material: { kind: "glitter", size: 18, density: 0.5, shape: "star", seed: 51, intensity: 3 },
+        bindings: { "material.angle": ["input", "time.active"] },
+      }) } });
+      const pkg = await creator.build({ id: "motion-preference", source: { format: "image", mediaType: "image/png", bytes: new Uint8Array(await blob.arrayBuffer()) }, effects: [{ id: "qualify.motion", node: "art", parameters: {} }] });
+      const root = document.createElement("div"); Object.assign(root.style, { width: "300px", height: "450px" }); document.body.prepend(root);
+      const resolver = browserResolver(pkg), stage = createPlayerStage({ root }), view = stage.mount(root, { resolver }, { quality: "lite" });
+      const ready = await view.ready; source.width = source.height = 0;
+      window.motionQualification = { stage, view, resolver, root };
+      return { ready, resources: stage.diagnostics() };
+    }, moduleRoot);
+    assert.equal(mounted.ready.mode, "interactive");
+    await page.waitForFunction(frames => motionQualification.stage.diagnostics().frames >= frames + 2, mounted.resources.frames);
+    const moving = await page.evaluate(() => motionQualification.stage.diagnostics());
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.waitForTimeout(100);
+    const before = await page.evaluate(() => motionQualification.stage.diagnostics());
+    await page.waitForTimeout(250);
+    const after = await page.evaluate(() => motionQualification.stage.diagnostics());
+    assert.equal(after.frames, before.frames, "Reduced motion must stop autonomous frames after real motion was observed");
+    assert.equal(after.scheduledFrames, 0);
+    const released = await page.evaluate(() => {
+      const { stage, view, resolver, root } = motionQualification;
+      view.dispose(); const resources = stage.diagnostics(); stage.dispose(); resolver.dispose(); root.remove(); delete window.motionQualification; return resources;
+    });
+    assert.equal(released.views, 0); assert.equal(released.textures, 0); assert.equal(released.assetReferences, 0);
+    reducedMotion = { mounted, moving, before, after, released };
+  }
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(out, "host-report.json"),
-    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, errors }, null, 2),
+    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, reducedMotion, errors }, null, 2),
   );
   console.log(
-    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, errors }, null, 2),
+    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, reducedMotion, errors }, null, 2),
   );
 } finally {
   await browser?.close();

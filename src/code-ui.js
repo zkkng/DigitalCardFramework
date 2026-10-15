@@ -25,7 +25,7 @@ export function createCodeRevealController({ codeId, reveal, key = () => crypto.
 }
 
 /** Replaceable cosmetic interaction. The code is fetched only after reveal is requested. */
-export function renderCodeReveal({ codeId, mode = 'scratch' }, { reveal, key, threshold = 0.45,locale='en',messages={},localization=createLocalization({locale,messages}) } = {}) {
+export function renderCodeReveal({ codeId, mode = 'scratch' }, { reveal, key, threshold = 0.45,locale='en',messages={},localization=createLocalization({locale,messages}),isCurrent=()=>true } = {}) {
   if (!['open', 'scratch', 'peel'].includes(mode) || !Number.isFinite(threshold) || threshold <= 0 || threshold > 1)
     throw new Error('Invalid code reveal options');
   const t=localization.text,controller = createCodeRevealController({ codeId, reveal:async input=>{const result=await reveal(input);if(typeof result?.code!=='string')throw new Error(t('codes.invalidResponse'));return result;}, key });
@@ -39,7 +39,7 @@ export function renderCodeReveal({ codeId, mode = 'scratch' }, { reveal, key, th
   output.style.cssText = 'padding:18px;overflow-wrap:anywhere;font:600 1.15rem monospace';
   output.textContent = t('codes.private');
   const cells = Array.from({ length: 96 }, () => { const cell = el('span'); cell.style.background = 'linear-gradient(135deg,#b4afc4,#716980)'; cover.append(cell); return cell; });
-  let dragging = false, startX = 0, previous = null, completed = false;
+  let dragging = false, startX = 0, previous = null, completed = false, disposed=false, retryFocus=null;
   const scratched = new Set();
   function progress(e) {
     if (!dragging || completed) return;
@@ -65,19 +65,27 @@ export function renderCodeReveal({ codeId, mode = 'scratch' }, { reveal, key, th
   surface.addEventListener('pointermove', progress);
   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) surface.addEventListener(type, () => { dragging = false; previous = null; });
   const unsubscribe = controller.subscribe(state => {
+    if(state.phase==='loading'){
+      retryFocus?.abort.abort();retryFocus=null;
+      if(document.activeElement===revealButton){const attempt={abort:new AbortController(),moved:false};retryFocus=attempt;
+        document.addEventListener('focusin',event=>{if(![revealButton,document.body,document.documentElement].includes(event.target))attempt.moved=true;},{capture:true,signal:attempt.abort.signal});
+        document.addEventListener('pointerdown',()=>{attempt.moved=true;},{capture:true,signal:attempt.abort.signal});
+      }
+    }
     node.dataset.state = state.phase;
     revealButton.disabled = state.phase === 'loading' || state.phase === 'revealed';
     output.textContent = state.code ?? t('codes.private');
     cover.hidden = state.phase === 'revealed' || mode === 'open';
     if (cover.hidden) cover.style.display = 'none';
     status.textContent = (state.error ? localizeDiagnostic(localization,state.diagnostic) : null) ?? t(state.phase==='loading'?'codes.loading':state.phase==='revealed'?'codes.revealed':mode==='peel'?'codes.peelHint':mode==='scratch'?'codes.scratchHint':'codes.openLoading');
+    if(state.phase!=='loading'){const attempt=retryFocus;retryFocus=null;attempt?.abort.abort();if(state.phase==='error'&&attempt&&!attempt.moved&&!disposed&&node.isConnected&&revealButton.isConnected&&!revealButton.disabled&&isCurrent()&&document.hasFocus()&&[document.body,document.documentElement,revealButton].includes(document.activeElement))revealButton.focus();}
   });
   surface.append(output, cover); node.append(surface, status, revealButton);
   if (mode === 'open') queueMicrotask(() => controller.open());
-  return { node, controller, dispose() { unsubscribe(); controller.dispose(); output.textContent = ''; node.replaceChildren(); } };
+  return { node, controller, dispose() { disposed=true;retryFocus?.abort.abort();retryFocus=null;unsubscribe(); controller.dispose(); output.textContent = ''; node.replaceChildren(); } };
 }
 
-export function renderCodeHistory(model, { client, codeRevealRenderer = renderCodeReveal,locale='en',messages={},localization=createLocalization({locale,messages}) } = {}) {
+export function renderCodeHistory(model, { client, codeRevealRenderer = renderCodeReveal,getPrincipal,isCurrentModel,locale='en',messages={},localization=createLocalization({locale,messages}) } = {}) {
   const t=localization.text,enumLabel=value=>Object.hasOwn(localizationKeys,'codes.status.'+value)?t('codes.status.'+value):value;
   const node = section(t('codes.title'),t('codes.description')),
     search = field(node,t('codes.search'), { placeholder:t('codes.searchPlaceholder') }),
@@ -85,6 +93,7 @@ export function renderCodeHistory(model, { client, codeRevealRenderer = renderCo
   node.setAttribute('lang',localization.locale);node.setAttribute('dir',localization.dir);
   status.setAttribute('role', 'status'); node.append(list, status, next);
   let disposed = false, generation = 0, cursor = null, loading = false;
+  const principal=client.principal?.()??getPrincipal?.()??model?.me?.userId,revealCurrent=()=>!disposed&&(typeof getPrincipal!=='function'||getPrincipal()===principal)&&(typeof client.principal!=='function'||client.principal()===principal)&&(isCurrentModel?.(model)??true)!==false;
   const revealViews = [];
   async function load(reset) {
     if (loading && !reset) return;
@@ -98,7 +107,7 @@ export function renderCodeHistory(model, { client, codeRevealRenderer = renderCo
         const describe = () => { note.textContent = t('codes.summary',{status:enumLabel(row.status),marker:t(row.reportedUsed?'codes.usedMarker':'codes.noUsedMarker'),provider:row.providerId}); };
         describe(); card.append(el('h3', '', row.name), el('p', '', row.title), note);
         if (row.canReveal) {
-          const reveal = codeRevealRenderer({ codeId: row.id, mode: row.reveal }, { reveal: input => client.revealCode(input), key: client.requestKey,localization });
+          const reveal = codeRevealRenderer({ codeId: row.id, mode: row.reveal }, { reveal: input => client.revealCode(input), key: client.requestKey,localization,isCurrent:revealCurrent });
           revealViews.push(reveal); card.append(reveal.node ?? reveal);
           const report = button(t(row.reportedUsed?'codes.clearMarker':'codes.markUsed'), async () => {
             report.disabled = true;

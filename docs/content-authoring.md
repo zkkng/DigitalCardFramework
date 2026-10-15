@@ -71,6 +71,8 @@ Card `appearance.background` controls the default face background. Card or varia
 
 Pointer tilt/parallax changes layer offsets. The inspector's orbit rotates the front/back surface and supports flip, zoom, reset and arrow keys. Shared inspection rotates a group. CSS presentation does not reconstruct hidden art or volumetric geometry. Hosts can replace card/inspector/comparison renderers for WebGL or another player.
 
+The default inspector starts at yaw/pitch 0 and zoom 1. Left/right arrow keys change yaw by 15 degrees; up/down change pitch by 10 degrees. Horizontal rotation buttons use 45 degrees and Flip uses 180. Zoom controls and +/- keys change scale by 0.1, bounded from 0.5 to 1.7; pitch is bounded to -85 through 85 degrees. Reset returns the initial camera pose. These are presentation controls, not copy edits. Replacement inspectors own their camera behavior. For connected art and missing pieces, use the combination contract below; shared inspection alone does not create a connected assembly.
+
 ## Combinable cards
 
 Combination manifests reference card definitions and grid cells. They do not consume, mint, merge or change ownership.

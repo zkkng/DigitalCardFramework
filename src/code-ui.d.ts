@@ -25,22 +25,29 @@ export interface CodeUILocalizationOptions {
   messages?: LocalizationMessages;
   localization?: Localization;
 }
-export interface CodeRevealOptions extends CodeRevealHost, CodeUILocalizationOptions {threshold?: number}
+export interface CodeRevealOptions extends CodeRevealHost, CodeUILocalizationOptions {
+  threshold?: number;
+  /** Whether the original view may receive focus after a retryable reveal error. */
+  isCurrent?: () => boolean;
+}
 export interface CodeRevealView {
   node: HTMLElement;
   controller: CodeRevealController;
   dispose(): void;
 }
 export function renderCodeReveal(input: CodeRevealInput, options: CodeRevealOptions): CodeRevealView;
-export type CodeHistoryClient = Pick<Client, 'codeHistory' | 'revealCode' | 'reportCodeUsage' | 'requestKey'> & Partial<Pick<Client, 'reconcileCode'>>;
+export type CodeHistoryClient = Pick<Client, 'codeHistory' | 'revealCode' | 'reportCodeUsage' | 'requestKey'> & Partial<Pick<Client, 'reconcileCode' | 'principal'>>;
 export type CodeHistoryRevealRenderer = (input: CodeRevealInput, options: {
   reveal: CodeRevealHost['reveal'];
   key: () => string;
   localization: Localization;
+  isCurrent?: () => boolean;
 }) => (HTMLElement & {dispose?(): void; controller?: CodeRevealController}) | {node: HTMLElement; dispose?(): void; controller?: CodeRevealController};
-export interface CodeHistoryOptions extends CodeUILocalizationOptions {
+export interface CodeHistoryOptions<Model = unknown> extends CodeUILocalizationOptions {
   client: CodeHistoryClient;
   codeRevealRenderer?: CodeHistoryRevealRenderer;
+  getPrincipal?: () => string | null;
+  isCurrentModel?: (captured: Model) => boolean;
 }
 export interface CodeHistoryView {
   node: HTMLElement;
@@ -48,5 +55,5 @@ export interface CodeHistoryView {
   ready: Promise<void>;
   dispose(): void;
 }
-/** The model argument is currently unused; history is read through the host client. */
-export function renderCodeHistory(model: unknown, options: CodeHistoryOptions): CodeHistoryView;
+/** History is read through the client; the model can identify the original account/view for retry focus. */
+export function renderCodeHistory<Model = unknown>(model: Model, options: CodeHistoryOptions<Model>): CodeHistoryView;

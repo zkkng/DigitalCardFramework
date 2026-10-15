@@ -3,6 +3,24 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {createApiHandler} from '../src/http.js';
 import {fixture} from './helpers.js';
+import {serveReference} from '../src/static.js';
+
+test('reference CSP permits local blob asset fetches without widening script or external origins',async t=>{
+  let options={};const server=createServer(async(req,res)=>{if(!await serveReference(req,res,options))res.writeHead(404).end();});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const origin='http://127.0.0.1:'+server.address().port;
+  for(const assetOrigins of [[],['https://assets.example']]){
+    options={production:assetOrigins.length>0,assetOrigins};const response=await fetch(origin+'/');assert.equal(response.status,200);
+    const directives=Object.fromEntries(response.headers.get('Content-Security-Policy').split(';').map(value=>value.trim().split(/\s+/)).map(([name,...values])=>[name,values]));
+    assert.deepEqual(directives,{
+      'default-src':["'none'"],'script-src':["'self'"],'style-src':["'self'","'unsafe-inline'"],
+      'img-src':["'self'",...assetOrigins,'blob:'],'media-src':["'self'",'blob:',...assetOrigins],
+      'connect-src':["'self'",'blob:',...assetOrigins],'font-src':["'self'"],'worker-src':["'self'"],
+      'object-src':["'none'"],'base-uri':["'none'"],'frame-ancestors':["'none'"],'form-action':["'self'"],
+    });
+    assert.equal(response.headers.get('Cache-Control'),options.production?'public, max-age=0, must-revalidate':'no-store');await response.text();
+  }
+});
 
 test('production API enforces principal binding, review, operator boundaries, bounded input and privacy',async t=>{
   const x=fixture();let origin,handler;const server=createServer((req,res)=>handler(req,res));await new Promise(r=>server.listen(0,'127.0.0.1',r));origin='http://127.0.0.1:'+server.address().port;

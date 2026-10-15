@@ -8,6 +8,40 @@ Open **Creator studio → Open visual card editor** and select a card or variant
 
 Use **Add text** for a title or body layer. Select it to change font, size, spacing, alignment, colors, outline, shadow, language, direction and overflow. Arrange either face with duplicate, group, align, snap, lock and order controls. Undo/redo includes these changes.
 
+### Layer positions and arrangement
+
+The selected layer's **x**, **y**, **width** and **height** use local card drawing units, independent of screen size. Positions default to 0 when absent; dimensions come from the project, not a universal image size. Drawable dimensions and isolated-group bounds must be positive, from 0.001 to 20,000. **Rotation** uses degrees, defaults to 0, and rotates an image about its center unless its data supplies another pivot. Groups use their local origin by default.
+
+| Arrange layers control | Effect |
+| --- | --- |
+| Bring forward / Send back | Moves a selected top-level layer one place; use Arrange layers for nested selections |
+| Move forward / Move backward | Moves selected roots within their sibling lists, rather than changing parallax |
+| Duplicate selected | Copies selected roots with new descendant IDs and offsets x/y by 20 local units |
+| Align left/right/top/bottom | Aligns to the selected layers' combined bounds |
+| Center on card | Centers each selected layer horizontally on the canvas |
+| Snap to 10-unit grid | Rounds x/y to the nearest multiple of 10 local units |
+| Group / Ungroup selected | Changes nesting; disable isolation and reset group rotation and scale before ungrouping |
+| Lock / Unlock selected; Delete selected | Protects or releases edits; deletion removes the selected roots |
+
+Node scale, pivot, source crop, opacity and blend are scene-data/API properties; they are not general sliders in this selected-layer form. Mask transforms have their own controls below. Group inheritance and isolation also affect the result.
+
+### Typography values
+
+These numeric controls use local drawing units except weight and line height. Their starting values apply when the corresponding typography property is absent; a template or policy can supply another value.
+
+| Control | Range; starting value | Meaning |
+| --- | --- | --- |
+| Font size / Minimum font size | 1 to 2000; 48 / 8 in the controls | Requested size and shrink floor; minimum cannot exceed size |
+| Font weight | 1 to 1000; 400 | Requested weight; does not manufacture an unavailable embedded face |
+| Line height | 0.5 to 5; 1.2 | Multiplier of font size |
+| Letter spacing | -100 to 100; 0 | Extra advance between glyphs, including adjacent styled spans |
+| Paragraph spacing | 0 to 1000; 0 | Extra space between paragraphs |
+| Outline width | 0 to 100; 0 | Text stroke width; 0 disables the outline |
+| Shadow blur | 0 to 100; 0 | Blur amount |
+| Shadow horizontal/vertical offset | -200 to 200; 0 | Signed displacement of the shadow |
+
+Outline and shadow colors start black. Vertical alignment chooses top, middle or bottom within the text box. Size, spacing and decorative effects can require more room; inspect the resulting layout and policy diagnostics. Embedded variable axes use the selected font's own minimum, default and maximum, rather than universal axis bounds.
+
 **Add custom font** embeds a WOFF2, WOFF, TTF or OTF face. Use files you may redistribute with the card. Upload static bold/italic faces as their actual font files; variable fonts expose their supported axes. Embedded faces render from their outlines in preview and posters. Missing glyphs and loading failures produce diagnostics; the supplied poster remains the fallback. System fonts are available for drafts, but strict overflow policies require embedded fonts for authoritative measurement.
 
 The upload dialog records a usage-terms or license declaration before embedding the file. **Embedded font assets** lets you review or edit that declaration and inspect the decoded family, face, style, weight, italic angle, axes, glyph count, character-map entries and immutable byte digest. A missing weight table is shown as unavailable. A coverage sample reports missing Unicode code points; character-map counts do not prove that every entry has a usable glyph or that a script shapes correctly. Terms are stored metadata and are not verified rights. Uploading another font preserves a locked layer's existing font assignment.
@@ -41,6 +75,8 @@ Select an unlocked layer or isolated group and open **Clipping mask properties**
 Name the item under **Reusable library**, then **Save clipping mask** and apply that saved version to another layer or card. Editing an applied mask detaches its library reference and keeps the saved revision intact. Reapply the saved item to restore it. Authoring changes and toolbar undo share an action queue; queued changes are skipped after the editor is disposed.
 
 Clipping and effect masks have independent translation, scale, rotation and pivot controls. Translations and pivots use fractions of the layer dimensions; rotation uses degrees in the layer's pixel space. Negative scales mirror coverage; zero scales are rejected. Image mask crop controls select a source rectangle in asset pixels, including an atlas region, and preserve soft alpha coverage. Reset buttons restore the full source image or identity transform. Effect masks can use either image alpha or editable polygon coverage, with optional inversion; they limit material effects without clipping the underlying artwork. Saved masks retain their crop and transform.
+
+Mask transform defaults are x/y 0, scale x/y 1, rotation 0 and pivot x/y 0.5. Translation, scale and pivot values accept -100 to 100; rotation accepts -360000 to 360000 degrees. Each scale's absolute value must be at least 0.001. An omitted image crop uses the full asset. Crop components are at most 16384 source pixels: x/y are nonnegative, and positive width/height must stay inside the source bounds. The corresponding reset buttons restore defaults without replacing the saved library revision.
 
 Packages using these layouts declare required capability `dc.mask-layout@0.2`; players without it use the package posters. Existing masks keep their default full-image or polygon layout.
 
