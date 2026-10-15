@@ -11,6 +11,17 @@ import {createCodeGateway} from '../src/code-gateway.js';
 import {serveReference} from '../src/static.js';
 import {validateApplicationShell} from '../src/application-shell.js';
 
+async function keyTo(page,target){
+  await target.waitFor({state:'visible'});
+  const deadline=Date.now()+15000;
+  while(!await target.evaluate(node=>node===document.activeElement)){
+    assert(Date.now()<deadline,'Keyboard traversal must reach the intended control');
+    await page.keyboard.press('Tab');
+  }
+  assert(await target.evaluate(node=>{const r=node.getBoundingClientRect();return node.matches(':focus-visible')&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;}),'Keyboard target must have visible focus in the viewport');
+}
+async function keyActivate(page,target,key='Enter'){await keyTo(page,target);await page.keyboard.press(key);}
+
 const engine=process.env.BROWSER_ENGINE??'webkit',output=resolve(process.argv[2]??'test-results/codes-shell'),manifests=new Map(),cases=[],errors=[];
 let browser,x,actor,api,origin,dropReveal=false,holdReveal=false,releaseReveal,capturedReveal;
 const server=createServer(async(request,response)=>{
@@ -53,8 +64,8 @@ try{
     for(const [path,input]of [['reveal',{key:'foreign-reveal',codeId:aIds[0]}],['report',{key:'foreign-report',codeId:aIds[0],used:true}],['reconcile',{codeId:aIds[0]}]]){
       const response=await fetch(origin+'/api/codes/'+path,{method:'POST',headers:{Authorization:'bob',Origin:origin,'Content-Type':'application/json','X-DC-Principal':x.bob.userId},body:JSON.stringify({...input,userId:x.alice.userId,role:'admin'})});assert.equal(response.status,404);assert.equal(response.headers.get('cache-control'),'no-store');assert(!(await response.text()).includes('SECRET-REWARD'));
     }
-    const first=rowFor(aIds[0]);dropReveal=true;await first.getByRole('button',{name:'Reveal code',exact:true}).click();await first.locator('.dc-code-reveal[data-state="error"]').waitFor();const attemptsBeforeRetry=revealCalls.filter(call=>call.userId===x.alice.userId&&call.input.codeId===aIds[0]);assert.equal(attemptsBeforeRetry.length,1);
-    await first.getByRole('button',{name:'Reveal code',exact:true}).click();await first.locator('.dc-code-reveal[data-state="revealed"]').waitFor();assert.equal(await first.locator('.dc-code-value').textContent(),'SECRET-REWARD-0');const originalAttempts=revealCalls.filter(call=>call.userId===x.alice.userId&&call.input.codeId===aIds[0]);assert.equal(originalAttempts.length,2);assert.deepEqual(originalAttempts[0].input,originalAttempts[1].input);
+    const first=rowFor(aIds[0]);dropReveal=true;await keyActivate(page,first.getByRole('button',{name:'Reveal code',exact:true}));await first.locator('.dc-code-reveal[data-state="error"]').waitFor();const attemptsBeforeRetry=revealCalls.filter(call=>call.userId===x.alice.userId&&call.input.codeId===aIds[0]);assert.equal(attemptsBeforeRetry.length,1);
+    await keyActivate(page,first.getByRole('button',{name:'Reveal code',exact:true}));await first.locator('.dc-code-reveal[data-state="revealed"]').waitFor();assert.equal(await first.locator('.dc-code-value').textContent(),'SECRET-REWARD-0');const originalAttempts=revealCalls.filter(call=>call.userId===x.alice.userId&&call.input.codeId===aIds[0]);assert.equal(originalAttempts.length,2);assert.deepEqual(originalAttempts[0].input,originalAttempts[1].input);assert(await page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches));
     await first.getByRole('button',{name:'Mark used',exact:true}).click();await first.getByRole('button',{name:'Clear used marker',exact:true}).waitFor();assert.equal(x.core.codeHistory(x.alice).items.find(row=>row.id===aIds[0]).reportedUsed,true);assert.equal(x.core.codeHistory(x.bob).items[0].reportedUsed,false);
     await first.getByRole('button',{name:'Check provider status',exact:true}).click();await first.getByText('redeemed · You marked this used · example.game',{exact:true}).waitFor();assert.deepEqual(providerCalls,[aIds[0]]);assert.equal(x.core.codeHistory(x.bob).items[0].status,'allocated');
     await page.evaluate(()=>codeShell.revealedNode=document.querySelector('.dc-code-reveal[data-state="revealed"]'));
