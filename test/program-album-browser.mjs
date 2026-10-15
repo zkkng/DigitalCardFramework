@@ -12,22 +12,23 @@ import {createApiHandler} from '../src/http.js';
 import {serveReference} from '../src/static.js';
 import {programHeaders} from '../src/presentation/program.js';
 
-async function keyTo(page,target){
+async function keyTo(page,target,direction='Tab'){
   let steps=0;const visited=[];
   try{
   await target.waitFor({state:'visible'});
   const deadline=Date.now()+15000;
   while(!await target.evaluate(node=>node===document.activeElement)){
     assert(Date.now()<deadline,'Keyboard traversal must reach the intended control');
-    await page.keyboard.press('Tab');steps++;
+    await page.keyboard.press(direction);steps++;
     visited.push(await target.evaluate(()=>({tag:document.activeElement?.tagName,label:document.activeElement?.getAttribute('aria-label'),text:['BUTTON','SUMMARY'].includes(document.activeElement?.tagName)?document.activeElement.textContent?.slice(0,60):undefined,documentFocus:document.hasFocus()})));if(visited.length>16)visited.shift();
   }
   assert(await target.evaluate(node=>{const r=node.getBoundingClientRect();return node.matches(':focus-visible')&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;}),'Keyboard target must have visible focus in the viewport');
-  }catch(error){error.albumKeyboard={steps,visited,state:await keyboardState(target).catch(()=>null)};console.error('Album keyboard failure',JSON.stringify(error.albumKeyboard));throw error;}
+  return {direction,steps,visited};
+  }catch(error){error.albumKeyboard={direction,steps,visited,state:await keyboardState(target).catch(()=>null)};console.error('Album keyboard failure',JSON.stringify(error.albumKeyboard));throw error;}
 }
 async function keyboardState(target){return target.evaluate(node=>{const modal=document.querySelector('dialog:modal'),scope=modal??document,controls=[...scope.querySelectorAll('button,input,select,textarea,summary,a[href],iframe,[tabindex]')].filter(item=>!item.matches(':disabled')&&item.tabIndex>=0&&item.getClientRects().length),identify=item=>({tag:item?.tagName,label:item?.getAttribute('aria-label')??item?.labels?.[0]?.textContent,text:['BUTTON','SUMMARY'].includes(item?.tagName)?item.textContent?.slice(0,60):undefined});return {target:{...identify(node),connected:node.isConnected,disabled:node.matches(':disabled'),inert:!!node.closest('[inert]'),rect:node.getBoundingClientRect().toJSON()},active:identify(document.activeElement),documentFocus:document.hasFocus(),modal:!!modal,targetInModal:!!modal?.contains(node),rootBusy:document.querySelector('#root')?.hasAttribute('aria-busy'),controlCount:controls.length,targetPosition:controls.indexOf(node),activePosition:controls.indexOf(document.activeElement),scrollY};});}
 async function keyActivate(page,target,key='Enter'){await keyTo(page,target);await page.keyboard.press(key);}
-async function keyText(page,target,value){await keyTo(page,target);await page.keyboard.press('ControlOrMeta+A');await page.keyboard.type(value);}
+async function keyText(page,target,value,direction='Tab'){const route=await keyTo(page,target,direction);await page.keyboard.press('ControlOrMeta+A');await page.keyboard.type(value);return route;}
 
 const baseOutput=resolve(process.argv[2]??'test-results/program-album'),languages=(process.env.DC_PROGRAM_LANGUAGES??'python,go').split(',');
 if(languages.some(language=>!['python','go'].includes(language)))throw Error('Unsupported program generator');
@@ -102,7 +103,7 @@ try{
   await page.getByRole('button',{name:'Move page 1 later',exact:true}).click();
   await page.locator('.dc-arrange-tile').filter({has:page.getByRole('button',{name:'Move Dawn earlier',exact:true})}).getByRole('combobox').selectOption('second');
   await writeFile(resolve(output,'album-name-keyboard-entry.json'),JSON.stringify({engine,language,state:await keyboardState(page.getByLabel('Album name',{exact:true}))},null,2));
-  await keyText(page,page.getByLabel('Album name',{exact:true}),'Edited private album');await page.keyboard.press('Tab');
+  const nameRoute=await keyText(page,page.getByLabel('Album name',{exact:true}),'Edited private album','Shift+Tab');await writeFile(resolve(output,'album-name-keyboard-route.json'),JSON.stringify(nameRoute,null,2));await page.keyboard.press('Tab');
   await page.getByRole('button',{name:'Preview album',exact:true}).click();await album.scrollIntoViewIfNeeded();await album.frameLocator('iframe').locator('html[data-dc-album-state="ready"]').waitFor();
   await keyActivate(page,page.getByRole('button',{name:'Save album',exact:true}));await page.waitForFunction(()=>!document.querySelector('#root').hasAttribute('aria-busy'));assert.equal(saves.length,1,await page.locator('.dc-status').textContent());
   const saved=saves[0];assert.equal(saved.result.id,privateAlbum.id);assert.equal(saved.input.visibility,'private');assert.equal(saved.input.layout.id,'journal');
