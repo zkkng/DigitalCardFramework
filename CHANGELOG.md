@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Simplify menus, artwork tools, account activity and recovery messages, with matching guide instructions and clearer labels in the supplied examples.
+
 - Keep administration review focus through saving, error recovery and completion while respecting deliberate focus movement.
 
 - Keep alternate journal cards compact and inspector surfaces readable with light themes.

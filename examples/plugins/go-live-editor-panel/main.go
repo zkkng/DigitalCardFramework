@@ -20,15 +20,15 @@ const html = `<!doctype html>
 </head>
 <body>
   <main aria-labelledby="panel-title">
-    <header><span class="eyebrow">LAYER WORKSHOP</span><h1 id="panel-title">Make the details yours</h1>
+    <header><span class="eyebrow">LAYER WORKSHOP</span><h1 id="panel-title">Edit the selected layer</h1>
       <p id="panel-help">Select an unlocked layer in Studio. Edit its available properties, then propose changes for review.</p></header>
     <section aria-describedby="panel-help">
-      <fieldset><legend>Words and type</legend>
+      <fieldset><legend>Text</legend>
         <label for="layer-text">Text</label>
         <textarea id="layer-text" data-editor-field="text" rows="3" maxlength="4096" disabled></textarea>
         <div class="grid">
           <label for="layer-color">Text or fill color<input id="layer-color" data-editor-field="color" type="color" value="#304853" disabled></label>
-          <label for="type-size">Size (px)<input id="type-size" data-editor-field="typography.size" type="number" min="1" max="512" step="1" disabled></label>
+          <label for="type-size">Text size (px)<input id="type-size" data-editor-field="typography.size" type="number" min="1" max="512" step="1" disabled></label>
           <label for="line-height">Line height<input id="line-height" data-editor-field="typography.lineHeight" type="number" min="0.5" max="5" step="any" disabled></label>
           <label for="letter-spacing">Letter spacing (px)<input id="letter-spacing" data-editor-field="typography.letterSpacing" type="number" min="-100" max="100" step="any" disabled></label>
           <label for="type-align">Alignment<select id="type-align" data-editor-field="typography.align" disabled><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>

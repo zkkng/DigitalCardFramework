@@ -70,7 +70,7 @@ export function createAuthHost({framework,sessions,provider,origin,adminSubjects
     async handle(req,res){const url=new URL(req.url,origin);if(!url.pathname.startsWith('/auth/'))return false;
       res.setHeader('Cache-Control','no-store');
       try{
-        if(!rateLimit({request:req,mutation:true})) {res.statusCode=429;res.setHeader('Retry-After','60');res.end('Try again shortly');return true;}
+        if(!rateLimit({request:req,mutation:true})) {res.statusCode=429;res.setHeader('Retry-After','60');res.end('Please wait one minute, then try again.');return true;}
         if(url.pathname==='/auth/login'&&req.method==='GET'){
           const started=await provider.begin(),flow=await sessions.create('flow',started.data,10*60000);
           res.setHeader('Set-Cookie',setCookie(flowName,flow,600));res.statusCode=303;res.setHeader('Location',started.url);res.end();
@@ -84,7 +84,7 @@ export function createAuthHost({framework,sessions,provider,origin,adminSubjects
           if(req.headers.origin!==origin){res.statusCode=403;res.end('Origin rejected');return true;}
           await sessions.revoke(cookie(req,sessionName));res.setHeader('Set-Cookie',setCookie(sessionName,'',0));res.statusCode=204;res.end();
         }else {res.statusCode=404;res.end('Not found');}
-      }catch {res.statusCode=400;res.setHeader('Set-Cookie',setCookie(flowName,'',0));res.end('Sign-in could not be completed. Start a new login.');}
+      }catch {res.statusCode=400;res.setHeader('Set-Cookie',setCookie(flowName,'',0));res.end('Sign-in failed. Return to the application and try again.');}
       return true;
     }
   };

@@ -115,11 +115,11 @@ try{
     const diagnostic={engine,language,editorContribution,grants:{x:{minimum:-100,maximum:100}},trace:await page.evaluate(()=>window.artistPanelTrace.snapshot()).catch(()=>null)};
     await writeFile(resolve(output,'panel-edit-failure.json'),JSON.stringify(diagnostic,null,2)+'\n').catch(()=>{});console.error(JSON.stringify({panelEditFailure:diagnostic}));throw error;
   }finally{await page.evaluate(()=>window.artistPanelTrace.stop()).catch(()=>{});}
-  const panelDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Save project',exact:true}).click();const panelArchive=await panelDownload,panelPath=resolve(temp,'panel-edited.dcproject');await panelArchive.saveAs(panelPath);
+  const panelDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Download editable project',exact:true}).click();const panelArchive=await panelDownload,panelPath=resolve(temp,'panel-edited.dcproject');await panelArchive.saveAs(panelPath);
   const panelSaved=await importPackage(new Uint8Array(await readFile(panelPath)));assert.equal(panelSaved.scenes.get('scenes/front.json').nodes.find(node=>node.id==='front-emblem').x,17);
   await page.evaluate(async()=>{window.artistPanelInput=document.querySelector('[data-editor-contribution] input');window.artistPanelMode=false;await window.artistView.refresh();});
   assert.equal(await panel.count(),0);assert(await page.evaluate(()=>!window.artistPanelInput.isConnected));
-  checks.push('Authored shell hosts generated data-only panel; Save project and native file-chooser import hand off edited archive; view replacement disposes panel');
+  checks.push('Authored shell hosts generated data-only panel; Download editable project and native file-chooser import hand off edited archive; view replacement disposes panel');
   const idle=()=>page.waitForFunction(()=>document.querySelector('.dcard-studio')?.getAttribute('aria-busy')!=='true');
   await page.getByRole('button',{name:'Open visual card editor',exact:true}).click();
   await page.getByRole('button',{name:'Open card',exact:true}).waitFor();
@@ -132,7 +132,7 @@ try{
   await keyText(page,page.getByLabel('x',{exact:true}),'42');await page.getByLabel('x',{exact:true}).press('Tab');await idle();
   await keyText(page,page.getByLabel('Card title',{exact:true}),'Celestial Study · published','Shift+Tab');await page.getByLabel('Card title',{exact:true}).press('Tab');await idle();
   // The capture toolbar precedes the property fields in keyboard order.
-  await keyActivate(page,page.getByRole('button',{name:'Capture posters',exact:true}),'Enter','Shift+Tab');await idle();
+  await keyActivate(page,page.getByRole('button',{name:'Capture preview images',exact:true}),'Enter','Shift+Tab');await idle();
   await page.getByText('Both face posters captured from the renderer.',{exact:true}).waitFor();
   assert.deepEqual(x.core.operatorCatalog(admin),before,'Editing/capture must not publish the catalog');
   checks.push('Generated portable archive opens through file chooser, retains foil/motion, and allows native layer editing and two-face capture');
@@ -141,7 +141,7 @@ try{
   const reviewed=page.getByRole('button',{name:'Publish reviewed card',exact:true});await reviewed.waitFor();
   assert.deepEqual(x.core.operatorCatalog(admin),before,'Catalog admission requires the explicit reviewed publication');
   assert.equal(requests.filter(request=>request.path==='/api/operator/import/commit').length,0);
-  const editedDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Keep as draft',exact:true}).click();await idle();await page.getByRole('button',{name:'Save project',exact:true}).click();const edited=await editedDownload,editedPath=resolve(temp,'reviewed-edit.dcproject');await edited.saveAs(editedPath);
+  const editedDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Keep as draft',exact:true}).click();await idle();await page.getByRole('button',{name:'Download editable project',exact:true}).click();const edited=await editedDownload,editedPath=resolve(temp,'reviewed-edit.dcproject');await edited.saveAs(editedPath);
   await page.getByRole('button',{name:'Publish',exact:true}).click();await reviewed.waitFor();
   await page.evaluate(async()=>{window.staleReview=[...document.querySelectorAll('dialog button')].find(button=>button.textContent==='Publish reviewed card');await window.artistView.refresh();window.staleReview.click();});
   assert.equal(await reviewed.count(),0);assert.equal(requests.filter(request=>request.path==='/api/operator/import/commit').length,0);assert.deepEqual(x.core.operatorCatalog(admin),before);

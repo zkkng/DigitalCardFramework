@@ -77,7 +77,7 @@ Hooks receive cloned context and must make synchronous decisions. Do not call a 
 
 The default reference application exposes **Trading controls** to authorized operators, with the complete policy JSON and individual-copy lock controls. Custom applications use the same client methods or replace the view via `views.tradingControls`. All inputs and reasons are rendered as text.
 
-In **Trade lounge**, **Search your cards** and **Search their cards** filter the cards already loaded in each pane by name, rarity, line or tag. **Show more cards** reveals more loaded matches; **Load next inventory page** fetches another page from the server when available. **Remove** takes one selected copy out of its tray. **Clear draft** clears both trays, currency amounts, message and review while keeping the selected collector. Neither action cancels a sent offer; use **Cancel offer** for that.
+In **Trades**, **Search your cards** and **Search their cards** filter the cards already loaded in each pane by name, rarity, line or tag. **Show more cards** reveals more loaded matches; **Load next inventory page** fetches another page from the server when available. **Remove** takes one selected copy out of its tray. **Clear draft** clears both trays, currency amounts, message and review while keeping the selected collector. Neither action cancels a sent offer; use **Cancel offer** for that.
 
 HTTP: `GET /api/trading-policy`, `POST /api/operator/trading`, `POST /api/operator/card-lock`. See [OpenAPI](openapi.json) for bounded request schemas and [identity and access](access-and-identity.md) for server-derived permissions.
 

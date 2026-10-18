@@ -12,7 +12,7 @@ def main():
         "protocol": "digital-card-editor-contribution@1",
         "id": "example.print-layout",
         "version": "1.0.0",
-        "title": "Print layout",
+        "title": "Layer position and rotation",
         "controls": [
             {"id": "position-x", "label": "Horizontal position", "field": "x",
              "minimum": -1000, "maximum": 1000, "step": 1},

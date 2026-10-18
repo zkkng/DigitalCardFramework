@@ -52,7 +52,7 @@ try{
   await page.getByRole('button',{name:'Design album cover',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.dcard-studio')?.getAttribute('aria-busy')!=='true'&&document.querySelector('.dcard-studio')?.querySelector('button'));
   await page.getByRole('button',{name:'Add text',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.dcard-studio').getAttribute('aria-busy')!=='true');
   await page.getByLabel('Text content',{exact:true}).fill('Cover headline');await page.getByLabel('Text content',{exact:true}).press('Tab');await page.waitForFunction(()=>document.querySelector('.dcard-studio').getAttribute('aria-busy')!=='true');
-  await page.getByRole('button',{name:'Capture posters',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.dcard-studio').getAttribute('aria-busy')!=='true');
+  await page.getByRole('button',{name:'Capture preview images',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.dcard-studio').getAttribute('aria-busy')!=='true');
   assert.match(await page.locator('#root').textContent(),/Private album visibility does not make these asset URLs private/);
   await page.getByRole('button',{name:'Publish',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#root').textContent.includes('artwork added to the draft'));
   assert.equal(x.core.albums(actor)[0].layout.artwork.cover.design,undefined);checks.push('portable cover artwork publishes public assets into draft without saving album');

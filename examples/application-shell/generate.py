@@ -13,13 +13,13 @@ def container(kind, children, **options):
 
 groups = [
     {"label": "Explore", "entries": [{"section": "collection"}, {"section": "shop"}]},
-    {"label": "Exchange", "entries": [{"section": "marketplace"}, {"section": "trades"}]},
+    {"label": "Trades and marketplace", "entries": [{"section": "marketplace"}, {"section": "trades"}]},
 ]
 rail = container("column", [
     {"type": "heading", "text": "Collection workspace"},
     container("row", [
         container("column", [region("account"), region("navigation", arrangement="vertical", groups=groups),
-                             {"type": "text", "text": "Browse your collection and review each exchange."}],
+                             {"type": "text", "text": "Browse your cards, shop or review trades."}],
                   layout={"gap": 16, "padding": 12, "background": "panel"}),
         container("column", [region("balances"), region("status"), region("recovery"),
                              container("column", [region("content")], layout={"padding": 8}), region("statistics")],

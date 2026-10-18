@@ -79,7 +79,7 @@ Subscribers enqueue one durable job per matching core event in the event's trans
 
 Event `sequence` describes committed framework event order; it is metadata, not a global delivery-order guarantee. Retries and concurrent workers can deliver an older event after a newer one. Deduplicate by the stable job ID, retain the event ID/sequence for reconciliation, and make subscriber operations safe for repeated or out-of-order delivery. The example receivers record bounded generic event payloads, including valid unknown event types, without interpreting them as game commands. A subscriber that interprets event types must define whether unsupported types are ignored or rejected; malformed known events must not be treated as valid future events. `validateFrameworkEvent` provides the optional framework-event validation contract.
 
-Default **Account rewards** shows delivery state and refresh controls. Operators can switch to the delivery queue and retry dead jobs. Replace `views.rewards`, or import `renderFulfillments` from the `marketplace-ui` package subpath. HTTP exposes private `/api/fulfillments`, privileged `/api/operator/actions` and `/api/operator/actions/retry`; there is no public arbitrary-execution or delivery-acknowledgment endpoint.
+Default **Rewards** shows delivery state and refresh controls. Operators can switch to the delivery queue and retry dead jobs. Replace `views.rewards`, or import `renderFulfillments` from the `marketplace-ui` package subpath. HTTP exposes private `/api/fulfillments`, privileged `/api/operator/actions` and `/api/operator/actions/retry`; there is no public arbitrary-execution or delivery-acknowledgment endpoint.
 
 ## Use an external action receiver
 

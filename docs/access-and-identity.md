@@ -24,7 +24,7 @@ Newly signed-in users become collectors. They receive no upload, pack-definition
 - Operations: `accounts.register`, `currency.grant`, `audit.read`, `events.read`, `maintenance.run`.
 - Trading: `trading.manage` for live rules and individual copy locks.
 - Shops: `commerce.manage` for issuance/settings and `raffles.draw` for scheduled allocations.
-- Account rewards: `actions.manage` for diagnostics/retry; `actions.dispatch` for trusted workers.
+- Rewards: `actions.manage` for diagnostics/retry; `actions.dispatch` for trusted workers.
 - Codes: `codes.manage`, `codes.import`, `codes.confirm`.
 - External funding: `currency.settle`.
 - Artwork: `art.import`, `art.review`, `art.publish`, `art.moderate`.

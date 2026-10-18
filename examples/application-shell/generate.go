@@ -19,12 +19,12 @@ func main() {
 	navigation := region("navigation")
 	navigation["groups"] = []object{
 		{"label": "Collection", "entries": []object{{"section": "packs"}, {"section": "collection"}}},
-		{"label": "Commerce", "entries": []object{{"section": "wallet"}, {"section": "marketplace"}, {"section": "shop"}}},
+		{"label": "Wallet and shops", "entries": []object{{"section": "wallet"}, {"section": "marketplace"}, {"section": "shop"}}},
 	}
 	var tree object
 	if os.Args[1] == "rail" {
 		navigation["arrangement"] = "vertical"
-		sidebar := box("column", object{"type": "heading", "level": 2, "text": "Card cabinet"}, navigation, region("balances"))
+		sidebar := box("column", object{"type": "heading", "level": 2, "text": "Your cards"}, navigation, region("balances"))
 		sidebar["layout"] = object{"gap": 12, "padding": 16, "background": "panel"}
 		workspace := box("column", region("statistics"), region("account"), object{"type": "text", "text": "Pending results stay available while you explore."}, region("recovery"), region("status"), box("column", region("content")))
 		workspace["layout"] = object{"grow": 1, "gap": 12}

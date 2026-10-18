@@ -52,7 +52,7 @@ The optional identity adapter verifies SIWE nonces and reads ERC-721/1155 owners
 - Groups inherit transforms and opacity by default. Explicit isolated groups require `dc.group-isolation@0.2`, local width and height, and sufficient graphics and stage memory; content outside their bounds is clipped.
 - One built-in material per node; stack nodes or install an adapter for combinations.
 - Custom flakes use alpha shapes. Their texture RGB does not define per-flake artwork.
-- Studio **Capture posters** renders both faces at neutral input and updates their previews. Headless callers use `project.setPosters({front, back})` with renderer-produced Blobs. Capture remains explicit so a chosen hero pose is not silently overwritten on export.
+- Studio **Capture preview images** renders both faces at neutral input and updates their previews. Headless callers use `project.setPosters({front, back})` with renderer-produced Blobs. Capture remains explicit so a chosen hero pose is not silently overwritten on export.
 - `.dcproject` preserves editable scenes and unused imported assets, not the undo history or original Photoshop feature model.
 - Physical iPhone testing remains necessary before claiming device-level performance. Desktop touch/DPR emulation is useful but not equivalent.
 

@@ -27,7 +27,7 @@ function captureAdminKeyboard(){
 }
 async function compareAdminNativeControl(page){
  const supplied=await page.evaluate(()=>{window.adminKeyboardProbe?.stop();return {styles:[...document.querySelectorAll('style')].map(node=>node.textContent),rootClass:document.querySelector('#root').className,shellId:document.querySelector('[data-dc-shell]')?.dataset.dcShell};});
- const result={status:'prerequisite-inconclusive',styleCount:supplied.styles.length,styleLengths:supplied.styles.slice(0,32).map(text=>text.length)};let comparison,mutation;
+ const result={status:'prerequisite-inconclusive',styleCount:supplied.styles.length,styleLengths:supplied.styles.slice(0,32).map(text=>text.length)};let comparison,history;
  const markup='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Native administration controls</title></head><body><main id="root"><div class="dc-application-shell"><div class="dc-recovery" data-dc-region="recovery"><section class="dc-panel"><button type="button" class="dc-button" id="recover">Recover settings change</button></section></div><div class="dc-content" data-dc-region="content"><section class="dc-admin"><div class="da-review"><button type="button" class="da-button da-primary" id="retry">Retry same change</button></div></section></div><nav class="dc-nav" data-dc-region="navigation"><button type="button" class="dc-nav-item" id="collection">Collection</button><button type="button" class="dc-nav-item" id="admin">Administration</button></nav></div></main></body></html>';
  try{
   comparison=await page.context().newPage();const viewport=page.viewportSize();if(viewport)await comparison.setViewportSize(viewport);
@@ -45,24 +45,30 @@ async function compareAdminNativeControl(page){
    }else result.reason='One native Tab did not establish focused Recover with valid geometry';
   }else result.reason='Supplied styles, four visible controls or naturally focused BODY prerequisites were not established';
   if(result.status==='moved'){
-   const changed=result.mutation={status:'prerequisite-inconclusive'};
-   mutation=await page.context().newPage();if(viewport)await mutation.setViewportSize(viewport);await mutation.setContent(markup);
-   await mutation.evaluate(({styles,rootClass,shellId})=>{document.querySelector('#root').className=rootClass;if(shellId)document.querySelector('.dc-application-shell').dataset.dcShell=shellId;for(const text of styles){const style=document.createElement('style');style.textContent=text;document.head.append(style);}},supplied);
-   changed.stylesMatch=await mutation.evaluate(styles=>JSON.stringify([...document.querySelectorAll('style')].map(node=>node.textContent))===JSON.stringify(styles),supplied.styles);changed.setup=await observe(mutation);
+   const changed=result.remount={status:'prerequisite-inconclusive'};
+   history=await page.context().newPage();if(viewport)await history.setViewportSize(viewport);await history.setContent(markup);
+   await history.evaluate(({styles,rootClass,shellId})=>{document.querySelector('#root').className=rootClass;if(shellId)document.querySelector('.dc-application-shell').dataset.dcShell=shellId;for(const text of styles){const style=document.createElement('style');style.textContent=text;document.head.append(style);}},supplied);
+   changed.stylesMatch=await history.evaluate(styles=>JSON.stringify([...document.querySelectorAll('style')].map(node=>node.textContent))===JSON.stringify(styles),supplied.styles);changed.setup=await observe(history);
    if(changed.stylesMatch&&changed.setup.geometryValid&&!changed.setup.modal&&changed.setup.active.tag==='BODY'&&changed.setup.documentFocus){
-    await mutation.keyboard.press('Tab');changed.entry=await observe(mutation);
+    await history.keyboard.press('Tab');changed.entry=await observe(history);
     if(changed.entry.active.id==='recover'&&changed.entry.geometryValid&&changed.entry.documentFocus){
-     await mutation.evaluate(()=>{const admin=document.querySelector('#admin'),recovery=document.querySelector('[data-dc-region="recovery"]'),content=document.querySelector('[data-dc-region="content"]');window.adminMutation={admin,recovery:recovery.firstElementChild,content:content.firstElementChild};admin.addEventListener('click',()=>{const nextRecovery=recovery.firstElementChild.cloneNode(true),nextContent=content.firstElementChild.cloneNode(true);recovery.replaceChildren();content.replaceChildren();recovery.append(nextRecovery);content.append(nextContent);});});
-     changed.preClick=await observe(mutation);await mutation.locator('#admin').click();changed.postClick=await observe(mutation);
-     changed.identity=await mutation.evaluate(()=>({admin:document.querySelector('#admin')===window.adminMutation.admin,recovery:document.querySelector('[data-dc-region="recovery"]').firstElementChild!==window.adminMutation.recovery,content:document.querySelector('[data-dc-region="content"]').firstElementChild!==window.adminMutation.content}));
-     changed.stylesAfterMatch=await mutation.evaluate(styles=>JSON.stringify([...document.querySelectorAll('style')].map(node=>node.textContent))===JSON.stringify(styles),supplied.styles);
-     changed.controlOrderMatch=changed.postClick.controls.map(button=>button.id).join(',')===changed.setup.controls.map(button=>button.id).join(',');
-     if(changed.postClick.active.id==='admin'&&changed.postClick.documentFocus&&changed.postClick.geometryValid&&changed.stylesAfterMatch&&changed.controlOrderMatch&&changed.identity.admin&&changed.identity.recovery&&changed.identity.content){await mutation.keyboard.press('Shift+Tab');changed.reverse=await observe(mutation);changed.status=!changed.reverse.documentFocus||!changed.reverse.geometryValid?'prerequisite-inconclusive':changed.reverse.active.id==='collection'?'moved':changed.reverse.active.id==='admin'?'stuck':'unexpected';}
-     else changed.reason='Pointer focus, geometry or sibling replacement prerequisite was not established';
-    }else changed.reason='Native Tab did not enter Recover';
+     await history.keyboard.press('Tab');changed.beforeDispose=await observe(history);
+     if(changed.beforeDispose.active.id==='retry'&&changed.beforeDispose.geometryValid&&changed.beforeDispose.documentFocus){
+      changed.afterDispose=await history.evaluate(()=>{const root=document.querySelector('#root'),shell=root.querySelector('.dc-application-shell'),nav=root.querySelector('nav'),admin=root.querySelector('#admin'),retry=root.querySelector('#retry'),next=shell.cloneNode(true);window.adminRemount={root,shell,nav,admin,retry};shell.remove();const state={active:{tag:document.activeElement?.tagName,id:document.activeElement?.id},documentFocus:document.hasFocus(),oldShellConnected:shell.isConnected,oldRetryConnected:retry.isConnected};root.append(next);return state;});
+      changed.afterRemount=await observe(history);
+      changed.identity=await history.evaluate(()=>{const old=window.adminRemount;return {root:document.querySelector('#root')===old.root&&old.root.isConnected,shell:document.querySelector('.dc-application-shell')!==old.shell&&!old.shell.isConnected,nav:document.querySelector('nav')!==old.nav&&!old.nav.isConnected,admin:document.querySelector('#admin')!==old.admin&&!old.admin.isConnected,retry:document.querySelector('#retry')!==old.retry&&!old.retry.isConnected};});
+      changed.stylesAfterMatch=await history.evaluate(styles=>JSON.stringify([...document.querySelectorAll('style')].map(node=>node.textContent))===JSON.stringify(styles),supplied.styles);
+      changed.controlOrderMatch=changed.afterRemount.controls.map(button=>button.id).join(',')===changed.setup.controls.map(button=>button.id).join(',');
+      if(changed.afterDispose.active.tag==='BODY'&&changed.afterDispose.documentFocus&&!changed.afterDispose.oldShellConnected&&!changed.afterDispose.oldRetryConnected&&changed.afterRemount.active.tag==='BODY'&&changed.afterRemount.documentFocus&&changed.afterRemount.geometryValid&&changed.stylesAfterMatch&&changed.controlOrderMatch&&Object.values(changed.identity).every(Boolean)){
+       await history.locator('#admin').click();changed.postClick=await observe(history);
+       if(changed.postClick.active.id==='admin'&&changed.postClick.documentFocus&&changed.postClick.geometryValid){await history.keyboard.press('Shift+Tab');changed.reverse=await observe(history);changed.status=!changed.reverse.documentFocus||!changed.reverse.geometryValid?'prerequisite-inconclusive':changed.reverse.active.id==='collection'?'moved':changed.reverse.active.id==='admin'?'stuck':'unexpected';}
+       else changed.reason='Pointer entry did not establish focused new Administration with valid geometry';
+      }else changed.reason='Focused Retry disposal, stable root, new shell/navigation, BODY or geometry prerequisite was not established';
+     }else changed.reason='Second native Tab did not enter Retry';
+    }else changed.reason='First native Tab did not enter Recover';
    }else changed.reason='Styles, geometry or BODY focus prerequisite was not established';
   }
- }finally{await mutation?.close();await comparison?.close();}
+ }finally{await history?.close();await comparison?.close();}
  await writeFile(resolve(output,'admin-native-control-comparison.json'),JSON.stringify({engine,result},null,2)+'\n');console.error('Static administration native control comparison',JSON.stringify({engine,result}));
 }
 

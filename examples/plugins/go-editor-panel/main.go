@@ -30,7 +30,7 @@ func main() {
 		Protocol: "digital-card-editor-contribution@1",
 		ID:       "example.print-layout",
 		Version:  "1.0.0",
-		Title:    "Print layout",
+		Title:    "Layer position and rotation",
 		Controls: []control{
 			{"position-x", "Horizontal position", "x", -1000, 1000, 1},
 			{"position-y", "Vertical position", "y", -1000, 1000, 1},

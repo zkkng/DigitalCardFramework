@@ -64,7 +64,7 @@ try {
     () => cardStudio.getProject().manifest.faces.front.poster,
   );
   await page
-    .getByRole("button", { name: "Capture posters", exact: true })
+    .getByRole("button", { name: "Capture preview images", exact: true })
     .click();
   await page
     .getByText("Both face posters captured from the renderer.", { exact: true })
