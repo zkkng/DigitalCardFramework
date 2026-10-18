@@ -50,3 +50,27 @@ test('embedded marketplace focus return waits for a nonbusy display without revi
   }finally{dispose();await window.happyDOM.abort();}
  }
 });
+
+test('embedded listing actions clear acknowledged edits and explicitly refuse pending or stale handles',async()=>{
+ const source=(await readFile(new URL('../src/presentation/program-marketplace-bootstrap.js',import.meta.url),'utf8')).replace("import {connectProgram} from './program.js';",'').replace('export function disposeMarketplaceBootstrap','function disposeMarketplaceBootstrap');
+ for(const mode of ['acknowledged','pending','stale']){
+  const window=new Window({url:'http://localhost/'}),document=window.document,intents=[];let display;
+  document.body.innerHTML='<p data-dc-marketplace-status></p><input data-dc-marketplace-field="title"><section data-dc-marketplace-listings></section><template data-dc-marketplace-listing-template><article><button type="button" data-dc-listing-action="cancel">Cancel stock</button></article></template>';
+  const connectProgram=callbacks=>{display=callbacks.onMarketplaceDisplay;return Promise.resolve({marketplaceIntent(input){intents.push(input);},dispose(){}});};
+  let flush;const dispose=new Function('connectProgram','window','document','AbortController','setTimeout','clearTimeout',source+'\nreturn disposeMarketplaceBootstrap;')(connectProgram,window,document,window.AbortController,callback=>{flush=callback;return 1;},()=>{flush=undefined;});
+  const snapshot=(title,handle='stock-current')=>({snapshotId:'snapshot-'+title+'-'+handle,locale:'en',dir:'ltr',busy:false,labels:{working:'Working…',editRejected:'Review the current fields and try again.'},status:'',previews:[],listings:{items:[{handle,position:0,cancellable:true}],hasMore:false,hasPrevious:false},orders:{items:[]},seller:{draft:{title},kinds:[],stock:{disclosure:'',review:'',attempt:''},shops:{items:[]},targets:{items:[]},currencies:{items:[]}}});
+  try{
+   await Promise.resolve();display(snapshot('Old'));const input=document.querySelector('input');input.focus();input.value='New';input.dispatchEvent(new window.Event('input',{bubbles:true}));
+   if(mode!=='pending')display(snapshot('New',mode==='stale'?'stock-replaced':'stock-current'));
+   const row=document.querySelector('article');if(mode==='stale')row.dataset.dcHandle='stock-current';
+   row.querySelector('button').click();
+   const actions=()=>intents.filter(item=>item.intent==='marketplace-request');
+   if(mode==='acknowledged'){assert.equal(actions().length,1);assert.equal(actions()[0].action,'cancel');assert.equal(actions()[0].handle,'stock-current');}
+   else{assert.equal(actions().length,0,mode);assert.equal(document.querySelector('[data-dc-marketplace-status]').textContent,'Review the current fields and try again.',mode);}
+   assert.equal(input.value,'New','Refusing an action must preserve the draft input');
+   if(flush)flush();
+   if(mode==='pending')assert(intents.some(item=>item.intent==='marketplace-edit'&&item.value==='New'),'The valid pending draft edit must still be submitted');
+   assert.equal(actions().length,mode==='acknowledged'?1:0,'Flushing must not replay or remap a refused action');
+  }finally{dispose();await window.happyDOM.abort();}
+ }
+});

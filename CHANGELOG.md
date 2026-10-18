@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep marketplace listing actions available after acknowledged edits; explain when pending edits prevent an action without discarding the draft.
+
 - Simplify menus, artwork tools, account activity and recovery messages, with matching guide instructions and clearer labels in the supplied examples.
 
 - Keep administration review focus through saving, error recovery and completion while respecting deliberate focus movement.
