@@ -39,7 +39,7 @@ try{
     });
     assert.deepEqual(await page.locator('[data-view]').evaluateAll(nodes=>nodes.map(node=>node.dataset.view)),['collection']);
     assert.deepEqual([...new Set(requests)].sort(),['/api/capabilities','/api/catalog','/api/command-intents','/api/inventory','/api/me']);
-    assert.doesNotMatch(await page.locator('#root').innerText(),/sealed packs|Trade lounge|Marketplace|Account rewards/);
+    assert.doesNotMatch(await page.locator('#root').innerText(),/sealed packs|Trades|Marketplace|Rewards/);
     assert.deepEqual(errors,[]);
     await page.evaluate(()=>window.app.dispose());await page.close();
   }

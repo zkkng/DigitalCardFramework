@@ -121,9 +121,9 @@ try{
   assert.equal(await panel.count(),0);assert(await page.evaluate(()=>!window.artistPanelInput.isConnected));
   checks.push('Authored shell hosts generated data-only panel; Download editable project and native file-chooser import hand off edited archive; view replacement disposes panel');
   const idle=()=>page.waitForFunction(()=>document.querySelector('.dcard-studio')?.getAttribute('aria-busy')!=='true');
-  await page.getByRole('button',{name:'Open visual card editor',exact:true}).click();
+  await page.getByRole('button',{name:'Edit card artwork',exact:true}).click();
   await page.getByRole('button',{name:'Open card',exact:true}).waitFor();
-  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Open visual card editor'&&!button.disabled));
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Edit card artwork'&&!button.disabled));
   const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Open card',exact:true}).click();await(await chooser).setFiles(panelPath);
   await page.getByRole('button',{name:'Front emblem',exact:true}).waitFor();await idle();
   assert.equal(await page.getByLabel('Card title',{exact:true}).inputValue(),generated.manifest.title);
@@ -133,19 +133,19 @@ try{
   await keyText(page,page.getByLabel('Card title',{exact:true}),'Celestial Study · published','Shift+Tab');await page.getByLabel('Card title',{exact:true}).press('Tab');await idle();
   // The capture toolbar precedes the property fields in keyboard order.
   await keyActivate(page,page.getByRole('button',{name:'Capture preview images',exact:true}),'Enter','Shift+Tab');await idle();
-  await page.getByText('Both face posters captured from the renderer.',{exact:true}).waitFor();
+  await page.getByText('Preview images captured for the front and back.',{exact:true}).waitFor();
   assert.deepEqual(x.core.operatorCatalog(admin),before,'Editing/capture must not publish the catalog');
   checks.push('Generated portable archive opens through file chooser, retains foil/motion, and allows native layer editing and two-face capture');
 
   await keyActivate(page,page.getByRole('button',{name:'Publish',exact:true}));
-  const reviewed=page.getByRole('button',{name:'Publish reviewed card',exact:true});await reviewed.waitFor();
+  const reviewed=page.getByRole('button',{name:'Publish card changes',exact:true});await reviewed.waitFor();
   assert.deepEqual(x.core.operatorCatalog(admin),before,'Catalog admission requires the explicit reviewed publication');
   assert.equal(requests.filter(request=>request.path==='/api/operator/import/commit').length,0);
   const editedDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Keep as draft',exact:true}).click();await idle();await page.getByRole('button',{name:'Download editable project',exact:true}).click();const edited=await editedDownload,editedPath=resolve(temp,'reviewed-edit.dcproject');await edited.saveAs(editedPath);
   await page.getByRole('button',{name:'Publish',exact:true}).click();await reviewed.waitFor();
-  await page.evaluate(async()=>{window.staleReview=[...document.querySelectorAll('dialog button')].find(button=>button.textContent==='Publish reviewed card');await window.artistView.refresh();window.staleReview.click();});
+  await page.evaluate(async()=>{window.staleReview=[...document.querySelectorAll('dialog button')].find(button=>button.textContent==='Publish card changes');await window.artistView.refresh();window.staleReview.click();});
   assert.equal(await reviewed.count(),0);assert.equal(requests.filter(request=>request.path==='/api/operator/import/commit').length,0);assert.deepEqual(x.core.operatorCatalog(admin),before);
-  await page.getByRole('button',{name:'Open visual card editor',exact:true}).click();await page.getByRole('button',{name:'Open card',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Edit card artwork',exact:true}).click();await page.getByRole('button',{name:'Open card',exact:true}).waitFor();
   const restoreChooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Open card',exact:true}).click();await(await restoreChooser).setFiles(editedPath);await page.getByRole('button',{name:'Front emblem',exact:true}).waitFor();await idle();
   await page.getByRole('button',{name:'Publish',exact:true}).click();await reviewed.waitFor();
   actor={...artist,permissions:artist.permissions.filter(permission=>permission!=='catalog.publish')};

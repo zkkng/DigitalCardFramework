@@ -122,9 +122,9 @@ test('fresh reference UI displays server recovery after browser storage is erase
  const x=await live(t,SQLiteStore),client=x.client();await client.me();const quote=await client.quote({productId:'common',quantity:1}),intent=await client.registerCommandIntent({command:'purchase',input:quote});await client.executeCommandIntent({id:intent.id});
  const window=new Window({url:'http://localhost/'}),priorDocument=globalThis.document,priorStorage=globalThis.sessionStorage;globalThis.document=window.document;globalThis.sessionStorage=window.sessionStorage;let mounted;
  try{
-  const root=document.createElement('main');document.body.append(root);mounted=mountFramework(root,{client,sections:['packs']});await mounted.ready;const recovery=root.querySelector('[aria-label="Unconfirmed changes"]');assert(recovery);const button=[...recovery.querySelectorAll('button')].find(node=>node.textContent==='Recover pack purchase');assert(button);button.click();
-  for(let i=0;i<100&&root.querySelector('[aria-label="Unconfirmed changes"]');i++)await new Promise(resolve=>setTimeout(resolve,5));
-  assert.equal(root.querySelector('[aria-label="Unconfirmed changes"]'),null);assert.match(root.textContent,/Original result recovered/);assert.equal(x.core.wallet(x.alice).credits,9990);assert.equal(x.core.packs(x.alice).length,1);
+  const root=document.createElement('main');document.body.append(root);mounted=mountFramework(root,{client,sections:['packs']});await mounted.ready;const recovery=root.querySelector('[aria-label="Changes to confirm"]');assert(recovery);const button=[...recovery.querySelectorAll('button')].find(node=>node.textContent==='Recover pack purchase');assert(button);button.click();
+  for(let i=0;i<100&&root.querySelector('[aria-label="Changes to confirm"]');i++)await new Promise(resolve=>setTimeout(resolve,5));
+  assert.equal(root.querySelector('[aria-label="Changes to confirm"]'),null);assert.match(root.textContent,/Original result recovered/);assert.equal(x.core.wallet(x.alice).credits,9990);assert.equal(x.core.packs(x.alice).length,1);
  }finally{mounted?.dispose();await window.happyDOM.abort();if(priorDocument===undefined)delete globalThis.document;else globalThis.document=priorDocument;if(priorStorage===undefined)delete globalThis.sessionStorage;else globalThis.sessionStorage=priorStorage;}
 });
 
