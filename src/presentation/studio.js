@@ -165,7 +165,7 @@ export function mountStudio(
     const pkg = await project.export();
     if (disposed || revision !== rebuildRevision) return;
     resolver = browserResolver(pkg);
-    slot.style.aspectRatio = `${project.manifest.canvas.width}/${project.manifest.canvas.height}`;
+    region.style.aspectRatio = slot.style.aspectRatio = `${project.manifest.canvas.width}/${project.manifest.canvas.height}`;
     stage = createPlayerStage({
       root: region,
       budget: { estimatedGpuBytes: 192 * 1024 * 1024, maxDpr: 3 },

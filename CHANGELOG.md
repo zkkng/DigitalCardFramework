@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Match the artwork editor's rendering area to the project canvas so narrow album spines and landscape artwork capture complete posters.
+
 - Restore keyboard focus to the original Reveal code button after a failed request so it can be retried, without overriding account changes or deliberate focus movement.
 - Keep keyboard focus on Save album after a successful save, while respecting navigation, account changes and deliberate focus movement.
 - Allow the default artwork editor to load its generated image URLs so local image imports can render and capture posters under the reference host's security policy.

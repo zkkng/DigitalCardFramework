@@ -6,13 +6,14 @@ import { createServer } from "node:http";
 import { serveReference } from "../src/static.js";
 const recipeOnly = process.argv[2] === "--recipe";
 const typographyOnly = process.argv[2] === "--typography";
-const selfHosted = recipeOnly || typographyOnly;
+const aspectOnly = process.argv[2] === "--aspect";
+const selfHosted = recipeOnly || typographyOnly || aspectOnly;
 let server;
 const [
   playwrightPath,
   base = "http://127.0.0.1:4173",
   out = "../PortableCardQA",
-] = selfHosted ? [undefined, undefined, process.argv[3] ?? (typographyOnly ? "test-results/presentation-host-typography" : "test-results/presentation-host-recipe")] : process.argv.slice(2);
+] = selfHosted ? [undefined, undefined, process.argv[3] ?? (typographyOnly ? "test-results/presentation-host-typography" : aspectOnly ? "test-results/presentation-host-aspect" : "test-results/presentation-host-recipe")] : process.argv.slice(2);
 const engine = process.env.BROWSER_ENGINE ?? "chromium";
 await mkdir(out, {recursive:true});
 let origin = base;
@@ -43,7 +44,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
   page.on("pageerror", (e) => errors.push(e.message));
   page.setDefaultTimeout(20000);
-  await page.goto(origin + (typographyOnly ? "/typography" : recipeOnly ? "/recipe" : "/library.html"));
+  await page.goto(origin + (typographyOnly ? "/typography" : selfHosted ? "/recipe" : "/library.html"));
   if (!selfHosted) {
   await page.waitForFunction(
     () => document.querySelectorAll("dc-portable-card img").length === 2,
@@ -55,7 +56,57 @@ try {
   assert.equal(await page.locator("#viewer canvas").count(), 0);
   }
   const moduleRoot = selfHosted ? "/src/presentation" : "/player";
-  let typography, flat, custom, reducedMotion;
+  let typography, flat, custom, reducedMotion, aspect;
+  if (recipeOnly || aspectOnly) {
+    aspect = await page.evaluate(async moduleRoot => {
+      const [{ imagePackage }, { mountStudio }] = await Promise.all([
+        import(moduleRoot + "/authoring.js"), import(moduleRoot + "/studio.js"),
+      ]), cases = [];
+      for (const [width, height] of [[320, 1500], [1600, 1000]]) {
+        const source = document.createElement("canvas"), root = document.createElement("div");
+        source.width = width; source.height = height;
+        const paint = source.getContext("2d");
+        paint.fillStyle = "#ff0000"; paint.fillRect(0, 0, width, height);
+        paint.fillStyle = "#00ff00"; paint.fillRect(0, 0, width, height / 4);
+        paint.fillStyle = "#0000ff"; paint.fillRect(0, height * 3 / 4, width, height / 4);
+        const blob = await new Promise(resolve => source.toBlob(resolve, "image/png"));
+        document.body.append(root);
+        let studio;
+        try {
+          studio = mountStudio(root, { initialPackage: await imagePackage({ bytes: new Uint8Array(await blob.arrayBuffer()), mediaType: "image/png", id: "surface-" + width, title: "Surface capture" }) });
+          await studio.ready;
+          await studio.capturePosters();
+          const pkg = await studio.getProject().export(), region = root.querySelector(".dcs-region").getBoundingClientRect(), view = root.querySelector('.dcs-slot [role="img"]').getBoundingClientRect(), posters = [];
+          for (const side of ["front", "back"]) {
+            const asset = pkg.manifest.assets.find(asset => asset.id === pkg.manifest.faces[side].poster), bytes = pkg.files.get(asset.path), bitmap = await createImageBitmap(new Blob([bytes], { type: asset.mediaType })), sample = document.createElement("canvas");
+            sample.width = bitmap.width; sample.height = bitmap.height;
+            const context = sample.getContext("2d"); context.drawImage(bitmap, 0, 0); bitmap.close();
+            const pixels = context.getImageData(0, 0, sample.width, sample.height).data, x = Math.floor(sample.width / 2), pixel = y => [...pixels.slice((y * sample.width + x) * 4, (y * sample.width + x) * 4 + 4)];
+            let transparentInteriorRows = 0;
+            for (let y = 10; y < sample.height - 10; y++) if (pixel(y)[3] < 250) transparentInteriorRows++;
+            posters.push({ side, width: sample.width, height: sample.height, top: pixel(Math.floor(sample.height * .1)), middle: pixel(Math.floor(sample.height * .5)), bottom: pixel(Math.floor(sample.height * .9)), transparentInteriorRows, png: [...bytes] });
+            sample.width = sample.height = 0;
+          }
+          cases.push({ canvas: { width, height }, region: region.toJSON(), view: view.toJSON(), posters });
+        } finally { studio?.dispose(); root.remove(); source.width = source.height = 0; }
+      }
+      return cases;
+    }, moduleRoot);
+    for (const item of aspect) for (const poster of item.posters) {
+      await writeFile(path.join(out, "surface-" + item.canvas.width + "-" + poster.side + ".png"), new Uint8Array(poster.png)); delete poster.png;
+    }
+    await writeFile(path.join(out, "aspect-report.json"), JSON.stringify(aspect, null, 2));
+    for (const item of aspect) {
+      for (const poster of item.posters) {
+        assert.equal(poster.transparentInteriorRows, 0, "Captured artwork must cover the full poster interior");
+        for (const [pixel, channel] of [[poster.top, 1], [poster.middle, 0], [poster.bottom, 2]]) {
+          assert.equal(pixel[3], 255); assert(pixel[channel] >= 250 && pixel.slice(0, 3).every((value, index) => index === channel || value <= 5), "The top, middle and bottom artwork bands must survive capture");
+        }
+        assert(Math.abs(poster.width / poster.height - item.canvas.width / item.canvas.height) < .01);
+      }
+      assert(item.view.left >= item.region.left - 1 && item.view.top >= item.region.top - 1 && item.view.right <= item.region.right + 1 && item.view.bottom <= item.region.bottom + 1, "The complete view must fit inside its rendering surface");
+    }
+  }
   if (typographyOnly) {
     typography = await page.evaluate(async moduleRoot => {
       const [{ imagePackage }, { createProject }, { addText }, { mountStudio }, { browserResolver }, { createPlayerStage }] = await Promise.all([
@@ -130,7 +181,7 @@ try {
     assert(typography.playerLabel.includes("ABC שלום 123. Aé 123. Aé 123"));
     assert(typography.posterVisible && typography.studioDisposed);
     assert.equal(typography.released.views, 0); assert.equal(typography.released.textures, 0); assert.equal(typography.released.assetReferences, 0);
-  } else {
+  } else if (!aspectOnly) {
   flat = await page.evaluate(async moduleRoot => {
     const { createAuthoring } = await import(moduleRoot + "/authoring.js"),
       { browserResolver } = await import(moduleRoot + "/package.js"),
@@ -252,10 +303,10 @@ try {
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(out, "host-report.json"),
-    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, reducedMotion, errors }, null, 2),
+    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, reducedMotion, aspect, errors }, null, 2),
   );
   console.log(
-    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, reducedMotion, errors }, null, 2),
+    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, reducedMotion, aspect, errors }, null, 2),
   );
 } finally {
   await browser?.close();
