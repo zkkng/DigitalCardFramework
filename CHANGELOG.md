@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep administration review focus through saving, error recovery and completion while respecting deliberate focus movement.
+
 - Keep alternate journal cards compact and inspector surfaces readable with light themes.
 
 - Render explicit snapshots of ready offscreen views while retaining normal offscreen frame culling.
