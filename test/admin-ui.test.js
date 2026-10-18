@@ -60,6 +60,29 @@ test('Basic website edits review before saving and cancel restores saved state',
   assert.equal(x.root.querySelector('[data-admin-mode="false"]').getAttribute('aria-pressed'),'true');x.root.querySelector('[data-admin-tab="website"]').click();input(x.root,'Pack purchases',false,x.window);click(x.root,'Review changes');assert.equal(x.core.adminOverview(x.actor).site.packPurchasesPaused,false);assert.match(x.root.querySelector('.da-review').textContent,/Allowed.*Paused/s);click(x.root,'Cancel');assert.equal(x.root.querySelector('[aria-label="Pack purchases"]').checked,true);
   input(x.root,'Pack purchases',false,x.window);click(x.root,'Review changes');click(x.root,'Save changes');await settle();assert.equal(x.core.adminOverview(x.actor).site.packPurchasesPaused,true);assert.equal(x.root.querySelector('[aria-label="Pack purchases"]').checked,false);
 }));
+test('administration review keeps owned focus through saving, retry, and refresh without taking outside focus',async()=>{
+  const window=new Window(),x=setup(),storage=memory(),pending=[],original=x.client.configureAdmin;
+  globalThis.document=window.document;const root=document.createElement('div'),outside=document.createElement('button');document.body.append(root,outside);
+  x.client.configureAdmin=input=>new Promise((resolve,reject)=>pending.push({input,resolve,reject}));
+  const panel=mountAdminPanel(root,{client:x.client,namespace:x.alice.userId,storage});
+  const stage=paused=>panel.controller.stage({title:'Trading',input:{scope:'site',changes:{tradingPaused:paused},reason:'Maintenance'},changes:[{label:'Trading',before:'Allowed',after:'Paused'}]});
+  try{
+    await panel.ready;stage(true);const save=[...root.querySelectorAll('.da-review button')].find(button=>button.textContent==='Save changes');assert(save);save.focus();save.click();assert.equal(panel.controller.getState().phase,'saving');assert(document.activeElement===root.querySelector('.da-review h3'),'Saving should focus the review heading');
+    await settle();pending[0].reject(new Error('Response lost'));await settle();const retry=[...root.querySelectorAll('.da-review button')].find(button=>button.textContent==='Retry same change');assert(retry);assert(document.activeElement===retry,'The original retry should receive focus');assert.equal(retry.tabIndex,0);
+    retry.click();assert(document.activeElement===root.querySelector('.da-review h3'),'Retry should focus the review heading while saving');await settle();pending[1].resolve(original(pending[1].input));await settle();assert(document.activeElement===root.querySelector('.da-heading h2'),'Successful review should focus the resulting view heading');assert.equal(x.core.adminOverview(x.actor).revision,1);
+    stage(false);outside.focus();panel.controller.confirm();assert(document.activeElement===outside,'Outside focus should remain while saving');await settle();pending[2].reject(new Error('Response lost'));await settle();assert(document.activeElement===outside,'Outside focus should remain after a failed save');
+  }finally{panel.dispose();for(const request of pending)request.resolve({});x.core.close();await window.happyDOM.abort();delete globalThis.document;}
+});
+test('administration review focuses a definite save error after its focused action is replaced',async()=>{
+  const window=new Window(),x=setup();globalThis.document=window.document;
+  x.client.configureAdmin=async()=>{throw new ApiError('ADMIN_CHANGED','Settings changed',409);};
+  const root=document.createElement('div');document.body.append(root);const panel=mountAdminPanel(root,{client:x.client,namespace:x.alice.userId,storage:memory()});
+  try{
+    await panel.ready;panel.controller.stage({title:'Trading',input:{scope:'site',changes:{tradingPaused:true},reason:'Maintenance'},changes:[{label:'Trading',before:'Allowed',after:'Paused'}]});
+    const save=[...root.querySelectorAll('.da-review button')].find(button=>button.textContent==='Save changes');assert(save);save.focus();save.click();await settle();
+    const error=root.querySelector('.da-status[data-kind="error"]');assert(error);assert(document.activeElement===error);assert.equal(error.tabIndex,-1);
+  }finally{panel.dispose();x.core.close();await window.happyDOM.abort();delete globalThis.document;}
+});
 test('unsaved forms stay intact until explicit discard, including leaving the host route',()=>mounted(async x=>{
   x.root.querySelector('[data-admin-tab="lines"]').click();click(x.root,'Manage Sky Atlas');click(x.root,'Edit common');input(x.root,'Regular price','125',x.window);let left=false;x.panel.requestLeave(()=>{left=true;});assert(x.root.querySelector('.da-leave'));assert.equal(left,false);click(x.root,'Keep editing');assert.equal(x.root.querySelector('[aria-label="Regular price"]').value,'125');x.root.querySelector('[data-admin-tab="people"]').click();click(x.root,'Discard draft and continue');await settle();assert.match(x.root.textContent,/Alice/);assert.equal(x.core.adminOverview(x.actor).revision,0);
 }));

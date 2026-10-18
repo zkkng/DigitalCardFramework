@@ -579,7 +579,7 @@ export function createPlayerStage({
       if (
         !view.readyToDraw ||
         view.visibility !== "visible" ||
-        !view.intersecting
+        (!view.intersecting && capture?.view !== view)
       )
         continue;
       let viewNeedsTime = false;

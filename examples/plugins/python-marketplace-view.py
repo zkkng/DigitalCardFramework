@@ -17,7 +17,8 @@ def request(action, key):
 
 
 def paging(key):
-    return '<nav aria-label="' + key + '">' + ''.join('<button type="button" data-dc-marketplace-page="' + key + '" data-direction="' + direction + '" data-dc-marketplace-label="' + name + '" disabled></button>' for direction, name in [('-1', 'previous'), ('1', 'more')]) + '</nav>'
+    name = {"currencies": "Currency choices", "targets": "Stock choices", "shops": "Shops", "listings": "Listings", "orders": "Order history"}[key]
+    return '<nav aria-label="' + name + '">' + ''.join('<button type="button" data-dc-marketplace-page="' + key + '" data-direction="' + direction + '" data-dc-marketplace-label="' + name + '" disabled></button>' for direction, name in [('-1', 'previous'), ('1', 'more')]) + '</nav>'
 
 
 def field(key, name, textarea=False):

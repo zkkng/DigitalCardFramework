@@ -1,5 +1,8 @@
+import {createLocalization,localizeDiagnostic} from '/src/localization.js';
 import {createClient,createRevealController} from '/src/client.js';
 import {mountFramework,mountOpener,installStyles,renderCard,renderPack,element} from '/src/ui.js';
+const localization=createLocalization({messages:{'diagnostic.unknown':'This action could not be completed. Check its status before trying again.'}});
+const diagnosticText=error=>localizeDiagnostic(localization,{code:error?.code??'UNKNOWN',name:error?.name});
 const client=createClient();
 const users=await (await fetch('/demo/users')).json();
 await fetch('/demo/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:users[0].id})});
@@ -26,7 +29,7 @@ const controller=createRevealController({open:input=>client.openPack(input),key:
 mountOpener(modalRoot,{controller,view(state,controls){
   const node=element('div','instant-list');
   if(state.phase==='loading')node.append(element('p','','Loading…'));
-  if(state.error)node.append(element('p','dc-error',state.error.message));
+  if(state.error)node.append(element('p','dc-error',diagnosticText(state.error)));
   if(state.receipt)for(const copy of state.receipt.cards)node.append(renderCard(copy,{backRenderer,onSelect:()=>{modal.close();app.inspect(copy);}}));
   return node;
 }});
@@ -35,6 +38,6 @@ document.querySelector('#open-modal').addEventListener('click',async()=>{
     const packs=await client.packs();const pack=packs.find(p=>!p.openedAt)??packs.at(-1);
     if(!pack){document.querySelector('#message').textContent='Buy a pack in the shop first.';return;}
     modal.showModal();await controller.load(pack.id);await app.refresh();
-  }catch(error){document.querySelector('#message').textContent=error.message;}
+  }catch(error){document.querySelector('#message').textContent=diagnosticText(error);}
 });
 document.querySelector('#close-modal').addEventListener('click',()=>modal.close());

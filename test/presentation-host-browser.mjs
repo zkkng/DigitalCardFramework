@@ -6,13 +6,15 @@ import { createServer } from "node:http";
 import { serveReference } from "../src/static.js";
 const recipeOnly = process.argv[2] === "--recipe";
 const typographyOnly = process.argv[2] === "--typography";
-const selfHosted = recipeOnly || typographyOnly;
+const aspectOnly = process.argv[2] === "--aspect";
+const snapshotOnly = process.argv[2] === "--offscreen-snapshot";
+const selfHosted = recipeOnly || typographyOnly || aspectOnly || snapshotOnly;
 let server;
 const [
   playwrightPath,
   base = "http://127.0.0.1:4173",
   out = "../PortableCardQA",
-] = selfHosted ? [undefined, undefined, process.argv[3] ?? (typographyOnly ? "test-results/presentation-host-typography" : "test-results/presentation-host-recipe")] : process.argv.slice(2);
+] = selfHosted ? [undefined, undefined, process.argv[3] ?? (snapshotOnly ? "test-results/presentation-host-snapshot" : typographyOnly ? "test-results/presentation-host-typography" : aspectOnly ? "test-results/presentation-host-aspect" : "test-results/presentation-host-recipe")] : process.argv.slice(2);
 const engine = process.env.BROWSER_ENGINE ?? "chromium";
 await mkdir(out, {recursive:true});
 let origin = base;
@@ -43,7 +45,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
   page.on("pageerror", (e) => errors.push(e.message));
   page.setDefaultTimeout(20000);
-  await page.goto(origin + (typographyOnly ? "/typography" : recipeOnly ? "/recipe" : "/library.html"));
+  await page.goto(origin + (typographyOnly ? "/typography" : selfHosted ? "/recipe" : "/library.html"));
   if (!selfHosted) {
   await page.waitForFunction(
     () => document.querySelectorAll("dc-portable-card img").length === 2,
@@ -55,7 +57,96 @@ try {
   assert.equal(await page.locator("#viewer canvas").count(), 0);
   }
   const moduleRoot = selfHosted ? "/src/presentation" : "/player";
-  let typography, flat, custom;
+  let typography, flat, custom, reducedMotion, aspect, offscreenSnapshot;
+  if (recipeOnly || snapshotOnly) {
+    await page.evaluate(async moduleRoot => {
+      const [{ imagePackage }, { browserResolver }, { createPlayerStage }] = await Promise.all([
+        import(moduleRoot + "/authoring.js"), import(moduleRoot + "/package.js"), import(moduleRoot + "/player.js"),
+      ]);
+      const source = document.createElement("canvas"), root = document.createElement("div"), slot = document.createElement("div"), spacer = document.createElement("div");
+      source.width = 200; source.height = 300;
+      const paint = source.getContext("2d"); paint.fillStyle = "#336699"; paint.fillRect(0, 0, 200, 300);
+      root.style.cssText = "width:200px;height:300px"; slot.style.cssText = "width:100%;height:100%"; spacer.style.height = "3000px";
+      root.append(slot); document.body.append(root, spacer);
+      const blob = await new Promise(resolve => source.toBlob(resolve, "image/png")), resolver = browserResolver(await imagePackage({ bytes: new Uint8Array(await blob.arrayBuffer()), mediaType: "image/png", title: "Offscreen capture" })), stage = createPlayerStage({ root }), view = stage.mount(slot, { resolver }, { quality: "standard" });
+      const state = { root, spacer, resolver, stage, view, intersecting: null };
+      state.observer = new IntersectionObserver(entries => { state.intersecting = entries[0].isIntersecting; });
+      state.observer.observe(view.element); window.offscreenQualification = state;
+      const ready = await view.ready; if (ready.mode !== "interactive") throw new Error("Offscreen capture requires interactive rendering");
+      source.width = source.height = 0;
+    }, moduleRoot);
+    await page.waitForFunction(() => offscreenQualification.intersecting === true && offscreenQualification.stage.diagnostics().draws > 0);
+    await page.mouse.move(1200, 500); await page.mouse.wheel(0, 1400);
+    await page.waitForFunction(() => offscreenQualification.intersecting === false && offscreenQualification.view.element.getBoundingClientRect().bottom < 0);
+    const before = await page.evaluate(() => { const { stage, view } = offscreenQualification; const frames = stage.diagnostics().frames; view.setInputs({ angle: .25 }); return frames; });
+    await page.waitForFunction(frames => offscreenQualification.stage.diagnostics().frames > frames && offscreenQualification.stage.diagnostics().draws === 0, before);
+    offscreenSnapshot = await page.evaluate(async () => {
+      const { stage, view } = offscreenQualification, ordinaryBefore = stage.diagnostics(), rect = view.element.getBoundingClientRect().toJSON(), blob = await view.snapshot(), bitmap = await createImageBitmap(blob), canvas = document.createElement("canvas");
+      canvas.width = bitmap.width; canvas.height = bitmap.height;
+      const context = canvas.getContext("2d"); context.drawImage(bitmap, 0, 0); bitmap.close();
+      const center = [...context.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data], result = { rect, ordinaryBefore, width: canvas.width, height: canvas.height, center, png: [...new Uint8Array(await blob.arrayBuffer())] };
+      canvas.width = canvas.height = 0; view.setInputs({ angle: .75 }); return result;
+    });
+    await page.waitForFunction(frames => offscreenQualification.stage.diagnostics().frames > frames && offscreenQualification.stage.diagnostics().draws === 0, offscreenSnapshot.ordinaryBefore.frames + 1);
+    offscreenSnapshot.ordinaryAfter = await page.evaluate(() => offscreenQualification.stage.diagnostics());
+    offscreenSnapshot.released = await page.evaluate(() => { const { stage, view, resolver, root, spacer, observer } = offscreenQualification; observer.disconnect(); view.dispose(); const released = stage.diagnostics(); stage.dispose(); resolver.dispose(); root.remove(); spacer.remove(); delete window.offscreenQualification; return released; });
+    await writeFile(path.join(out, "offscreen-snapshot.png"), new Uint8Array(offscreenSnapshot.png)); delete offscreenSnapshot.png;
+    await writeFile(path.join(out, "offscreen-snapshot-report.json"), JSON.stringify(offscreenSnapshot, null, 2));
+    assert.equal(offscreenSnapshot.ordinaryBefore.draws, 0); assert.equal(offscreenSnapshot.ordinaryAfter.draws, 0);
+    assert.equal(offscreenSnapshot.center[3], 255, "Explicit capture must render a ready view outside the viewport");
+    for (const [index, expected] of [51, 102, 153].entries()) assert(Math.abs(offscreenSnapshot.center[index] - expected) <= 2);
+    assert.equal(offscreenSnapshot.released.views, 0); assert.equal(offscreenSnapshot.released.textures, 0);
+  }
+  if (recipeOnly || aspectOnly) {
+    aspect = await page.evaluate(async moduleRoot => {
+      const [{ imagePackage }, { mountStudio }] = await Promise.all([
+        import(moduleRoot + "/authoring.js"), import(moduleRoot + "/studio.js"),
+      ]), cases = [];
+      for (const [width, height] of [[320, 1500], [1600, 1000]]) {
+        const source = document.createElement("canvas"), root = document.createElement("div");
+        source.width = width; source.height = height;
+        const paint = source.getContext("2d");
+        paint.fillStyle = "#ff0000"; paint.fillRect(0, 0, width, height);
+        paint.fillStyle = "#00ff00"; paint.fillRect(0, 0, width, height / 4);
+        paint.fillStyle = "#0000ff"; paint.fillRect(0, height * 3 / 4, width, height / 4);
+        const blob = await new Promise(resolve => source.toBlob(resolve, "image/png"));
+        document.body.append(root);
+        let studio;
+        try {
+          studio = mountStudio(root, { initialPackage: await imagePackage({ bytes: new Uint8Array(await blob.arrayBuffer()), mediaType: "image/png", id: "surface-" + width, title: "Surface capture" }) });
+          await studio.ready;
+          await studio.capturePosters();
+          const pkg = await studio.getProject().export(), region = root.querySelector(".dcs-region").getBoundingClientRect(), view = root.querySelector('.dcs-slot [role="img"]').getBoundingClientRect(), posters = [];
+          for (const side of ["front", "back"]) {
+            const asset = pkg.manifest.assets.find(asset => asset.id === pkg.manifest.faces[side].poster), bytes = pkg.files.get(asset.path), bitmap = await createImageBitmap(new Blob([bytes], { type: asset.mediaType })), sample = document.createElement("canvas");
+            sample.width = bitmap.width; sample.height = bitmap.height;
+            const context = sample.getContext("2d"); context.drawImage(bitmap, 0, 0); bitmap.close();
+            const pixels = context.getImageData(0, 0, sample.width, sample.height).data, x = Math.floor(sample.width / 2), pixel = y => [...pixels.slice((y * sample.width + x) * 4, (y * sample.width + x) * 4 + 4)];
+            let transparentInteriorRows = 0;
+            for (let y = 10; y < sample.height - 10; y++) if (pixel(y)[3] < 250) transparentInteriorRows++;
+            posters.push({ side, width: sample.width, height: sample.height, top: pixel(Math.floor(sample.height * .1)), middle: pixel(Math.floor(sample.height * .5)), bottom: pixel(Math.floor(sample.height * .9)), transparentInteriorRows, png: [...bytes] });
+            sample.width = sample.height = 0;
+          }
+          cases.push({ canvas: { width, height }, region: region.toJSON(), view: view.toJSON(), posters });
+        } finally { studio?.dispose(); root.remove(); source.width = source.height = 0; }
+      }
+      return cases;
+    }, moduleRoot);
+    for (const item of aspect) for (const poster of item.posters) {
+      await writeFile(path.join(out, "surface-" + item.canvas.width + "-" + poster.side + ".png"), new Uint8Array(poster.png)); delete poster.png;
+    }
+    await writeFile(path.join(out, "aspect-report.json"), JSON.stringify(aspect, null, 2));
+    for (const item of aspect) {
+      for (const poster of item.posters) {
+        assert.equal(poster.transparentInteriorRows, 0, "Captured artwork must cover the full poster interior");
+        for (const [pixel, channel] of [[poster.top, 1], [poster.middle, 0], [poster.bottom, 2]]) {
+          assert.equal(pixel[3], 255); assert(pixel[channel] >= 250 && pixel.slice(0, 3).every((value, index) => index === channel || value <= 5), "The top, middle and bottom artwork bands must survive capture");
+        }
+        assert(Math.abs(poster.width / poster.height - item.canvas.width / item.canvas.height) < .01);
+      }
+      assert(item.view.left >= item.region.left - 1 && item.view.top >= item.region.top - 1 && item.view.right <= item.region.right + 1 && item.view.bottom <= item.region.bottom + 1, "The complete view must fit inside its rendering surface");
+    }
+  }
   if (typographyOnly) {
     typography = await page.evaluate(async moduleRoot => {
       const [{ imagePackage }, { createProject }, { addText }, { mountStudio }, { browserResolver }, { createPlayerStage }] = await Promise.all([
@@ -130,7 +221,7 @@ try {
     assert(typography.playerLabel.includes("ABC שלום 123. Aé 123. Aé 123"));
     assert(typography.posterVisible && typography.studioDisposed);
     assert.equal(typography.released.views, 0); assert.equal(typography.released.textures, 0); assert.equal(typography.released.assetReferences, 0);
-  } else {
+  } else if (!aspectOnly && !snapshotOnly) {
   flat = await page.evaluate(async moduleRoot => {
     const { createAuthoring } = await import(moduleRoot + "/authoring.js"),
       { browserResolver } = await import(moduleRoot + "/package.js"),
@@ -212,13 +303,50 @@ try {
   assert(custom.poster.visible);assert.equal(custom.poster.resources.textures,0);assert.equal(custom.poster.resources.assetReferences,0);assert(custom.posterCaptureRejected);
   assert(custom.restored.every(value=>value.mode==="interactive"));assert(custom.remounted.painted>100);assert.equal(custom.released.views,0);assert.equal(custom.released.textures,0);assert.equal(custom.released.assetReferences,0);
   }
+  if (recipeOnly) {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    const mounted = await page.evaluate(async moduleRoot => {
+      const [{ createAuthoring }, { browserResolver }, { createPlayerStage }] = await Promise.all([
+        import(moduleRoot + "/authoring.js"), import(moduleRoot + "/package.js"), import(moduleRoot + "/player.js"),
+      ]);
+      const source = document.createElement("canvas"); source.width = 32; source.height = 48;
+      source.getContext("2d").fillRect(0, 0, 32, 48);
+      const blob = await new Promise(resolve => source.toBlob(resolve, "image/png"));
+      const creator = createAuthoring({ effects: { "qualify.motion": node => ({ ...node,
+        material: { kind: "glitter", size: 18, density: 0.5, shape: "star", seed: 51, intensity: 3 },
+        bindings: { "material.angle": ["input", "time.active"] },
+      }) } });
+      const pkg = await creator.build({ id: "motion-preference", source: { format: "image", mediaType: "image/png", bytes: new Uint8Array(await blob.arrayBuffer()) }, effects: [{ id: "qualify.motion", node: "art", parameters: {} }] });
+      const root = document.createElement("div"); Object.assign(root.style, { width: "300px", height: "450px" }); document.body.prepend(root);
+      const resolver = browserResolver(pkg), stage = createPlayerStage({ root }), view = stage.mount(root, { resolver }, { quality: "lite" });
+      const ready = await view.ready; source.width = source.height = 0;
+      window.motionQualification = { stage, view, resolver, root };
+      return { ready, resources: stage.diagnostics() };
+    }, moduleRoot);
+    assert.equal(mounted.ready.mode, "interactive");
+    await page.waitForFunction(frames => motionQualification.stage.diagnostics().frames >= frames + 2, mounted.resources.frames);
+    const moving = await page.evaluate(() => motionQualification.stage.diagnostics());
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.waitForTimeout(100);
+    const before = await page.evaluate(() => motionQualification.stage.diagnostics());
+    await page.waitForTimeout(250);
+    const after = await page.evaluate(() => motionQualification.stage.diagnostics());
+    assert.equal(after.frames, before.frames, "Reduced motion must stop autonomous frames after real motion was observed");
+    assert.equal(after.scheduledFrames, 0);
+    const released = await page.evaluate(() => {
+      const { stage, view, resolver, root } = motionQualification;
+      view.dispose(); const resources = stage.diagnostics(); stage.dispose(); resolver.dispose(); root.remove(); delete window.motionQualification; return resources;
+    });
+    assert.equal(released.views, 0); assert.equal(released.textures, 0); assert.equal(released.assetReferences, 0);
+    reducedMotion = { mounted, moving, before, after, released };
+  }
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(out, "host-report.json"),
-    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, errors }, null, 2),
+    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, reducedMotion, aspect, offscreenSnapshot, errors }, null, 2),
   );
   console.log(
-    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, errors }, null, 2),
+    JSON.stringify({ engine, library: selfHosted ? "not-run" : "passed", flatJpg: flat, customRecipe: custom, typography, reducedMotion, aspect, offscreenSnapshot, errors }, null, 2),
   );
 } finally {
   await browser?.close();

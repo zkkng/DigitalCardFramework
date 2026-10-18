@@ -15,7 +15,8 @@ func request(action, key string) string {
 	return `<button type="button" data-dc-marketplace-request="` + action + `" data-dc-marketplace-label="` + key + `" disabled></button>`
 }
 func paging(key string) string {
-	return `<nav aria-label="` + key + `"><button type="button" data-dc-marketplace-page="` + key + `" data-direction="-1" data-dc-marketplace-label="previous" disabled></button><button type="button" data-dc-marketplace-page="` + key + `" data-direction="1" data-dc-marketplace-label="more" disabled></button></nav>`
+	name := map[string]string{"currencies": "Currency choices", "targets": "Stock choices", "shops": "Shops", "listings": "Listings", "orders": "Order history"}[key]
+	return `<nav aria-label="` + name + `"><button type="button" data-dc-marketplace-page="` + key + `" data-direction="-1" data-dc-marketplace-label="previous" disabled></button><button type="button" data-dc-marketplace-page="` + key + `" data-direction="1" data-dc-marketplace-label="more" disabled></button></nav>`
 }
 func field(key, name string, multiline bool) string {
 	element := `<input type="text" data-dc-marketplace-field="` + key + `" disabled>`

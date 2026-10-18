@@ -26,7 +26,7 @@ JSON duplicate keys are rejected. YAML uses the core schema with duplicate check
 
 ## Pack front, back and reveal artwork
 
-In Creator studio, choose **Pack artwork** under **Design destination**, select a pack, and open the visual pack editor. Build the front with the existing image, text, mask and material tools; use **Front / back** to edit the reverse. Add an optional **Pack reveal artwork URL** and description, capture posters, then publish the reviewed pack artwork revision. The editor retains the editable `.dcard` design reference and publishes both captured posters. Reopening that pack retrieves the saved design.
+In Creator studio, choose **Pack artwork** under **What are you designing?**, select a pack, and open the visual pack editor. Build the front with the existing image, text, mask and material tools; use **Switch front/back** to edit the reverse. Add an optional **Reveal image URL** and description, capture posters, then publish the reviewed pack artwork revision. The editor retains the editable `.dcard` design reference and publishes both captured posters. Reopening that pack retrieves the saved design.
 
 For an existing asset workflow, import `products[].artwork` with `front`, `back`, `reveal` and `alt`. Image references accept relative or HTTP(S) URLs without embedded credentials. An optional `design` uses the existing pinned digital-card reference contract. Artwork changes require an increased product revision. Already allocated packs retain their product and artwork snapshot; keep those asset URLs stable and retain referenced design digests when cleaning presentation storage.
 
@@ -71,6 +71,8 @@ Card `appearance.background` controls the default face background. Card or varia
 
 Pointer tilt/parallax changes layer offsets. The inspector's orbit rotates the front/back surface and supports flip, zoom, reset and arrow keys. Shared inspection rotates a group. CSS presentation does not reconstruct hidden art or volumetric geometry. Hosts can replace card/inspector/comparison renderers for WebGL or another player.
 
+The default inspector starts at yaw/pitch 0 and zoom 1. Left/right arrow keys change yaw by 15 degrees; up/down change pitch by 10 degrees. Horizontal rotation buttons use 45 degrees and Flip uses 180. Zoom controls and +/- keys change scale by 0.1, bounded from 0.5 to 1.7; pitch is bounded to -85 through 85 degrees. Reset returns the initial camera pose. These are presentation controls, not copy edits. Replacement inspectors own their camera behavior. For connected art and missing pieces, use the combination contract below; shared inspection alone does not create a connected assembly.
+
 ## Combinable cards
 
 Combination manifests reference card definitions and grid cells. They do not consume, mint, merge or change ownership.
@@ -94,6 +96,6 @@ In **Albums**, open **Cover, spine & pages**. Enter HTTP(S) or relative image UR
 
 Reordering pages preserves cards on their original page through stable page IDs. Removing a populated page is blocked until its cards are moved to another page or explicitly returned to automatic order. Export and import retain custom layout and placement data; unknown page assignments reject before replacing the draft. Albums without artwork or page size continue to use the original gallery.
 
-Artists with catalog publication access can choose **Design album cover**, **Design album spine**, or **Design page** to open the portable visual editor. Canvas dimensions are editable from 200 to 4096 pixels. Capture posters, then publish the artwork to add its poster and pinned editable design reference to the album draft. **Save album** is a separate action. Opening the design again restores its editable package.
+Artists with catalog publication access can choose **Design album cover**, **Design album spine**, or **Design page** to open the portable visual editor. Canvas dimensions are editable from 200 to 4096 pixels. Select **Capture preview images**, then publish the artwork to add its poster and pinned editable design reference to the album draft. **Save album** is a separate action. Opening the design again restores its editable package.
 
 Artwork publication registers public files. A private album protects its layout and cards, but does not make image URLs or published design packages private. Use artwork suitable for public distribution; the editor starts a generic artwork canvas and does not automatically include private album names or card contents.

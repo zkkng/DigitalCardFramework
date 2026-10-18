@@ -16,7 +16,7 @@ Pack quotes read the requesting account, catalog and administrator controls in o
 
 ## Supported products
 
-The incremental purchase path supports products whose variants do not allocate codes or invoke binding factories, and whose duplicate policy does not inspect the owner's whole inventory. Other products and installations with legacy externally managed purchase keys use the established acquisition path. That fallback materializes installation state and can block for substantial time on larger databases. Commerce, automatic expiry sweeps and action delivery retain their compatibility storage paths.
+The incremental purchase path supports products whose variants do not allocate codes or invoke binding factories, and whose duplicate policy does not inspect the owner's whole inventory. Other products and installations with legacy externally managed purchase keys use the established acquisition path. That fallback materializes installation state and can block for substantial time on larger databases. See the sections below on [Action delivery](#action-delivery), [Automatic expiration](#automatic-expiration) and [listing operations](#listing-purchases) for their prepared paths, compatibility fallbacks and remaining synchronous execution costs.
 
 `openPack` incrementally completes code-free unopened packs with prepared accounting and a pending pack reservation. It retains issued card definitions and the pack's product snapshot, determines new-card status through the owner/state/variant index, and commits the opening receipt, events, notifications and queued actions together. Exact-key replay returns the stored receipt. Actual record and accounting growth consumes only that pack's own reservation, so ordinary capacity exhaustion does not strand admitted opening.
 
@@ -42,7 +42,7 @@ Handlers still execute outside the database transaction with the original job ID
 
 Run preparation during planned maintenance to enable this path. Unprepared stores and legacy reservations use compatibility recovery, which may scan installation state. MemoryStore retains its snapshot implementation. SQLite database calls remain synchronous; these changes do not establish off-thread execution. Automatic expiration is described separately below.
 
-Stop all writers and retain a database/key backup before upgrading. Writable opens migrate existing indexed schemas atomically to schema 6; older application versions cannot open the upgraded database. Restore the pre-upgrade backup with its matching application and keys if rollback is required.
+Stop all writers and retain a database/key backup before upgrading. Writable opens migrate supported indexed schemas atomically to the current schema 8; see [the schema upgrade procedure](production.md#upgrade-the-state-schema) for compatibility and rollback requirements. Restore the pre-upgrade backup with its matching application and keys if rollback is required.
 
 ## Automatic expiration
 

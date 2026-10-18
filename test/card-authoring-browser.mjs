@@ -178,17 +178,17 @@ try {
   await page.getByText("Arrange layers",{exact:true}).click();
   await page.getByRole("button",{name:"Group selected",exact:true}).click();await idle();
   await page.locator(".dcs-layers").getByRole("button",{name:"Group",exact:true}).click();await idle();
-  await page.getByLabel("Isolate group",{exact:true}).selectOption("yes");await idle();
+  await page.getByLabel("Apply effects to group as one layer",{exact:true}).selectOption("yes");await idle();
   assert(await page.evaluate(()=>window.studio.getProject().manifest.capabilities.required.includes("dc.group-isolation@0.2")));
   await page.getByLabel("width",{exact:true}).fill("0");await page.getByLabel("width",{exact:true}).press("Tab");await idle();
   assert(Number(await page.getByLabel("width",{exact:true}).inputValue())>0);
-  await page.getByText("Clipping mask properties",{exact:true}).click();
+  await page.getByText("Show or hide layer content",{exact:true}).click();
   await page.getByLabel("Clipping mask source",{exact:true}).selectOption("polygon");await idle();
-  await page.getByLabel("Isolate group",{exact:true}).selectOption("no");await idle();
-  assert.equal(await page.getByLabel("Isolate group",{exact:true}).inputValue(),"yes");
+  await page.getByLabel("Apply effects to group as one layer",{exact:true}).selectOption("no");await idle();
+  assert.equal(await page.getByLabel("Apply effects to group as one layer",{exact:true}).inputValue(),"yes");
   await page.getByText("Arrange layers",{exact:true}).click();
   await page.getByRole("button",{name:"Lock selected",exact:true}).click();await idle();
-  assert(await page.getByLabel("Isolate group",{exact:true}).isDisabled());assert(await page.getByLabel("Clipping mask source",{exact:true}).isDisabled());
+  assert(await page.getByLabel("Apply effects to group as one layer",{exact:true}).isDisabled());assert(await page.getByLabel("Clipping mask source",{exact:true}).isDisabled());
   await page.evaluate(async()=>{const {importPackage}=await import("/src/presentation/package.js");await window.studio.open(await importPackage(new Uint8Array(await(await fetch("/fixture.dcard")).arrayBuffer())));});
   checks.push("artist isolated group creation/bounds/capability, rejected downgrade recovery and locked mask controls");
   await page.getByRole("button", { name: "Add text", exact: true }).click();
@@ -204,57 +204,57 @@ try {
       .scenes.get("scenes/front.json")
       .nodes.some((n) => n.text === "Collection title"),
   );
-  await page.getByText("Styled text spans", { exact: true }).click();
+  await page.getByText("Style parts of the text", { exact: true }).click();
   await idle();
-  await page.getByLabel("Span 1 text", { exact: true }).fill("<b>Hello</b>");
-  await page.getByLabel("Span 1 text", { exact: true }).press("Tab");
+  await page.getByLabel("Part 1 text", { exact: true }).fill("<b>Hello</b>");
+  await page.getByLabel("Part 1 text", { exact: true }).press("Tab");
   await idle();
   await page.getByRole("button", { name: "Add text span", exact: true }).click();
   await idle();
-  await page.getByLabel("Span 2 text", { exact: true }).fill(" World");
-  await page.getByLabel("Span 2 text", { exact: true }).press("Tab");
+  await page.getByLabel("Part 2 text", { exact: true }).fill(" World");
+  await page.getByLabel("Part 2 text", { exact: true }).press("Tab");
   await idle();
   const beforeInvalidSpan = await page.evaluate(() => window.studio.getProject().serialize());
-  await page.getByLabel("Span 1 weight", { exact: true }).fill("2000");
-  await page.getByLabel("Span 1 weight", { exact: true }).press("Tab");
+  await page.getByLabel("Part 1 weight", { exact: true }).fill("2000");
+  await page.getByLabel("Part 1 weight", { exact: true }).press("Tab");
   await idle();
   await page.waitForFunction(() => document.querySelector(".dcs-status").textContent.includes("Invalid span weight"));
   assert.deepEqual(await page.evaluate(() => window.studio.getProject().serialize()), beforeInvalidSpan);
-  await page.getByLabel("Span 1 weight", { exact: true }).fill("700");
-  await page.getByLabel("Span 1 weight", { exact: true }).press("Tab");
+  await page.getByLabel("Part 1 weight", { exact: true }).fill("700");
+  await page.getByLabel("Part 1 weight", { exact: true }).press("Tab");
   await idle();
   await page.waitForFunction(() => window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.runs)?.runs[0].weight === 700);
   await page.getByRole("button", { name: "Undo", exact: true }).click();
   await idle();
-  await page.waitForFunction(() => document.querySelector('[aria-label="Span 1 weight"]')?.value === "");
-  assert.equal(await page.getByLabel("Span 1 weight", { exact: true }).inputValue(), "");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Part 1 weight"]')?.value === "");
+  assert.equal(await page.getByLabel("Part 1 weight", { exact: true }).inputValue(), "");
   await page.getByRole("button", { name: "Redo", exact: true }).click();
   await idle();
-  await page.waitForFunction(() => document.querySelector('[aria-label="Span 1 weight"]')?.value === "700");
-  assert.equal(await page.getByLabel("Span 1 weight", { exact: true }).inputValue(), "700");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Part 1 weight"]')?.value === "700");
+  assert.equal(await page.getByLabel("Part 1 weight", { exact: true }).inputValue(), "700");
   assert.equal(await page.evaluate(async () => {
     const { importPackage } = await import("/src/presentation/package.js"),
       { createProject } = await import("/src/presentation/project.js"),
       restored = createProject(await importPackage((await window.studio.getProject().export({retainSources:true})).archive));
     return restored.scenes.get("scenes/front.json").nodes.find(n=>n.runs).runs[0].weight;
   }), 700);
-  await page.getByLabel("Span 1 style", { exact: true }).selectOption("italic");
+  await page.getByLabel("Part 1 style", { exact: true }).selectOption("italic");
   await idle();
-  await page.getByLabel("Span 1 color", { exact: true }).fill("#ff0000");
-  await page.getByLabel("Span 1 color", { exact: true }).press("Tab");
+  await page.getByLabel("Part 1 color", { exact: true }).fill("#ff0000");
+  await page.getByLabel("Part 1 color", { exact: true }).press("Tab");
   await idle();
   const inlineIcon = await page.evaluate(() => window.studio.getProject().manifest.assets.find(a=>a.mediaType.startsWith("image/")).id);
-  await page.getByLabel("Span 1 icon", { exact: true }).selectOption(inlineIcon);
+  await page.getByLabel("Part 1 icon", { exact: true }).selectOption(inlineIcon);
   await idle();
-  await page.getByRole("button", { name: "Move span 1 later", exact: true }).click();
+  await page.getByRole("button", { name: "Move part 1 later", exact: true }).click();
   await idle();
-  await page.waitForFunction(() => document.querySelector('[aria-label="Span 1 text"]')?.value === " World");
-  await page.getByRole("button", { name: "Reset span 2 formatting", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Part 1 text"]')?.value === " World");
+  await page.getByRole("button", { name: "Reset part 2 formatting", exact: true }).click();
   await idle();
   await page.waitForFunction(() => {
     const span = window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.runs)?.runs[1];
     return span?.text === "<b>Hello</b>" && !Object.hasOwn(span,"weight") && !Object.hasOwn(span,"style") && !Object.hasOwn(span,"color") &&
-      document.querySelector('[aria-label="Span 2 weight"]')?.value === "";
+      document.querySelector('[aria-label="Part 2 weight"]')?.value === "";
   });
   const spanSource = await page.evaluate(async () => {
     const p = window.studio.getProject(),
@@ -263,24 +263,24 @@ try {
     return decoded.scenes.get("scenes/front.json").nodes.find(n=>n.runs)?.runs;
   });
   assert.deepEqual(spanSource, [{ text: " World" }, { text: "<b>Hello</b>", icon: inlineIcon }]);
-  await page.getByRole("button", { name: "Remove span 1", exact: true }).click();
+  await page.getByRole("button", { name: "Remove part 1", exact: true }).click();
   await idle();
   await page.waitForFunction(() => window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.runs)?.runs.length === 1 &&
-    !document.querySelector('[aria-label="Span 2 text"]'));
+    !document.querySelector('[aria-label="Part 2 text"]'));
   await page.screenshot({ path: resolve(output, "styled-spans.png"), fullPage: true });
-  await page.getByRole("button", { name: "Convert spans to plain text", exact: true }).click();
+  await page.getByRole("button", { name: "Make plain text (remove styles and icons)", exact: true }).click();
   await idle();
   await page.waitForFunction(() => document.querySelector('[aria-label="Text content"]')?.value === "<b>Hello</b>" &&
     !window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.type === "text").runs);
   assert.equal(await page.getByLabel("Text content", { exact: true }).inputValue(), "<b>Hello</b>");
   await page.getByRole("button", { name: "Undo", exact: true }).click();
   await idle();
-  await page.waitForFunction(expected => document.querySelector('[aria-label="Span 1 icon"]')?.value === expected, inlineIcon);
-  assert.equal(await page.getByLabel("Span 1 icon", { exact: true }).inputValue(), inlineIcon);
+  await page.waitForFunction(expected => document.querySelector('[aria-label="Part 1 icon"]')?.value === expected, inlineIcon);
+  assert.equal(await page.getByLabel("Part 1 icon", { exact: true }).inputValue(), inlineIcon);
   await page.getByRole("button", { name: "Redo", exact: true }).click();
   await idle();
   await page.waitForFunction(() => !window.studio.getProject().scenes.get("scenes/front.json").nodes.find(n=>n.type === "text").runs &&
-    document.querySelector('[aria-label="Span 1 icon"]')?.value === "");
+    document.querySelector('[aria-label="Part 1 icon"]')?.value === "");
   await page.getByLabel("Text content", { exact: true }).fill("Collection title");
   await page.getByLabel("Text content", { exact: true }).press("Tab");
   await idle();
@@ -296,7 +296,7 @@ try {
   await idle();
   await page.getByRole("button", { name: "Lock selected", exact: true }).click();
   await idle();
-  assert(await page.getByLabel("Span 1 text", { exact: true }).isDisabled());
+  assert(await page.getByLabel("Part 1 text", { exact: true }).isDisabled());
   assert(await page.getByRole("button", { name: "Add text span", exact: true }).isDisabled());
   await page.getByText("Arrange layers", { exact: true }).click();
   await idle();
@@ -305,16 +305,16 @@ try {
   checks.push("artist spans, rejected-edit recovery, emphasis/icon/reorder/reset/remove, portable round trip, undo/redo and locked/bounded controls");
   await page.getByText("Define a custom field", { exact: true }).click();
   await idle();
-  for (const [label, value] of [["Field key", "museum.price"], ["Field label", "Museum price"], ["Field help", "Printed ticket price"], ["Field unit", "USD"]]) {
+  for (const [label, value] of [["Field ID", "museum.price"], ["Field label", "Museum price"], ["Field help", "Printed ticket price"], ["Field unit", "USD"]]) {
     await page.getByLabel(label, { exact: true }).fill(value);
     await page.getByLabel(label, { exact: true }).press("Tab");
     await idle();
   }
   await page.getByLabel("Field type", { exact: true }).selectOption("number");
   await idle();
-  await page.getByLabel("Field scope", { exact: true }).selectOption("variant");
+  await page.getByLabel("Applies to", { exact: true }).selectOption("variant");
   await idle();
-  await page.getByLabel("Allow null", { exact: true }).selectOption("yes");
+  await page.getByLabel("Allow no value (null)", { exact: true }).selectOption("yes");
   await idle();
   for (const [label, value] of [["Field minimum", "20"], ["Field maximum", "10"], ["Field decimal places", "2"]]) {
     await page.getByLabel(label, { exact: true }).fill(value);
@@ -344,15 +344,15 @@ try {
   await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.variant["museum.price"] === null);
   await page.getByText("Define a custom field", { exact: true }).click();
   await idle();
-  await page.getByLabel("Field key", { exact: true }).fill("museum.category");
-  await page.getByLabel("Field key", { exact: true }).press("Tab");
+  await page.getByLabel("Field ID", { exact: true }).fill("museum.category");
+  await page.getByLabel("Field ID", { exact: true }).press("Tab");
   await idle();
   await page.getByLabel("Field label", { exact: true }).fill("Catalog style");
   await page.getByLabel("Field label", { exact: true }).press("Tab");
   await idle();
   await page.getByLabel("Field type", { exact: true }).selectOption("string");
   await idle();
-  await page.getByLabel("Field visibility", { exact: true }).selectOption("owner");
+  await page.getByLabel("Who can see this", { exact: true }).selectOption("owner");
   await idle();
   for (const [label, value] of [["Minimum text length", "2"], ["Maximum text length", "10"]]) {
     await page.getByLabel(label, { exact: true }).fill(value);
@@ -377,8 +377,8 @@ try {
   assert(await page.evaluate(async () => !(await window.studio.getProject().export()).manifest.authoring.fields.some(f=>f.key === "museum.category")));
   await page.getByText("Define a custom field", { exact: true }).click();
   await idle();
-  await page.getByLabel("Field key", { exact: true }).fill("museum.tags");
-  await page.getByLabel("Field key", { exact: true }).press("Tab");
+  await page.getByLabel("Field ID", { exact: true }).fill("museum.tags");
+  await page.getByLabel("Field ID", { exact: true }).press("Tab");
   await idle();
   await page.getByLabel("Field label", { exact: true }).fill("Catalog tags");
   await page.getByLabel("Field label", { exact: true }).press("Tab");
@@ -402,9 +402,9 @@ try {
   await page.waitForFunction(() => window.studio.getProject().manifest.authoring.values.card["museum.tags"]?.[0] === "featured");
   await page.getByText("Define a custom field", { exact: true }).click();
   await idle();
-  assert.deepEqual(await page.getByLabel("Field scope", { exact: true }).locator("option").evaluateAll(options=>options.map(o=>o.value)), ["card", "variant"]);
-  await page.getByLabel("Field key", { exact: true }).fill("museum.price");
-  await page.getByLabel("Field key", { exact: true }).press("Tab");
+  assert.deepEqual(await page.getByLabel("Applies to", { exact: true }).locator("option").evaluateAll(options=>options.map(o=>o.value)), ["card", "variant"]);
+  await page.getByLabel("Field ID", { exact: true }).fill("museum.price");
+  await page.getByLabel("Field ID", { exact: true }).press("Tab");
   await idle();
   await page.getByLabel("Field label", { exact: true }).fill("Card price");
   await page.getByLabel("Field label", { exact: true }).press("Tab");
@@ -418,7 +418,7 @@ try {
   assert.equal(await page.evaluate(() => window.studio.getProject().manifest.authoring.values.variant["museum.price"]), null);
   await page.screenshot({ path: resolve(output, "custom-fields.png"), fullPage: true });
   checks.push("type-aware numeric ranges/precision/nullability, scope/help/unit, enumerated private field and public-export privacy");
-  await page.getByText("Clipping mask properties", { exact: true }).click();
+  await page.getByText("Show or hide layer content", { exact: true }).click();
   await idle();
   await page.getByLabel("Clipping mask source", { exact: true }).selectOption("polygon");
   await idle();
@@ -539,7 +539,7 @@ try {
   await page.waitForFunction(() =>
     window.studio.getProject().manifest.assets.some((a) => a.role === "font"),
   );
-  await page.getByText("Embedded font assets",{exact:true}).click();
+  await page.getByText("Fonts saved in this card",{exact:true}).click();
   const embeddedFontId=await page.evaluate(()=>window.studio.getProject().manifest.assets.find(a=>a.role==="font").id);
   assert.equal(await page.getByLabel("Usage terms for "+embeddedFontId,{exact:true}).inputValue(),"Test fixture: permitted embedding and redistribution");
   await page.getByText("Decoded family: Test Sans · Face: Regular · Style: normal · Weight: unavailable · Italic angle: 0",{exact:true}).waitFor();
@@ -548,7 +548,7 @@ try {
   await page.getByLabel("Glyph coverage sample for "+embeddedFontId,{exact:true}).fill("A🙂");
   await page.getByLabel("Glyph coverage sample for "+embeddedFontId,{exact:true}).press("Tab");
   await idle();
-  await page.getByText("Missing code points: U+1F642",{exact:true}).waitFor();
+  await page.getByText("Characters missing from this font: U+1F642",{exact:true}).waitFor();
   await page.getByLabel("Usage terms for "+embeddedFontId,{exact:true}).fill("");
   await page.getByLabel("Usage terms for "+embeddedFontId,{exact:true}).press("Tab");
   await idle();
@@ -558,7 +558,7 @@ try {
   await idle();
   assert.equal(await page.evaluate(()=>window.studio.getProject().manifest.assets.find(a=>a.role==="font").font.license),"Updated fixture embedding terms");
   assert.equal(await page.getByLabel("Glyph coverage sample for "+embeddedFontId,{exact:true}).inputValue(),"A🙂");
-  await page.getByText("Missing code points: U+1F642",{exact:true}).waitFor();
+  await page.getByText("Characters missing from this font: U+1F642",{exact:true}).waitFor();
   await page.screenshot({path:resolve(output,"font-assets.png"),fullPage:true});
   await page.getByText("Arrange layers",{exact:true}).click();
   await idle();
@@ -602,7 +602,7 @@ try {
     });
     await window.studio.open(await p.export({ retainSources: true }));
   });
-  await page.getByRole("button", { name: "Front / back", exact: true }).click();
+  await page.getByRole("button", { name: "Switch front/back", exact: true }).click();
   await idle();
   await page.waitForFunction(() =>
     document
@@ -649,7 +649,7 @@ try {
   await page.waitForFunction(() => !Object.hasOwn(window.studio.getProject().manifest.authoring.values.card, "enabled"));
   await page.getByRole("button", { name: "Add Variant score to card", exact: true }).click();
   await idle();
-  await page.getByText("Styled text spans", { exact: true }).click();
+  await page.getByText("Style parts of the text", { exact: true }).click();
   await idle();
   await page.getByText("Bound text comes from its stat field. Use the stat formatting controls to change its display.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Add text span", exact: true }).count(), 0);
@@ -657,8 +657,8 @@ try {
   await page.getByLabel("Stat label", { exact: true }).press("Tab");
   await idle();
   await page.waitForFunction(() => document.querySelector('[role="img"]')?.getAttribute("aria-label")?.includes("Edition 99"));
-  assert.equal(await page.getByLabel("Bound field", { exact: true }).inputValue(), '["variant","score"]');
-  await page.getByLabel("Stat appearance", { exact: true }).selectOption("bar");
+  assert.equal(await page.getByLabel("Stat to show", { exact: true }).inputValue(), '["variant","score"]');
+  await page.getByLabel("How the stat looks", { exact: true }).selectOption("bar");
   await idle();
   await page.getByLabel("Bar maximum", { exact: true }).fill("200");
   await page.getByLabel("Bar maximum", { exact: true }).press("Tab");
@@ -777,7 +777,7 @@ try {
   await idle();
   await page.getByRole("button", { name: "foo.bar: Text is below the minimum size", exact: true }).click();
   await idle();
-  await page.getByRole("dialog").getByText("This layer ID is used on multiple faces. Choose the layer to inspect.", { exact: true }).waitFor();
+  await page.getByRole("dialog").getByText("This layer appears on more than one side. Choose which side to inspect.", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Inspect front / Text", exact: true }).click();
   await idle();
   assert.equal(await page.getByLabel("Text content", { exact: true }).inputValue(), "Short");
@@ -815,11 +815,11 @@ try {
     });
   });
   await page
-    .getByRole("button", { name: "Open visual card editor", exact: true })
+    .getByRole("button", { name: "Edit card artwork", exact: true })
     .click();
     await idle();
   await page.waitForFunction(() => document.querySelector(".dcard-studio"));
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some(button=>button.textContent === "Open visual card editor" && !button.disabled));
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some(button=>button.textContent === "Edit card artwork" && !button.disabled));
   assert(await page.locator(".dcard-studio").evaluate(element=>!element.inert && element.getAttribute("aria-busy") !== "true"));
   await page.getByRole("button", { name: "Add text", exact: true }).click();
   await idle();
@@ -829,15 +829,15 @@ try {
   await page.getByLabel("Text content", { exact: true }).press("Tab");
   await idle();
   await page
-    .getByRole("button", { name: "Capture posters", exact: true })
+    .getByRole("button", { name: "Capture preview images", exact: true })
     .click();
     await idle();
   await page.getByRole("button", { name: "Publish", exact: true }).click();
   await page
-    .getByRole("button", { name: "Publish reviewed card", exact: true })
+    .getByRole("button", { name: "Publish card changes", exact: true })
     .waitFor({ timeout: 30000 });
   await page
-    .getByRole("button", { name: "Publish reviewed card", exact: true })
+    .getByRole("button", { name: "Publish card changes", exact: true })
     .click();
     await idle();
   await page.getByText("Card published.", { exact: true }).waitFor();
@@ -846,16 +846,16 @@ try {
     "visual editor uploads, registers, previews and commits through authenticated policy gate",
   );
   const oldProduct=core.operatorCatalog(admin).products[0],ownedBefore=core.purchase(alice,{...core.quote(alice,{productId:oldProduct.id,quantity:1}),key:"pack-art-before"}).packs[0];
-  await page.getByLabel("Design destination",{exact:true}).selectOption("pack");
-  await page.getByRole("button",{name:"Open visual pack editor",exact:true}).click();
-  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Open visual pack editor'&&!button.disabled));
-  await page.getByLabel("Pack reveal artwork URL",{exact:true}).fill("/fixture.dcard");
-  await page.getByLabel("Pack artwork description",{exact:true}).fill("Printed sky pack");
+  await page.getByLabel("What are you designing?",{exact:true}).selectOption("pack");
+  await page.getByRole("button",{name:"Edit pack artwork",exact:true}).click();
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Edit pack artwork'&&!button.disabled));
+  await page.getByLabel("Reveal image URL",{exact:true}).fill("/fixture.dcard");
+  await page.getByLabel("Describe pack artwork",{exact:true}).fill("Printed sky pack");
   await page.getByRole("button",{name:"Add text",exact:true}).click();await idle();
   await page.getByLabel("Text content",{exact:true}).fill("Pack jacket");await page.getByLabel("Text content",{exact:true}).press("Tab");await idle();
-  await page.getByRole("button",{name:"Capture posters",exact:true}).click();await idle();
+  await page.getByRole("button",{name:"Capture preview images",exact:true}).click();await idle();
   await page.getByRole("button",{name:"Publish",exact:true}).click();
-  await page.getByRole("button",{name:"Publish reviewed pack artwork",exact:true}).click();await idle();
+  await page.getByRole("button",{name:"Publish pack artwork",exact:true}).click();await idle();
   await page.getByText("Pack artwork published. Existing packs retain their artwork.",{exact:true}).waitFor();
   const publishedProduct=core.operatorCatalog(admin).products.find(product=>product.id===oldProduct.id);
   assert.equal(publishedProduct.revision,oldProduct.revision+1);assert(publishedProduct.artwork.design.digest);assert(publishedProduct.artwork.front.includes('/presentations/'));
@@ -873,12 +873,12 @@ try {
   const targetFencing=await page.evaluate(async()=>{
     const {mountVisualStudio}=await import('/src/visual-studio-ui.js'),catalog=await window.client.operatorCatalog(),me=await window.client.me(),root=document.createElement('div');document.body.append(root);
     let finishCatalog,policyCalls=0;const waiting=new Promise(resolve=>{finishCatalog=resolve;}),view=mountVisualStudio(root,{model:{me:{...me,role:'artist'},catalog},client:{operatorCatalog:()=>waiting,effectiveCardPolicy:()=>{policyCalls++;throw new Error('Stale destination policy requested');}}}),
-      launch=[...root.querySelectorAll('button')].find(button=>button.textContent==='Open visual card editor'),opening=launch.onclick(),kind=root.querySelector('[aria-label="Design destination"]'),loadingLocked=kind.disabled;
+      launch=[...root.querySelectorAll('button')].find(button=>button.textContent==='Edit card artwork'),opening=launch.onclick(),kind=root.querySelector('[aria-label="What are you designing?"]'),loadingLocked=kind.disabled;
     kind.value='pack';kind.onchange();finishCatalog(catalog);await opening;
     const switched={loadingLocked,policyCalls,editors:root.querySelectorAll('.dcard-studio').length,kind:kind.value};view.dispose();root.remove();
     const previewRoot=document.createElement('div');document.body.append(previewRoot);let finishPreview,previewStarted,previewCalls=0;
-    const pending=new Promise(resolve=>{finishPreview=resolve;}),entered=new Promise(resolve=>{previewStarted=resolve;}),previewView=mountVisualStudio(previewRoot,{model:{me:{...me,role:'artist'},catalog},client:{...window.client,previewImport:()=>{previewCalls++;previewStarted();return pending;}}}),packKind=previewRoot.querySelector('[aria-label="Design destination"]');
-    packKind.value='pack';packKind.onchange();await [...previewRoot.querySelectorAll('button')].find(button=>button.textContent==='Open visual pack editor').onclick();
+    const pending=new Promise(resolve=>{finishPreview=resolve;}),entered=new Promise(resolve=>{previewStarted=resolve;}),previewView=mountVisualStudio(previewRoot,{model:{me:{...me,role:'artist'},catalog},client:{...window.client,previewImport:()=>{previewCalls++;previewStarted();return pending;}}}),packKind=previewRoot.querySelector('[aria-label="What are you designing?"]');
+    packKind.value='pack';packKind.onchange();await [...previewRoot.querySelectorAll('button')].find(button=>button.textContent==='Edit pack artwork').onclick();
     const publishing=[...previewRoot.querySelectorAll('button')].find(button=>button.textContent==='Publish').onclick();
     let timeout;await Promise.race([entered,new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('Pack preview did not start: '+previewRoot.textContent)),30000);})]);clearTimeout(timeout);
     const reviewLocked=packKind.disabled;previewView.dispose();finishPreview({});await publishing;
@@ -887,7 +887,7 @@ try {
   assert.deepEqual(targetFencing.switched,{loadingLocked:true,policyCalls:0,editors:0,kind:'pack'});
   assert.deepEqual(targetFencing.disposed,{previewCalls:1,reviewLocked:true,children:0,dialogs:0});
   checks.push("pack artist front/back publication, immutable allocated artwork, two independent public renderers and invalid/missing-image fallback");
-  await page.getByLabel("Design destination",{exact:true}).selectOption("card");
+  await page.getByLabel("What are you designing?",{exact:true}).selectOption("card");
   await page
     .getByText("Administrator card policies", { exact: true })
     .first()
@@ -968,7 +968,7 @@ try {
     let finish,catalogCalls=0,policyCalls=0;
     const pending=new Promise(resolve=>{finish=resolve;}),view=mountVisualStudio(root,{
       model:{me:{role:"artist"},catalog},client:{operatorCatalog:()=>{catalogCalls++;return pending;},effectiveCardPolicy:()=>{policyCalls++;throw new Error("Policy load after disposal");}},
-    }),launch=[...root.querySelectorAll("button")].find(button=>button.textContent==="Open visual card editor"),opening=launch.onclick();
+    }),launch=[...root.querySelectorAll("button")].find(button=>button.textContent==="Edit card artwork"),opening=launch.onclick();
     view.dispose();finish(catalog);await opening;await launch.onclick();
     const children=root.childElementCount;
     root.remove();return{catalogCalls,policyCalls,children};
@@ -1030,9 +1030,9 @@ try {
     });
     document.querySelector("#root").append(joinedStudio.node);
   });
-  await page.getByRole("button", { name: "Open visual card editor", exact: true }).click();
+  await page.getByRole("button", { name: "Edit card artwork", exact: true }).click();
   await idle();
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some(button => button.textContent === "Open visual card editor" && !button.disabled));
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some(button => button.textContent === "Edit card artwork" && !button.disabled));
   await page.getByLabel("Public", { exact: true }).fill("11");
   await page.getByLabel("Public", { exact: true }).press("Tab");
   await idle();
@@ -1041,7 +1041,7 @@ try {
   await idle();
   await page.getByRole("button", { name: "Add Public to card", exact: true }).click();
   await idle();
-  await page.getByRole("button", { name: "Capture posters", exact: true }).click();
+  await page.getByRole("button", { name: "Capture preview images", exact: true }).click();
   await idle();
   const stagedReply = page.waitForResponse(response => response.url().includes("/presentations/imports/") && response.url().endsWith("/publish"));
   await page.getByRole("button", { name: "Publish", exact: true }).click();
@@ -1051,14 +1051,14 @@ try {
   assert.equal(joinedPreviews.length, 1);
   const invalidCard = joinedPreviews[0].source.cards[0];
   assert.deepEqual(invalidCard.stats, { ...joinedBefore.catalog.cards[0].stats, public: 11, owner: "owner-route-sentinel-73" });
-  assert.equal(await page.getByRole("button", { name: "Publish reviewed card", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Publish card changes", exact: true }).count(), 0);
   assert.deepEqual(businessState(), joinedBefore);
-  await page.getByLabel("Import content", { exact: true }).fill(JSON.stringify({ cards: [invalidCard] }));
-  await page.getByRole("button", { name: "Validate & preview", exact: true }).click();
+  await page.getByLabel("Catalog data to import", { exact: true }).fill(JSON.stringify({ cards: [invalidCard] }));
+  await page.getByRole("button", { name: "Check and preview changes", exact: true }).click();
   await page.locator("#root > section > p").filter({ hasText: "outside" }).waitFor();
   assert.equal(joinedPreviews.length, 2);
   assert.deepEqual(JSON.parse(joinedPreviews[1].source).cards[0], invalidCard);
-  assert(await page.getByRole("button", { name: "Publish reviewed revision", exact: true }).isDisabled());
+  assert(await page.getByRole("button", { name: "Publish these catalog changes", exact: true }).isDisabled());
   assert.deepEqual(joinedCommits, []);
   assert.deepEqual(businessState(), joinedBefore);
   const publicDOM = await page.evaluate(async digest => {

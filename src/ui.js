@@ -236,6 +236,7 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
   let disposed=false,model=null,openerDispose=null,viewDisposers=[],refreshGeneration=0,mutate=null,commandPrincipal=null,busy=false,shellGeneration=0,shellPrincipal=null;
   let active=sections.includes('shop')?'shop':sections[0],viewLeave=null;
   let effectiveSections=sections;
+  const actionFocusAbort=new AbortController();
   const renderer=(copy,options={})=>cardRenderer(copy,{backRenderer,localization,...options});
   const currencyName=id=>model.catalog.currencies.find(c=>c.id===id)?.name??id;
   const lineName=id=>model.catalog.lines.find(l=>l.id===id)?.name??id;
@@ -254,16 +255,26 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
   inspector.addEventListener('click',event=>{if(event.target===inspector)inspector.close();});
   const createController=()=>createRevealController({open:input=>mutate('openPack',{packId:input.packId}),key:client.requestKey});
   let controller=createController();
-  async function action(fn,{refreshAfter=true,message=t('status.saved')}={}) {
+  async function action(fn,{refreshAfter=true,message=t('status.saved'),focusAfterRefresh}={}) {
     if(busy || disposed)return;
+    const source=refreshAfter&&typeof focusAfterRefresh==='function'&&content.contains(document.activeElement)?document.activeElement:null,focusState=source?{principal:commandPrincipal,view:active,refresh:refreshGeneration,shell:shellGeneration,model}:null;
+    let moved=false,ownRefresh=false,succeeded=false,value;
+    const focusMoved=event=>{if(![source,document.body,document.documentElement].includes(event.target))moved=true;},pointerMoved=()=>{moved=true;};
+    if(source){document.addEventListener('focusin',focusMoved,{capture:true,signal:actionFocusAbort.signal});document.addEventListener('pointerdown',pointerMoved,{capture:true,signal:actionFocusAbort.signal});}
     busy=true;status.className='dc-status is-working';status.textContent=t('status.working');
     root.setAttribute('aria-busy','true');const controls=[...root.querySelectorAll('.dc-content button')].map(b=>[b,b.disabled]);controls.forEach(([b])=>b.disabled=true);
     try {
-      const value=await fn();
-      if(!disposed){if(refreshAfter)await refresh();status.className='dc-status is-success';status.textContent=typeof message==='function'?message(value):message;}
+      value=await fn();
+      if(!disposed){if(refreshAfter){const current=focusState&&source.isConnected&&content.contains(source)&&model===focusState.model&&refreshGeneration===focusState.refresh;await refresh();ownRefresh=current&&refreshGeneration===focusState.refresh+1&&model!==focusState.model;}status.className='dc-status is-success';status.textContent=typeof message==='function'?message(value):message;succeeded=true;}
       return value;
     } catch(error) {if(!disposed){status.className='dc-status dc-error';status.textContent=localizeDiagnostic(localization,error);}return undefined;}
-    finally {busy=false;root.removeAttribute('aria-busy');controls.forEach(([b,disabled])=>{if(b.isConnected)b.disabled=disabled;});}
+    finally {
+      busy=false;root.removeAttribute('aria-busy');controls.forEach(([b,disabled])=>{if(b.isConnected)b.disabled=disabled;});
+      if(source){document.removeEventListener('focusin',focusMoved,true);document.removeEventListener('pointerdown',pointerMoved,true);}
+      if(succeeded&&ownRefresh&&!moved&&!disposed&&root.isConnected&&!source.isConnected&&commandPrincipal===focusState.principal&&active===focusState.view&&shellGeneration===focusState.shell&&(typeof client.principal!=='function'||client.principal()===focusState.principal)&&document.hasFocus()&&[document.body,document.documentElement].includes(document.activeElement)){
+        const target=focusAfterRefresh(content,value);if(target?.isConnected&&content.contains(target)&&!target.matches(':disabled')&&!target.closest('[inert]'))target.focus();
+      }
+    }
   }
   function field(parent,label,type='text',value='') {
     const wrap=element('label','dc-field'),caption=element('span','',label),input=element('input');
@@ -340,8 +351,8 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
     applicationShell.update({model,sections:effectiveSections,views,labels,active,userName});
     if(model.recoverable?.length){
       const panel=element('section','dc-panel');panel.setAttribute('aria-label',t('recovery.title'));panel.append(element('h2','',t('recovery.title')),element('p','',t('recovery.description')));
-      const names={purchase:'pack purchase',openPack:'pack opening',buyListing:'marketplace purchase',configureAdmin:'settings change',administerCards:'card administration',convert:'currency conversion',tradeUp:'trade-up',saveAlbum:'album change',proposeTrade:'trade offer',acceptTrade:'trade acceptance',cancelTrade:'trade cancellation',counterTrade:'counteroffer',preferences:'preferences',readNotifications:'notification update',commitImport:'catalog import',reportCodeUsage:'code usage report',createShop:'shop creation',createListing:'listing creation',cancelListing:'listing cancellation',enterRaffle:'raffle entry',openCard:'card opening',consumeBinding:'attached action'};
-      for(const intent of model.recoverable){const label=['purchase','openPack','convert','preferences','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','counterTrade','buyListing','createShop','createListing','cancelListing','enterRaffle'].includes(intent.command)?t('recovery.'+intent.command):names[intent.command]??'saved change',row=element('div');row.append(element('strong','',label));if(intent.input.productId)row.append(element('p','',t('recovery.product',{count:intent.input.quantity??1,product:model.catalog.products.find(product=>product.id===intent.input.productId)?.name??intent.input.productId})));row.append(button(t('recovery.action',{change:label}),()=>action(()=>mutate.resume(intent),{message:t('recovery.success')})));panel.append(row);}recovery.append(panel);
+      const names={purchase:'pack purchase',openPack:'pack opening',buyListing:'marketplace purchase',configureAdmin:'settings change',administerCards:'card change',convert:'currency conversion',tradeUp:'card trade-up',saveAlbum:'album change',proposeTrade:'trade offer',acceptTrade:'trade acceptance',cancelTrade:'trade cancellation',counterTrade:'counteroffer',preferences:'account settings',readNotifications:'notification update',commitImport:'catalog import',reportCodeUsage:'code usage report',createShop:'shop creation',createListing:'listing creation',cancelListing:'listing cancellation',enterRaffle:'raffle entry',openCard:'card opening',consumeBinding:'attached item update'};
+      for(const intent of model.recoverable){const label=['purchase','openPack','convert','preferences','tradeUp','saveAlbum','proposeTrade','acceptTrade','cancelTrade','counterTrade','buyListing','createShop','createListing','cancelListing','enterRaffle'].includes(intent.command)?t('recovery.'+intent.command):names[intent.command]??'earlier change',row=element('div');row.append(element('strong','',label));if(intent.input.productId)row.append(element('p','',t('recovery.product',{count:intent.input.quantity??1,product:model.catalog.products.find(product=>product.id===intent.input.productId)?.name??intent.input.productId})));row.append(button(t('recovery.action',{change:label}),()=>action(()=>mutate.resume(intent),{message:t('recovery.success')})));panel.append(row);}recovery.append(panel);
     }
     for(const name of (navigation==='tabs'?[active]:effectiveSections)){const view=typeof name==='function'?()=>name(model,{client,inspect,inspectTogether,refresh,mutate,action,navigate,cardRenderer:renderer,localization}):views[name];if(view){const result=view();content.append(result.node??result);if(result.dispose)viewDisposers.push(result.dispose);if(result.requestLeave)viewLeave=result.requestLeave;}}
   }
@@ -372,5 +383,5 @@ export function mountFramework(root,{client,theme={},css='',cardRenderer=renderC
   }
   const shellReady=setShell(shell);
   const ready=refresh().catch(error=>{if(disposed)return;status.className='dc-status dc-error';status.textContent=localizeDiagnostic(localization,error);throw error;});
-  return {ready,shellReady,setShell,refresh,inspect,inspectTogether,dispose(){if(disposed)return;disposed=true;shellGeneration++;mutate?.dispose();openerDispose?.();viewDisposers.forEach(fn=>fn());controller.dispose();inspector.close();applicationShell.dispose();removeStyles();root.replaceChildren();for(const [name,value]of [['lang',oldLang],['dir',oldDir]])if(value===null)root.removeAttribute(name);else root.setAttribute(name,value);}};
+  return {ready,shellReady,setShell,refresh,inspect,inspectTogether,dispose(){if(disposed)return;disposed=true;actionFocusAbort.abort();shellGeneration++;mutate?.dispose();openerDispose?.();viewDisposers.forEach(fn=>fn());controller.dispose();inspector.close();applicationShell.dispose();removeStyles();root.replaceChildren();for(const [name,value]of [['lang',oldLang],['dir',oldDir]])if(value===null)root.removeAttribute(name);else root.setAttribute(name,value);}};
 }

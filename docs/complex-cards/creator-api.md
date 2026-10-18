@@ -36,9 +36,55 @@ The `material` recipe assigns the scene material verbatim. `preset` copies a nam
 }}
 ```
 
-`size` is the material's flake spacing/scale in local card units, not a count of flakes. Density is 0–1; intensity controls highlight strength; roughness changes the angle response; variation and seed control deterministic irregularity. Built-in shapes: circle, hexagon, shard, star. `flakeAsset` samples an imported image's alpha silhouette; its RGB is not a multicolor flake print. `maskAsset` controls where the finish applies. Layer transparency also clips the finish. Use a transparent PNG to design the flake and another mask to select regions of a single JPG.
+`size` is the material's flake spacing/scale in local card units, not a count of flakes. Density is 0–1; intensity controls highlight strength; roughness changes the angle response; variation and seed control deterministic irregularity. Built-in shapes: circle, hexagon, shard, star. `flakeAsset` supplies an imported alpha silhouette. Default `holo` coloring uses the procedural or fixed tint; explicit `flakeColor:'texture'` uses the flake image's RGB as well as alpha. `maskAsset` controls where the finish applies. Layer transparency also clips the finish. Use a transparent PNG to design the flake and another mask to select regions of a single JPG.
 
 Built-in materials: glitter, foil, water, bloom and spot. Supported motion targets and numeric ranges are checked by `validateScene`. Example binding: `{'material.angle':['input','angle']}`. Motion expressions are bounded data graphs; uploaded JavaScript is never evaluated. To combine finishes, return multiple overlapping nodes with unique IDs, sharing the same image and their own masks. This uses the texture cache rather than duplicating image bytes.
+
+### Studio finish controls
+
+These are the editor's control ranges, which can be narrower than the scene contract. Presets supply their own starting values. **None** removes the material and its `material.*` bindings; **Custom** keeps the current material. Selecting a preset replaces the material and binds angle, water sweep or bloom progress to card angle.
+
+| Control | Meaning and UI range |
+| --- | --- |
+| Intensity | Highlight strength, 0 to 8; bloom's reveal uses progress/feather instead and does not use intensity |
+| Flake size | Glitter spacing/scale in local units, 0.5 to 100 |
+| Density | Fraction of glitter cells populated, 0 to 1 |
+| Roughness | Glitter's angular highlight response, 0 to 1 |
+| Size variation / Scatter seed | Glitter irregularity, 0 to 1 / seed control 0 to 1000000 |
+| Flake shape / Use my flake design | Circle, hexagon, shard or star; an uploaded alpha shape replaces that procedural silhouette |
+| Custom flake coloring | `holo` or `texture`; texture coloring requires a flake image and overrides its procedural/fixed tint |
+| Flake color / Use rainbow holo | Fixed RGB tint, or removal of that tint for procedural color in holo mode |
+| Radius | Foil or water band width relative to the layer, 0.001 to 2 when present; not screen pixels |
+| Feather | Bloom edge softness relative to the layer, 0.001 to 2 when present |
+
+| Built-in preset | Starting material values |
+| --- | --- |
+| Fine silver | Glitter: size 2, density 0.65, intensity 1.8, roughness 0.45, variation 0.5, circle, seed 19, color `#e8edff` |
+| Chunky holo | Glitter: size 12, density 0.45, intensity 2.6, roughness 0.2, variation 0.4, shard, seed 23; procedural color |
+| Gold stars | Glitter: size 18, density 0.25, intensity 2.2, roughness 0.3, variation 0.25, star, seed 31, color `#ffd47a` |
+| Soft foil | Angle 0.5, radius 0.25, intensity 0.7, surface mode |
+| Lake reflection | Sweep 0.5, radius 0.2, intensity 0.45, surface mode |
+| Feathered bloom | Progress 1, feather 0.28, center `[0.5,0.5]` before angle input is applied |
+
+Imported glitter with omitted advanced fields is distinct from a preset: the renderer uses density 0.25, roughness 0.3, variation 0.3 and seed 1. The corresponding empty editor controls display 0.3 until edited. **Save this finish** stores settings in this browser's local storage and drops mask and custom-flake asset references; keep the project to retain those dependencies.
+
+### Pose frames and motion inputs
+
+**Add pose images** adds PNG/WebP frames with the layer's current dimensions and position. New frames start with **Duration** 100, using the millisecond timing convention also used by GIF frames. The control accepts 1 to 20000. **Pose horizontal position** and **Pose vertical position** set frame alignment in local card units. Durations divide the normalized progress interval proportionally; the default angle-driven sequence does not start a wall-clock animation. **Preview this pose** temporarily shows that frame without saving a new scene; **Resume card-turn animation** restores the project-driven view.
+
+**Advanced motion settings (JSON)** assigns validated expressions to supported properties; **Apply motion settings** validates the edit. Input values are:
+
+| Input | Units and omission behavior |
+| --- | --- |
+| `tilt.x`, `tilt.y` | -1 to 1; 0 |
+| `angle` | 0 to 1; derived from tilt, 0.5 at neutral input |
+| `time.active` | Active playback seconds starting at 0, not wall-clock time; hidden/static views do not advance it |
+| `reveal.progress`, `flip.progress` | 0 to 1; 1 / 0 |
+| `pointer.x`, `pointer.y` | Normalized 0 to 1; 0.5 / 0.5 |
+| `pressed`, `focused` | Numeric 0 or 1; 0 |
+| Declared `host.*` inputs | Host-supplied finite numbers or booleans; only declared names are accepted by the graph |
+
+Expression validation defaults to 256 nodes and depth 16; curves accept 2 to 64 increasing keys. The player additionally enforces its operation budget, default 16384 per update. Reduced motion supplies neutral tilt/angle and stops autonomous effects. Preview/capture and unavailable-capability behavior follow the [runtime contract](runtime.md#rendering-and-performance).
 
 ## Installed custom effects
 
@@ -135,7 +181,7 @@ No extension may bypass validation, content integrity, host resource ceilings or
 
 ## Captured posters and concurrent authoring
 
-After editing a finish, capture both faces in Studio with **Capture posters**, or call its public `await studio.capturePosters()`. This renders neutral input through the same player and preserves the current editing face. Capture is explicit so export does not overwrite an intentionally selected hero pose.
+After editing a finish, capture both faces in Studio with **Capture preview images**, or call its public `await studio.capturePosters()`. This renders neutral input through the same player and preserves the current editing face. Capture is explicit so export does not overwrite an intentionally selected hero pose.
 
 For headless or custom editors:
 

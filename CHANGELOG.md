@@ -2,7 +2,27 @@
 
 ## Unreleased
 
-- Restore keyboard focus to the original marketplace control after closing a review, while respecting account changes, disposal and deliberate focus movement.
+- Import storage encryption keys once per instance and keep active keys stable if the caller changes its input buffer.
+
+- Avoid unused index work when measuring storage capacity and reuse final transaction encodings, preserving exact capacity limits and rollback behavior.
+
+- Keep marketplace listing actions available after acknowledged edits; explain when pending edits prevent an action without discarding the draft.
+
+- Simplify menus, artwork tools, account activity and recovery messages, with matching guide instructions and clearer labels in the supplied examples.
+
+- Keep administration review focus through saving, error recovery and completion while respecting deliberate focus movement.
+
+- Keep alternate journal cards compact and inspector surfaces readable with light themes.
+
+- Render explicit snapshots of ready offscreen views while retaining normal offscreen frame culling.
+- Match the artwork editor's rendering area to the project canvas so narrow album spines and landscape artwork capture complete posters.
+
+- Restore keyboard focus to the original Reveal code button after a failed request so it can be retried, without overriding account changes or deliberate focus movement.
+- Keep keyboard focus on Save album after a successful save, while respecting navigation, account changes and deliberate focus movement.
+- Allow the default artwork editor to load its generated image URLs so local image imports can render and capture posters under the reference host's security policy.
+- Preserve keyboard focus when a shop quote becomes ready for purchase, without overriding deliberate focus movement or a changed account, view or quantity.
+- Hide internal filesystem and provider exception details in presentation responses and import-job results, including retained jobs from earlier versions; preserve safe validation diagnostics and return 404 for missing content.
+- Restore keyboard focus to the original marketplace control after closing a review, including when a busy update temporarily disables it, while respecting account changes, disposal and deliberate focus movement.
 - Measure embedded-font letter spacing consistently across styled spans so overflow and drawing agree.
 - Add a runnable complete card-line example covering artwork, packs, albums, publication and purchase/opening replay.
 

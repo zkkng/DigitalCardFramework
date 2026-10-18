@@ -7,7 +7,7 @@ import {join,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {validateEditorContribution} from '../src/presentation/editor-contributions.js';
 
-const expected={protocol:'digital-card-editor-contribution@1',id:'example.print-layout',version:'1.0.0',title:'Print layout',controls:[
+const expected={protocol:'digital-card-editor-contribution@1',id:'example.print-layout',version:'1.0.0',title:'Layer position and rotation',controls:[
   {id:'position-x',label:'Horizontal position',field:'x',minimum:-1000,maximum:1000,step:1},
   {id:'position-y',label:'Vertical position',field:'y',minimum:-1000,maximum:1000,step:1},
   {id:'rotation',label:'Rotation',field:'rotation',minimum:-180,maximum:180,step:1},

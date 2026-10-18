@@ -3,15 +3,30 @@ const events=new AbortController(),records=new Map(),edits=new Map();let current
 const text=(node,selector,value)=>{for(const target of node.querySelectorAll(selector))target.textContent=value??'';};
 const labels=node=>{for(const target of node.querySelectorAll('[data-dc-marketplace-label]'))target.textContent=current.labels[target.dataset.dcMarketplaceLabel]??'';};
 function rememberModalFocus(button){modalInvoker=button;modalAway=false;button.focus();}
+function restoreModalFocus(){
+ const invoker=modalInvoker;if(!modalAway)return;
+ const clear=()=>{modalInvoker=undefined;modalAway=false;};
+ if(disposed||!invoker?.isConnected||![document.body,document.documentElement,invoker].includes(document.activeElement)){clear();return;}
+ if(!document.hasFocus()||current?.busy)return;
+ if(invoker.disabled||invoker.hidden){clear();return;}
+ invoker.focus();if(modalInvoker===invoker&&document.activeElement===invoker)clear();
+}
 window.addEventListener('blur',()=>{if(modalInvoker)modalAway=true;},{signal:events.signal});
-window.addEventListener('focus',()=>{const invoker=modalInvoker;if(!modalAway)return;modalInvoker=undefined;modalAway=false;queueMicrotask(()=>{if(!disposed&&invoker?.isConnected&&!invoker.disabled&&[document.body,document.documentElement,invoker].includes(document.activeElement))invoker.focus();});},{signal:events.signal,capture:true});
+window.addEventListener('focus',()=>{if(modalAway)queueMicrotask(restoreModalFocus);},{signal:events.signal,capture:true});
 document.addEventListener('focusin',event=>{if(modalInvoker&&![document.body,document.documentElement,modalInvoker].includes(event.target))modalInvoker=undefined;},{signal:events.signal});
 function post(intent,details={}){if(!disposed&&current&&!current.busy)bridge?.marketplaceIntent({intent,snapshotId:current.snapshotId,...details});}
 function matches(edit){if(edit.intent==='marketplace-edit')return current.seller.draft?.[edit.details.field]===edit.details.value;if(edit.intent==='marketplace-kind')return current.seller.draft?.kind===edit.details.kind;if(edit.intent==='marketplace-option')return current.seller[edit.details.option].items.some(item=>item.position===edit.position&&item.selected);return false;}
 function reject(){edits.clear();flight=queuedAction=undefined;text(document,'[data-dc-marketplace-status]',current.labels.editRejected);for(const input of document.querySelectorAll('[data-dc-marketplace-field]'))input.value=current.seller.draft?.[input.dataset.dcMarketplaceField]??'';}
 const schedule=()=>{clearTimeout(timer);timer=setTimeout(flush,25);};
 function flush(){if(disposed||!current||current.busy||!bridge)return;if(!current.seller.draft){reject();return;}flight=undefined;for(const [key,edit]of edits){if(matches(edit)){edits.delete(key);continue;}if((edit.attempts??0)>=8){reject();return;}let details=edit.details;if(edit.intent==='marketplace-option'){const item=current.seller[details.option].items.find(item=>item.position===edit.position);if(!item){reject();return;}details={...details,handle:item.handle};}edit.attempts=(edit.attempts??0)+1;flight=edit;post(edit.intent,details);timer=setTimeout(flush,150);return;}if(queuedAction){const action=queuedAction;queuedAction=undefined;if(action.position!==undefined){const item=current.listings.items.find(item=>item.position===action.position);if(!item)return;action.details={...action.details,handle:item.handle};}post(action.intent,action.details);}}
-function send(intent,details={}){if(disposed||!current)return;if(['marketplace-edit','marketplace-kind','marketplace-option'].includes(intent)){const position=intent==='marketplace-option'?current.seller[details.option].items.find(item=>item.handle===details.handle)?.position:undefined,key=intent+':'+(details.field??details.option??'');edits.set(key,{intent,details,position});schedule();}else if(edits.size||flight){if(details.handle){text(document,'[data-dc-marketplace-status]',current.labels.working);schedule();return;}queuedAction={intent,details};schedule();}else post(intent,details);}
+function send(intent,details={}){if(disposed||!current)return;if(['marketplace-edit','marketplace-kind','marketplace-option'].includes(intent)){const position=intent==='marketplace-option'?current.seller[details.option].items.find(item=>item.handle===details.handle)?.position:undefined,key=intent+':'+(details.field??details.option??'');edits.set(key,{intent,details,position});schedule();}else{
+ if(details.handle){
+  for(const [key,edit]of edits)if(matches(edit))edits.delete(key);
+  if(flight&&matches(flight))flight=undefined;
+  if(edits.size||flight||!current.listings.items.some(item=>item.handle===details.handle)){text(document,'[data-dc-marketplace-status]',current.labels.editRejected);if(edits.size||flight)schedule();return;}
+ }
+ if(edits.size||flight){queuedAction={intent,details};schedule();}else post(intent,details);
+}}
 function clean(record){if(record.url)URL.revokeObjectURL(record.url);record.url=record.preview=undefined;for(const image of record.node.querySelectorAll('[data-dc-marketplace-preview]')){image.onerror=null;image.hidden=true;image.removeAttribute('src');}}
 function rows(container,template,items,key,update){if(!container||!template)return;const used=new Set();for(const item of items){const id=key+':'+item.position;used.add(id);let record=records.get(id);if(!record){const fragment=template.content.cloneNode(true),node=fragment.firstElementChild;if(!node)continue;record={node};records.set(id,record);container.append(fragment);}record.node.dataset.dcHandle=item.handle;labels(record.node);update(record,item);}for(const [id,record]of records)if(id.startsWith(key+':')&&!used.has(id)){clean(record);record.node.remove();records.delete(id);}}
 function preview(record,item){const value=current.previews.find(preview=>preview.handle===item.handle);if(!value){clean(record);return;}if(!record.preview||record.preview.mediaType!==value.mediaType||record.preview.bytes.length!==value.bytes.length||!record.preview.bytes.every((byte,index)=>byte===value.bytes[index])){clean(record);record.preview=value;record.url=URL.createObjectURL(new Blob([value.bytes],{type:value.mediaType}));}for(const image of record.node.querySelectorAll('[data-dc-marketplace-preview]')){image.src=record.url;image.alt=item.name??'';image.hidden=false;const url=record.url;image.onerror=()=>{if(record.url===url)clean(record);};}}
@@ -26,6 +41,7 @@ connectProgram({onMarketplaceDisplay(snapshot){if(disposed)return;current=snapsh
  for(const button of document.querySelectorAll('[data-dc-marketplace-request]')){const action=button.dataset.dcMarketplaceRequest,allowed=action==='recover'?snapshot.recoverable:action==='shop'?snapshot.seller.canCreateShop&&!!snapshot.seller.draft:action==='stock'?snapshot.seller.canList||snapshot.seller.stock.retryable:action==='settings'?snapshot.seller.admin:action==='action'?snapshot.seller.canEditAction:true;button.disabled=snapshot.busy||!allowed;button.hidden=!allowed;}
  document.documentElement.dataset.dcMarketplaceSnapshot=snapshot.snapshotId;
  for(const key of ['disclosure','review','attempt'])text(document,'[data-dc-stock-'+key+']',snapshot.seller.stock[key]);for(const section of document.querySelectorAll('[data-dc-marketplace-seller]'))section.hidden=!snapshot.seller.draft;
+ if(modalAway)queueMicrotask(restoreModalFocus);
 }}).then(value=>{if(disposed)value.dispose();else bridge=value;});
 document.addEventListener('input',event=>{const input=event.target;if(input.disabled)return;if(input.dataset.dcMarketplaceField&&input.tagName!=='SELECT')send('marketplace-edit',{field:input.dataset.dcMarketplaceField,value:input.value});},{signal:events.signal});
 document.addEventListener('change',event=>{const input=event.target;if(input.disabled)return;if(input.dataset.dcMarketplaceField)send('marketplace-edit',{field:input.dataset.dcMarketplaceField,value:input.value});if(Object.hasOwn(input.dataset,'dcMarketplaceKind'))send('marketplace-kind',{kind:input.value});if(input.dataset.dcMarketplaceOption&&input.value)send('marketplace-option',{option:input.dataset.dcMarketplaceOption,handle:input.value});},{signal:events.signal});

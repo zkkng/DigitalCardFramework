@@ -18,6 +18,26 @@ import {validateEditorContribution} from '../src/presentation/editor-contributio
 
 // Real authoring, archive publication and catalog admission; the trusted identity
 // resolver supplies the artist's explicit grants, then the collector's account.
+async function keyTo(page,target,direction='Tab'){
+ const visited=[];
+ try{
+  await target.waitFor({state:'visible'});
+  const deadline=Date.now()+15000;
+  const inspect=node=>({focused:node===document.activeElement,active:document.activeElement?.getAttribute('aria-label')??(document.activeElement?.tagName==='BUTTON'?document.activeElement.textContent?.slice(0,60):document.activeElement?.tagName)});
+  let state=await target.evaluate(inspect);
+  while(!state.focused){
+    assert(Date.now()<deadline,'Keyboard traversal must reach the intended control');
+    await page.keyboard.press(direction);state=await target.evaluate(inspect);visited.push(state.active);if(visited.length>12)visited.shift();
+  }
+  assert(await target.evaluate(node=>{const r=node.getBoundingClientRect();return node.matches(':focus-visible')&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;}),'Keyboard target must have visible focus in the viewport');
+ }catch(error){
+  console.error('Artist keyboard failure',JSON.stringify({direction,visited,state:await target.evaluate(node=>({target:{tag:node.tagName,label:node.getAttribute('aria-label'),text:node.tagName==='BUTTON'?node.textContent:undefined,disabled:node.disabled,connected:node.isConnected,focused:node===document.activeElement,focusVisible:node.matches(':focus-visible'),rect:node.getBoundingClientRect().toJSON()},active:{tag:document.activeElement?.tagName,label:document.activeElement?.getAttribute('aria-label')},documentFocus:document.hasFocus(),viewport:{width:innerWidth,height:innerHeight},scroll:{x:scrollX,y:scrollY}})).catch(()=>null)}));
+  await page.screenshot({path:resolve(output,'artist-keyboard-failure.png'),fullPage:true}).catch(()=>{});throw error;
+ }
+}
+async function keyActivate(page,target,key='Enter',direction='Tab'){await keyTo(page,target,direction);await page.keyboard.press(key);}
+async function keyText(page,target,value,direction='Tab'){await keyTo(page,target,direction);await page.keyboard.press('ControlOrMeta+A');await page.keyboard.type(value);}
+
 const output=resolve(process.argv[2]??'test-results/portable-card-art'),engine=process.env.BROWSER_ENGINE??'chromium',language=process.env.DC_ART_LANGUAGE??'python';
 assert(['python','go'].includes(language),'Unsupported card-art generator');
 await mkdir(output,{recursive:true});
@@ -59,7 +79,7 @@ try{
   const store=await createPresentationStore({root:resolve(temp,'store'),authorize:authorizePresentation,validatePublication:(principal,{archive})=>x.core.registerCardPresentation(principal,archive)});
   presentationHTTP=createPresentationHandler({store,resolveIdentity:()=>actor,allowedOrigin:origin});
   try{browser=await pw[engine].launch({headless:process.env.HEADED!=='1'});}catch(error){if(engine!=='chromium')throw error;browser=await pw.chromium.launch({headless:true,channel:'msedge'});}
-  const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(30000);
+  const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'});page.setDefaultTimeout(30000);
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto(origin+'/artist-harness');
   await page.evaluate(async({archive,editorContribution})=>{
@@ -86,7 +106,7 @@ try{
   });
   const panel=page.locator('[data-editor-contribution="example.print-layout"]');
   try{
-  await page.getByRole('button',{name:'Front emblem',exact:true}).click();
+  await keyActivate(page,page.getByRole('button',{name:'Front emblem',exact:true}));
   await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Front emblem'&&button.classList.contains('is-selected'))&&document.querySelector('.dcard-studio')?.getAttribute('aria-busy')!=='true');
   await panel.getByLabel('Horizontal position',{exact:true}).fill('17');
   await page.getByLabel('Card title',{exact:true}).click();
@@ -95,43 +115,44 @@ try{
     const diagnostic={engine,language,editorContribution,grants:{x:{minimum:-100,maximum:100}},trace:await page.evaluate(()=>window.artistPanelTrace.snapshot()).catch(()=>null)};
     await writeFile(resolve(output,'panel-edit-failure.json'),JSON.stringify(diagnostic,null,2)+'\n').catch(()=>{});console.error(JSON.stringify({panelEditFailure:diagnostic}));throw error;
   }finally{await page.evaluate(()=>window.artistPanelTrace.stop()).catch(()=>{});}
-  const panelDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Save project',exact:true}).click();const panelArchive=await panelDownload,panelPath=resolve(temp,'panel-edited.dcproject');await panelArchive.saveAs(panelPath);
+  const panelDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Download editable project',exact:true}).click();const panelArchive=await panelDownload,panelPath=resolve(temp,'panel-edited.dcproject');await panelArchive.saveAs(panelPath);
   const panelSaved=await importPackage(new Uint8Array(await readFile(panelPath)));assert.equal(panelSaved.scenes.get('scenes/front.json').nodes.find(node=>node.id==='front-emblem').x,17);
   await page.evaluate(async()=>{window.artistPanelInput=document.querySelector('[data-editor-contribution] input');window.artistPanelMode=false;await window.artistView.refresh();});
   assert.equal(await panel.count(),0);assert(await page.evaluate(()=>!window.artistPanelInput.isConnected));
-  checks.push('Authored shell hosts generated data-only panel; Save project and native file-chooser import hand off edited archive; view replacement disposes panel');
+  checks.push('Authored shell hosts generated data-only panel; Download editable project and native file-chooser import hand off edited archive; view replacement disposes panel');
   const idle=()=>page.waitForFunction(()=>document.querySelector('.dcard-studio')?.getAttribute('aria-busy')!=='true');
-  await page.getByRole('button',{name:'Open visual card editor',exact:true}).click();
+  await page.getByRole('button',{name:'Edit card artwork',exact:true}).click();
   await page.getByRole('button',{name:'Open card',exact:true}).waitFor();
-  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Open visual card editor'&&!button.disabled));
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Edit card artwork'&&!button.disabled));
   const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Open card',exact:true}).click();await(await chooser).setFiles(panelPath);
   await page.getByRole('button',{name:'Front emblem',exact:true}).waitFor();await idle();
   assert.equal(await page.getByLabel('Card title',{exact:true}).inputValue(),generated.manifest.title);
   await page.getByRole('button',{name:'Front emblem',exact:true}).click();await idle();
   assert.equal(await page.getByLabel('x',{exact:true}).inputValue(),'17');
-  await page.getByLabel('x',{exact:true}).fill('42');await page.getByLabel('x',{exact:true}).press('Tab');await idle();
-  await page.getByLabel('Card title',{exact:true}).fill('Celestial Study · published');await page.getByLabel('Card title',{exact:true}).press('Tab');await idle();
-  await page.getByRole('button',{name:'Capture posters',exact:true}).click();await idle();
-  await page.getByText('Both face posters captured from the renderer.',{exact:true}).waitFor();
+  await keyText(page,page.getByLabel('x',{exact:true}),'42');await page.getByLabel('x',{exact:true}).press('Tab');await idle();
+  await keyText(page,page.getByLabel('Card title',{exact:true}),'Celestial Study · published','Shift+Tab');await page.getByLabel('Card title',{exact:true}).press('Tab');await idle();
+  // The capture toolbar precedes the property fields in keyboard order.
+  await keyActivate(page,page.getByRole('button',{name:'Capture preview images',exact:true}),'Enter','Shift+Tab');await idle();
+  await page.getByText('Preview images captured for the front and back.',{exact:true}).waitFor();
   assert.deepEqual(x.core.operatorCatalog(admin),before,'Editing/capture must not publish the catalog');
   checks.push('Generated portable archive opens through file chooser, retains foil/motion, and allows native layer editing and two-face capture');
 
-  await page.getByRole('button',{name:'Publish',exact:true}).click();
-  const reviewed=page.getByRole('button',{name:'Publish reviewed card',exact:true});await reviewed.waitFor();
+  await keyActivate(page,page.getByRole('button',{name:'Publish',exact:true}));
+  const reviewed=page.getByRole('button',{name:'Publish card changes',exact:true});await reviewed.waitFor();
   assert.deepEqual(x.core.operatorCatalog(admin),before,'Catalog admission requires the explicit reviewed publication');
   assert.equal(requests.filter(request=>request.path==='/api/operator/import/commit').length,0);
-  const editedDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Keep as draft',exact:true}).click();await idle();await page.getByRole('button',{name:'Save project',exact:true}).click();const edited=await editedDownload,editedPath=resolve(temp,'reviewed-edit.dcproject');await edited.saveAs(editedPath);
+  const editedDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Keep as draft',exact:true}).click();await idle();await page.getByRole('button',{name:'Download editable project',exact:true}).click();const edited=await editedDownload,editedPath=resolve(temp,'reviewed-edit.dcproject');await edited.saveAs(editedPath);
   await page.getByRole('button',{name:'Publish',exact:true}).click();await reviewed.waitFor();
-  await page.evaluate(async()=>{window.staleReview=[...document.querySelectorAll('dialog button')].find(button=>button.textContent==='Publish reviewed card');await window.artistView.refresh();window.staleReview.click();});
+  await page.evaluate(async()=>{window.staleReview=[...document.querySelectorAll('dialog button')].find(button=>button.textContent==='Publish card changes');await window.artistView.refresh();window.staleReview.click();});
   assert.equal(await reviewed.count(),0);assert.equal(requests.filter(request=>request.path==='/api/operator/import/commit').length,0);assert.deepEqual(x.core.operatorCatalog(admin),before);
-  await page.getByRole('button',{name:'Open visual card editor',exact:true}).click();await page.getByRole('button',{name:'Open card',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Edit card artwork',exact:true}).click();await page.getByRole('button',{name:'Open card',exact:true}).waitFor();
   const restoreChooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Open card',exact:true}).click();await(await restoreChooser).setFiles(editedPath);await page.getByRole('button',{name:'Front emblem',exact:true}).waitFor();await idle();
   await page.getByRole('button',{name:'Publish',exact:true}).click();await reviewed.waitFor();
   actor={...artist,permissions:artist.permissions.filter(permission=>permission!=='catalog.publish')};
   const deniedCommit=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/operator/import/commit');await reviewed.click();assert.equal((await deniedCommit).status(),403);await idle();assert.deepEqual(x.core.operatorCatalog(admin),before);
-  actor=artist;await page.getByRole('button',{name:'Publish',exact:true}).click();await reviewed.waitFor();
+  actor=artist;await page.keyboard.press('Shift+Tab');await keyActivate(page,page.getByRole('button',{name:'Publish',exact:true}));await reviewed.waitFor();
   const acceptedCommit=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/operator/import/commit');
-  await reviewed.click();assert.equal((await acceptedCommit).status(),200);
+  await keyActivate(page,reviewed);assert.equal((await acceptedCommit).status(),200);
   await page.locator('#root .dc-status.is-success').waitFor();
   assert.equal(await reviewed.count(),0);assert.equal(await page.locator('.dcard-studio').count(),0);
   const published=x.core.operatorCatalog(admin),card=published.cards.find(card=>card.id==='dawn'),ref=card.presentation;
@@ -148,6 +169,7 @@ try{
     assert.notEqual(capturedPoster.sha256,originalPoster.sha256,'Published '+side+' poster must be the actual capture');
   }
   assert.deepEqual(x.core.inventory(x.alice).find(copy=>copy.id===oldCopy.id),oldInventory.find(copy=>copy.id===oldCopy.id));
+  assert(await page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches));checks.push('Keyboard layer/title editing, capture and review plus authorized review-to-publication complete under reduced motion; injected stale/revoked review legs remain separate');
   checks.push('Actual archive upload/publication and policy preview precede one explicit authorized catalog commit; published archive preserves edited layer and captured posters');
   checks.push('Disposed reviewed button cannot commit; revoked catalog.publish is rejected over HTTP; only the subsequent authorized review changes catalog');
 
@@ -163,18 +185,18 @@ try{
   const portable=page.locator('.dc-collection-grid dc-portable-card');await portable.waitFor();
   await page.waitForFunction(()=>{const image=document.querySelector('.dc-collection-grid dc-portable-card img');return image?.complete&&image.naturalWidth>0;});
   assert.equal(await portable.getAttribute('aria-label'),card.name+', common');
-  await portable.press('Enter');
+  await keyActivate(page,portable);
   const inspector=page.locator('.dc-inspector-dialog'),stage=inspector.locator('.dc-3d-stage'),canvas=inspector.locator('canvas');
   await page.waitForFunction(()=>{const canvas=document.querySelector('.dc-inspector-dialog canvas');return canvas?.width>1&&canvas.height>1;});
   const nextFrame=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   await nextFrame();const neutral=await canvas.screenshot({path:resolve(output,'collector-front.png')});
-  await stage.focus();await stage.press('ArrowRight');assert.equal(await stage.getAttribute('data-yaw'),'15');await nextFrame();
+  await keyTo(page,stage);await page.keyboard.press('ArrowRight');assert.equal(await stage.getAttribute('data-yaw'),'15');await nextFrame();
   const tilted=await canvas.screenshot({path:resolve(output,'collector-tilted.png')});assert(!neutral.equals(tilted),'Native keyboard rotation must alter the interactive artwork');
-  await inspector.getByRole('button',{name:'Flip',exact:true}).click();assert.equal(await stage.getAttribute('data-yaw'),'195');await nextFrame();
+  await keyActivate(page,inspector.getByRole('button',{name:'Flip',exact:true}));assert.equal(await stage.getAttribute('data-yaw'),'195');await nextFrame();
   const back=await canvas.screenshot({path:resolve(output,'collector-back.png')});assert(!tilted.equals(back),'Reverse face must visibly differ');
   assert(requests.some(request=>request.path.startsWith('/presentations/'+ref.digest+'/files/')));
   assert.equal(await inspector.getByText('Preview unavailable',{exact:true}).count(),0);
-  await inspector.getByRole('button',{name:'Close inspection',exact:true}).click();await page.evaluate(()=>window.collectorView.dispose());
+  await keyActivate(page,inspector.getByRole('button',{name:'Close inspection',exact:true}));await page.evaluate(()=>window.collectorView.dispose());
   assert.equal(await page.locator('#root').evaluate(root=>root.childNodes.length),0);
   checks.push('New issued copy retains the published digest; existing copy stays unchanged; default collector poster and keyboard-driven foil/rotation/reverse-face inspection use the real hosted archive');
   assert.deepEqual(errors,[]);await writeFile(resolve(output,'result.json'),JSON.stringify({engine,language,externalPackage:!!process.env.CARD_ART_PACKAGE,checks,errors},null,2));console.log(JSON.stringify({engine,language,checks,errors}));

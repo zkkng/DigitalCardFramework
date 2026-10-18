@@ -25,6 +25,15 @@ For real accounts, configure trusted operator identity through the [production h
 
 Prices use whole currency units. Discounts are whole percentages from 0 through 99. The charge rounds down with a minimum of one unit: 101 at 10% off charges 90. Overrides affect future direct catalog purchases; shop listings retain their independent advertised prices. Previous receipts remain unchanged. **Reset pack settings to catalog** clears the price override, discount and rarity factors together.
 
+| Control | Accepted value and starting state |
+| --- | --- |
+| Regular price | Whole currency units from 1 to 1000000000; current effective override or catalog price |
+| Discount (%) | Whole percent from 0 to 99; 0 when not overridden |
+| Advanced rarity multiplier | Whole number from 0 to 1000; 1 when omitted |
+| Settings reason | Up to 500 characters; omission records an automatic action note |
+
+Card-line search filters names without case distinction. **People** search, **Load more people**, inventory pagination and **Refresh activity** are read-only view controls. Advanced technical references help identify targets; they do not change grants. When leaving an unsaved draft, **Keep editing** retains it and **Discard draft and continue** abandons that draft, rather than undoing a committed change.
+
 Advanced rarity multipliers adjust existing pool weights: 2 doubles the base weight, 0 excludes it, and omitted factors use 1. Card rarity/rank does not change. Weighting changes that empty a slot or remove every configured pity-eligible outcome are rejected. Shares describe configured weights; stock, duplicate prevention, optional slots and pity can change actual draws. Existing packs retain their allocated cards.
 
 ## Control activity
@@ -48,6 +57,8 @@ Open **People**, use **Find people**, then **Manage** beside the intended accoun
 
 **Give cards** issues a variant/quantity under normal supply and binding rules and may trigger its configured opening effects. **Remove cards** retires exact owned copies, removes album/favorite placements and preserves issuance history. Finite supply and serials are not recycled. Neither action automatically charges or refunds currency.
 
+The grant quantity is an integer from 1 to 100. A removal request selects 1 to 100 unique copy IDs. Both require an inventory-change reason of at most 500 characters; the review identifies the exact recipient and copies. These command bounds do not override supply, locks or revocation requirements.
+
 Removal is unavailable for sealed/reserved copies or cards with codes, bindings or opening actions requiring separate entitlement revocation. Each unavailable choice explains why. Short references distinguish unlimited copies. Granting a new copy does not restore a retired copy's identity.
 
 ## Save, retry and history
@@ -57,6 +68,8 @@ Every change records a reason. Settings can use an automatic action note; card g
 The default panel uses the shared command runner to retain original commands both in browser storage and in the authenticated server's intent journal. Retry the pending action after an uncertain response. A fresh panel restores unacknowledged server commands even after browser storage is erased. If browser storage is unavailable, corrupt or cannot retain the pending command, saving stops with `COMMAND_STORAGE_UNAVAILABLE` before sending the mutation. Restore storage and recover the original change. Current administrator permissions still apply. A completed grant is never repeated merely to refresh the screen; a new reviewed change acknowledges the recovered result before registering another intent.
 
 Pack quotes include `adminRevision`. Custom purchase clients must forward it with `productRevision` and `catalogVersion`. `STALE_QUOTE` requires a new quote and review. Previously committed requests remain recoverable during pauses.
+
+Card-authoring rule activation uses the separate [Administrator card policies procedure](card-authoring-policies.md#set-administrator-policy), with its own permissions and immutable revisions. Per-copy sale/trade locks and operator trading rules use [Trading controls](trading-controls.md). Neither route is enabled merely by selecting Advanced mode here.
 
 ## Embed or replace
 

@@ -135,7 +135,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir src/presentation install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
-      - run: xvfb-run --auto-servernum node test/program-marketplace-browser.mjs
+      - run: xvfb-run --auto-servernum --server-args="-screen 0 1920x2160x24" node test/program-marketplace-browser.mjs
         env:
           HEADED: '1'
           BROWSER_ENGINE: ${{ matrix.engine }}

@@ -112,7 +112,7 @@ test('collection-only reference mount omits optional queries, navigation and cou
   const root=document.createElement('main');document.body.append(root);const mounted=mountFramework(root,{client,navigation:'tabs'});await mounted.ready;
   assert.deepEqual(calls.sort(),['capabilities','catalog','inventory','me']);
   assert.deepEqual([...root.querySelectorAll('[data-view]')].map(node=>node.dataset.view),['collection']);
-  assert.doesNotMatch(root.textContent,/sealed packs|Trade lounge|Marketplace|Account rewards/);mounted.dispose();
+  assert.doesNotMatch(root.textContent,/sealed packs|Trades|Marketplace|Rewards/);mounted.dispose();
  }finally{x.core.close();window.happyDOM.abort();delete globalThis.document;delete globalThis.sessionStorage;}
 });
 

@@ -80,32 +80,62 @@ export function encodeEntity(collection,key,value,ordinal,codec,identityHash,key
     holders:collection==='codes'?[...new Set([item.holderId,...(item.holderHistory??[])].filter(id=>typeof id==='string'))].map(id=>keyHash('code-holder',id)):[]};
 }
 
-/** One authoritative record per entity; configuration fields retain their logical shapes. */
-export function encodeState(state, codec, identityHash, keyHash) {
+function walkState(state, codec, field, entity) {
   check(state && typeof state === 'object' && !Array.isArray(state) && state.schemaVersion === 1 && Number.isSafeInteger(state.revision) && state.revision >= 0, 'INVALID_STATE', 'Unsupported logical state', 500);
-  const canonical = JSON.parse(JSON.stringify(state)), fields = new Map(), entities = new Map();
+  const canonical = JSON.parse(JSON.stringify(state));
+  let usedBytes = 0;
   for (const [name, value] of Object.entries(canonical)) {
     fieldName(name);
     const kind = Array.isArray(value) ? 'array' : value !== null && typeof value === 'object' ? 'object' : 'scalar';
-    fields.set(name, {kind, value, raw: kind === 'scalar' ? JSON.stringify(value) : null,
-      bytes: kind === 'scalar' ? encodedBytes(codec,wrapper(name,null,value)) : 0});
+    const bytes = kind === 'scalar' ? encodedBytes(codec,wrapper(name,null,value)) : 0;
+    usedBytes += bytes;
+    field?.(name,kind,value,bytes);
     if (kind === 'scalar') continue;
+    const notificationKeys = name === 'notifications' ? new Set() : null;
     let ordinal = 0;
     for (const [position, item] of Object.entries(value)) {
       const key=name==='notifications'?item.id:position;
-      check(typeof key==='string'&&!entities.has(JSON.stringify([name,key])),'INVALID_STATE','Duplicate or invalid stored record identity',500);
-      const projected = projection(name, key, item);
-      const identity = name === 'users' && typeof item?.provider === 'string' && typeof item?.subject === 'string'
-        ? identityHash(item.provider, item.subject) : null;
-      entities.set(JSON.stringify([name,key]), {collection:name, key, storageKey:recordKey(name,key,keyHash), value:item, ordinal:ordinal++, raw:JSON.stringify(item),
-        bytes:encodedBytes(codec,wrapper(name,key,item)), identity, projected,
-        actionReservation:name==='actionJobs'&&(item.completionId??item.deliveryCompletionId)?keyHash('completionObligations',item.completionId??item.deliveryCompletionId):null,
-        holders:name==='codes'?[...new Set([item.holderId,...(item.holderHistory??[])].filter(id=>typeof id==='string'))].map(id=>keyHash('code-holder',id)):[]});
+      check(typeof key==='string'&&!notificationKeys?.has(key),'INVALID_STATE','Duplicate or invalid stored record identity',500);
+      notificationKeys?.add(key);
+      // Retain the writer's structural checks even when its indexes are not needed.
+      const reservation = name==='actionJobs' ? item.completionId??item.deliveryCompletionId : null;
+      const holders = name==='codes' ? [item.holderId,...(item.holderHistory??[])] : null;
+      const bytes = encodedBytes(codec,wrapper(name,key,item));
+      usedBytes += bytes;
+      entity?.(name,key,item,ordinal++,bytes,reservation,holders);
     }
   }
-  const usedBytes = [...fields.values()].reduce((n,row) => n + row.bytes,0)
-    + [...entities.values()].reduce((n,row) => n + row.bytes,0);
+  return usedBytes;
+}
+
+export const measureStateBytes = (state,codec) => walkState(state,codec);
+
+/** One authoritative record per entity; configuration fields retain their logical shapes. */
+function encodeStateWithReuse(state, codec, identityHash, keyHash, prior) {
+  const fields = new Map(), entities = new Map();
+  const usedBytes = walkState(state,codec,
+    (name,kind,value,bytes)=>fields.set(name,{kind,value,raw:kind==='scalar'?JSON.stringify(value):null,bytes}),
+    (name,key,item,ordinal,bytes,reservation,holders)=>{
+      const token=JSON.stringify([name,key]),raw=JSON.stringify(item),previous=prior?.entities.get(token),same=previous?.raw===raw;
+      const projected=same?previous.projected:projection(name,key,item);
+      const identity=same?previous.identity:name === 'users' && typeof item?.provider === 'string' && typeof item?.subject === 'string'
+        ? identityHash(item.provider, item.subject) : null;
+      entities.set(token, {collection:name,key,storageKey:same?previous.storageKey:recordKey(name,key,keyHash),value:item,ordinal,raw,
+        bytes,identity,projected,actionReservation:same?previous.actionReservation:reservation?keyHash('completionObligations',reservation):null,
+        holders:same?previous.holders:holders?[...new Set(holders.filter(id=>typeof id==='string'))].map(id=>keyHash('code-holder',id)):[]});
+    });
   return {fields, entities, usedBytes, encode:(field,key,value)=>codec.encode(wrapper(field,key,value))};
+}
+export function encodeState(state, codec, identityHash, keyHash) {
+  return encodeStateWithReuse(state,codec,identityHash,keyHash);
+}
+export function createTransactionStateEncoder(codec,identityHash,keyHash) {
+  let prior;
+  return state=>{
+    const encoded=encodeStateWithReuse(state,codec,identityHash,keyHash,prior);
+    prior=encoded;
+    return encoded;
+  };
 }
 
 function decodeEnvelope(codec, payload, collection, key, keyHash) {

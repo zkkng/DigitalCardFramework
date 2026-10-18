@@ -47,7 +47,7 @@ try {
     steps: 10,
   });
   await page.mouse.up();
-  await page.getByRole("button", { name: "Apply painted mask" }).click();
+  await page.getByRole("button", { name: "Apply painted area" }).click();
   await page.getByRole("dialog").waitFor({ state: "detached" });
   await page.waitForFunction(
     () =>
@@ -64,10 +64,10 @@ try {
     () => cardStudio.getProject().manifest.faces.front.poster,
   );
   await page
-    .getByRole("button", { name: "Capture posters", exact: true })
+    .getByRole("button", { name: "Capture preview images", exact: true })
     .click();
   await page
-    .getByText("Both face posters captured from the renderer.", { exact: true })
+    .getByText("Preview images captured for the front and back.", { exact: true })
     .waitFor();
   assert.notEqual(
     await page.evaluate(

@@ -7,11 +7,21 @@ import {renderCard,renderAlbum,renderInspector,renderTiltInspector,mountFramewor
 import {renderTrading} from '../src/trading-ui.js';
 import {renderAlbums,renderCollection} from '../src/collection-ui.js';
 import {renderStudio} from '../src/studio-ui.js';
+import {renderActivity} from '../src/player-ui.js';
 import {mountCardPolicyAdmin} from '../src/card-policy-ui.js';
 import {createLocalization,englishMessages} from '../src/localization.js';
 import {createCommandRunner,createRevealController} from '../src/client.js';
 
 const settle=async()=>{for(let i=0;i<4;i++)await new Promise(r=>setImmediate(r));};
+
+test('activity shows clear labels for known events and identified unknown events',async()=>{
+  const window=new Window();globalThis.document=window.document;
+  const model={me:{preferences:{}},catalog:{currencies:[{id:'credit',name:'Credits'}]}},now='2026-10-18T00:00:00Z';
+  const client={notifications:async()=>({items:[{type:'pack.opened',at:now,read:false},{type:'custom.event',at:now,read:true}]}),history:async()=>[{type:'grant',delta:1,balance:1,currencyId:'credit',at:now},{type:'custom.wallet',delta:1,balance:2,currencyId:'credit',at:now}],bindings:async()=>[{namespace:'example.item',state:'active',copyId:'copy-1',data:{}},{namespace:'example.other',state:'custom-state',copyId:'copy-2',data:{}}],directory:async()=>({items:[]})};
+  const view=renderActivity(model,{client,action:async fn=>fn(),mutate:async()=>{}});
+  try{await settle();const copy=view.node.textContent;for(const label of ['Pack opened','Activity: custom.event','Balance added','Wallet event: custom.wallet','Item type: example.item · Available','Item type: example.other · Status: custom-state'])assert(copy.includes(label),label);}
+  finally{view.dispose();window.close();}
+});
 
 for(const delayed of [false,true])test('account switch clears '+(delayed?'a late opening result':'a retained revealed receipt')+' from the shared opener',async()=>{
   const window=new Window(),x=fixture();globalThis.document=window.document;globalThis.sessionStorage=window.sessionStorage;
@@ -147,6 +157,37 @@ test('a price changed after rendering requires another purchase decision',async(
 });
 const click=(node,text)=>{const found=[...node.querySelectorAll('button')].find(b=>b.textContent===text);assert(found,'Missing button '+text);assert(!found.disabled,'Disabled button '+text);found.click();return found;};
 const field=(node,text)=>{const label=[...node.querySelectorAll('label')].find(l=>l.querySelector('span')?.textContent===text);assert(label,'Missing field '+text);return label.querySelector('input,textarea,select');};
+test('album save preserves only its initiating keyboard focus across its own refresh',async()=>{
+ for(const mode of ['restore','unfocused','other-control','other-control-then-blur','pointer','principal','view','refresh','dispose','missing-album','failure']){
+  const x=setup();let mounted,release,restoreObservers=()=>{};try{
+   let entered;const saved=new Promise(resolve=>entered=resolve);x.client.saveAlbum=async input=>{const result=mode==='failure'?null:x.core.saveAlbum(x.alice,input);entered();await new Promise(resolve=>release=resolve);if(mode==='failure')throw new Error('Album save rejected');return result;};
+   const root=document.createElement('main');document.body.append(root);mounted=mountFramework(root,{client:x.client,sections:['albums','collection'],navigation:'tabs'});await mounted.ready;
+   let observerCalls=0;
+   if(mode==='dispose'){
+    const add=document.addEventListener,remove=document.removeEventListener,wrapped=new Map();
+    document.addEventListener=function(type,listener,options){if(['focusin','pointerdown'].includes(type)){const original=listener;listener=function(event){observerCalls++;return original.call(this,event);};wrapped.set(original,listener);}return add.call(this,type,listener,options);};
+    document.removeEventListener=function(type,listener,options){return remove.call(this,type,wrapped.get(listener)??listener,options);};
+    restoreObservers=()=>{document.addEventListener=add;document.removeEventListener=remove;};
+   }
+   const original=[...root.querySelectorAll('button')].find(button=>button.textContent==='Save album'),name=field(root,'Album name');name.value='Keyboard saved album';
+   (mode==='unfocused'?name:original).focus();original.click();await settle();assert(release,root.querySelector('.dc-status').textContent);await saved;
+   if(mode==='other-control'||mode==='other-control-then-blur')name.focus();
+   if(mode==='other-control-then-blur')name.blur();
+   if(mode==='pointer')name.dispatchEvent(new x.window.Event('pointerdown',{bubbles:true}));
+   if(mode==='principal')x.setActor(x.bob);
+   if(mode==='view')root.querySelector('[data-view="collection"]').click();
+   if(mode==='refresh')await mounted.refresh();
+   if(mode==='dispose'){mounted.dispose();const before=observerCalls;document.dispatchEvent(new x.window.Event('focusin'));document.dispatchEvent(new x.window.Event('pointerdown'));assert.equal(observerCalls,before,'Disposal removes document focus observers before the pending save resolves');}
+   if(mode==='missing-album')x.client.albums=async()=>[];
+   release();await settle();assert.equal(x.core.albums(x.alice).length,mode==='failure'?0:1,mode);
+   if(mode==='failure'){assert(original.isConnected);assert.match(root.querySelector('.dc-status.dc-error').textContent,/Album save rejected/);continue;}
+   assert.equal(original.isConnected,false,mode);
+   const replacement=[...root.querySelectorAll('button')].find(button=>button.textContent==='Save album');
+   if(mode==='restore'){assert(replacement);assert.notEqual(replacement,original);assert(document.activeElement===replacement,mode);assert.equal(field(root,'Album name').value,'Keyboard saved album');}
+   else assert(document.activeElement!==replacement,mode);
+  }finally{release?.();await settle();mounted?.dispose();restoreObservers();x.close();}
+ }
+});
 function setup(){const window=new Window({url:'http://localhost/'});globalThis.document=window.document;globalThis.sessionStorage=window.sessionStorage;const x=fixture();x.open('common');x.open('rare');x.open('common',x.bob);
   const calls=[],client={requestKey:randomUUID};let actor=x.alice;
   for(const name of ['catalog','me','wallet','packs','inventory','albums','trades','availability','pityProgress'])client[name==='pityProgress'?'pity':name]=async()=>x.core[name](actor);
@@ -166,9 +207,9 @@ test('trade desk restores recipient, enforces side and policy, keeps typed money
     assert.equal(view.querySelector('[aria-label="Trade with"]').value,x.bob.userId);
     const blocked=view.querySelector('[data-copy-id="'+own.id+'"]');assert.equal(blocked.draggable,false);assert(blocked.querySelectorAll('button')[1].disabled);
     const money=field(view,'Request Credits');money.focus();money.value='5';money.dispatchEvent(new x.window.Event('input',{bubbles:true}));assert.match(view.querySelector('.dc-trade-summary').textContent,/5 Credits/);
-    const tray=view.querySelector('[aria-label="Cards you request"]');const event=new x.window.Event('drop',{bubbles:true,cancelable:true});event.dataTransfer={getData:()=>JSON.stringify({side:'give',id:own.id})};tray.dispatchEvent(event);assert.match(view.querySelector('.dc-error').textContent,/own inventory/);
-    click(view,'Review trade in host');let confirm=view.querySelector('.dc-review-check input');confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));assert(![...view.querySelectorAll('button')].find(b=>b.textContent==='Send offer').disabled);
-    money.value='6';money.dispatchEvent(new x.window.Event('input'));assert.equal(view.querySelector('dialog'),null);click(view,'Review trade in host');confirm=view.querySelector('.dc-review-check input');
+    const tray=view.querySelector('[aria-label="Cards you request"]');const event=new x.window.Event('drop',{bubbles:true,cancelable:true});event.dataTransfer={getData:()=>JSON.stringify({side:'give',id:own.id})};tray.dispatchEvent(event);assert.match(view.querySelector('.dc-error').textContent,/owner\x27s list/);
+    click(view,'Review trade details');let confirm=view.querySelector('.dc-review-check input');confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));assert(![...view.querySelectorAll('button')].find(b=>b.textContent==='Send offer').disabled);
+    money.value='6';money.dispatchEvent(new x.window.Event('input'));assert.equal(view.querySelector('dialog'),null);click(view,'Review trade details');confirm=view.querySelector('.dc-review-check input');
     confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));click(view,'Send offer');await settle();
     assert.equal(x.calls[0][0],'proposeTrade');assert.deepEqual(x.calls[0][1].receive.currencies,[{currencyId:'credits',amount:6}]);
   }finally{x.close();}
@@ -182,10 +223,10 @@ test('trade lounge batches flagged cards, keeps native denial disabled and ignor
     x.client.reviewTransfer=(input,{signal})=>new Promise((resolve,reject)=>reviews.push({input,signal,resolve,reject}));
     mounted=renderTrading(x.model,x.context);const view=x.mount(mounted);await settle();
     const flagged=view.querySelector('[data-copy-id="'+own[0].id+'"]'),blocked=view.querySelector('[data-copy-id="'+own[1].id+'"]');assert(flagged.draggable);assert(!blocked.draggable);assert(blocked.querySelectorAll('button')[1].disabled);
-    click(flagged,'Add to offer');click(view,'Review trade in host');let confirm=view.querySelector('.dc-review-check input'),send=[...view.querySelectorAll('button')].find(button=>button.textContent==='Send offer');confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));
+    click(flagged,'Add to offer');click(view,'Review trade details');let confirm=view.querySelector('.dc-review-check input'),send=[...view.querySelectorAll('button')].find(button=>button.textContent==='Send offer');confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));
     assert(confirm.disabled);assert(send.disabled);assert.match(view.querySelector('.dc-error').textContent,/Checking/);assert.deepEqual(reviews[0].input.give.copyIds,[own[0].id]);assert.deepEqual(reviews[0].input.versions,{[own[0].id]:own[0].version});
     const note=field(view,'Message to the other collector');note.value='Updated offer';note.dispatchEvent(new x.window.Event('input'));assert(reviews[0].signal.aborted);assert.equal(view.querySelector('dialog'),null);
-    const allow=row=>({status:'allowed',inputDigest:'a'.repeat(64),snapshotDigest:'b'.repeat(64),expiresAt:new Date(Date.now()+60000).toISOString(),copyIds:[...row.input.give.copyIds,...row.input.receive.copyIds]});reviews[0].resolve(allow(reviews[0]));await settle();assert.equal(view.querySelector('dialog'),null);click(view,'Review trade in host');confirm=view.querySelector('.dc-review-check input');send=[...view.querySelectorAll('button')].find(button=>button.textContent==='Send offer');assert(send.disabled);
+    const allow=row=>({status:'allowed',inputDigest:'a'.repeat(64),snapshotDigest:'b'.repeat(64),expiresAt:new Date(Date.now()+60000).toISOString(),copyIds:[...row.input.give.copyIds,...row.input.receive.copyIds]});reviews[0].resolve(allow(reviews[0]));await settle();assert.equal(view.querySelector('dialog'),null);click(view,'Review trade details');confirm=view.querySelector('.dc-review-check input');send=[...view.querySelectorAll('button')].find(button=>button.textContent==='Send offer');assert(send.disabled);
     confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));reviews[1].reject(new Error('Exchange is blocked'));await settle();assert.match(view.querySelector('.dc-error').textContent,/Exchange is blocked/);assert(send.disabled);assert(!confirm.checked);
     confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));reviews[2].resolve(allow(reviews[2]));await settle();assert(confirm.checked);assert(!send.disabled);click(view,'Send offer');await settle();assert.equal(x.calls[0][0],'proposeTrade');assert.deepEqual(x.calls[0][1].give.copyIds,[own[0].id]);assert.equal(x.calls[0][1].message,'Updated offer');
   }finally{mounted?.dispose();x.close();}
@@ -194,7 +235,7 @@ test('trade lounge batches flagged cards, keeps native denial disabled and ignor
 test('currency-only trade lounge reviews before sending and disposal ignores a pending reply',async()=>{
   const x=setup();let mounted;try{
     x.model.catalog.features.cardTrading=false;sessionStorage.setItem('digital-card.trade-draft.v1:'+x.alice.userId,JSON.stringify({toUserId:x.bob.userId}));let review;
-    x.client.reviewTransfer=(input,{signal})=>new Promise(resolve=>review={input,signal,resolve});mounted=renderTrading(x.model,x.context);const view=x.mount(mounted);await settle();const money=field(view,'Offer Credits');money.value='5';money.dispatchEvent(new x.window.Event('input'));click(view,'Review trade in host');let confirm=view.querySelector('.dc-review-check input');confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));
+    x.client.reviewTransfer=(input,{signal})=>new Promise(resolve=>review={input,signal,resolve});mounted=renderTrading(x.model,x.context);const view=x.mount(mounted);await settle();const money=field(view,'Offer Credits');money.value='5';money.dispatchEvent(new x.window.Event('input'));click(view,'Review trade details');let confirm=view.querySelector('.dc-review-check input');confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));
     assert.deepEqual(review.input.give.currencies,[{currencyId:'credits',amount:5}]);assert(confirm.disabled);assert([...view.querySelectorAll('button')].find(button=>button.textContent==='Send offer').disabled);mounted.dispose();const before=view.textContent;assert(review.signal.aborted);review.resolve({status:'allowed',inputDigest:'a'.repeat(64),snapshotDigest:'b'.repeat(64),expiresAt:new Date(Date.now()+60000).toISOString(),copyIds:[]});await settle();assert.equal(view.textContent,before);assert.equal(x.calls.length,0);
   }finally{mounted?.dispose();x.close();}
 });
@@ -204,7 +245,7 @@ test('counteroffer lounge reviews parent escrow and sends both inventory version
     const own=x.core.tradeInventory(x.alice,x.alice.userId).items[0],partner=x.core.tradeInventory(x.alice,x.bob.userId).items[0],digest='c'.repeat(64),trade={id:'parent',digest,status:'pending',fromUserId:x.bob.userId,toUserId:x.alice.userId,fromName:'Bob',toName:'Alice',give:{copyIds:[partner.id],currencies:[]},receive:{copyIds:[own.id],currencies:[]},snapshots:{[own.id]:own,[partner.id]:partner},createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+86400000).toISOString()};
     x.model.trades=[trade];const original=x.client.tradeInventory;let request;x.client.tradeInventory=async(id,options)=>{const page=await original(id,options);if(id===x.bob.userId)page.items=page.items.map(copy=>copy.id===partner.id?{...copy,tradable:false,lockedBy:trade.id,untradableReason:'Reserved by another transaction'}:copy);return page;};
     x.client.reviewTransfer=async input=>{request=input;return {status:'allowed',inputDigest:'a'.repeat(64),snapshotDigest:'b'.repeat(64),expiresAt:new Date(Date.now()+60000).toISOString(),copyIds:[own.id,partner.id]};};
-    mounted=renderTrading(x.model,x.context);const view=x.mount(mounted);await settle();click(view,'Make counteroffer');await settle();click(view,'Review trade in host');const confirm=view.querySelector('dialog .dc-review-check input');confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));await settle();assert.equal(request.parentTradeId,trade.id);assert.equal(request.expectedDigest,digest);assert.equal(request.toUserId,x.bob.userId);assert.deepEqual(request.give.copyIds,[own.id]);assert.deepEqual(request.receive.copyIds,[partner.id]);click(view,'Send counteroffer');await settle();assert.equal(x.calls[0][0],'counterTrade');assert.deepEqual(x.calls[0][1].versions,{[own.id]:own.version,[partner.id]:partner.version});assert.equal(x.calls[0][1].expectedDigest,digest);
+    mounted=renderTrading(x.model,x.context);const view=x.mount(mounted);await settle();click(view,'Make counteroffer');await settle();click(view,'Review trade details');const confirm=view.querySelector('dialog .dc-review-check input');confirm.checked=true;confirm.dispatchEvent(new x.window.Event('change'));await settle();assert.equal(request.parentTradeId,trade.id);assert.equal(request.expectedDigest,digest);assert.equal(request.toUserId,x.bob.userId);assert.deepEqual(request.give.copyIds,[own.id]);assert.deepEqual(request.receive.copyIds,[partner.id]);click(view,'Send counteroffer');await settle();assert.equal(x.calls[0][0],'counterTrade');assert.deepEqual(x.calls[0][1].versions,{[own.id]:own.version,[partner.id]:partner.version});assert.equal(x.calls[0][1].expectedDigest,digest);
   }finally{mounted?.dispose();x.close();}
 });
 
@@ -212,7 +253,7 @@ test('album layout imports preserve custom placement data, preview CSS is isolat
   const x=setup();try{const copy=x.model.inventory[0],doc={id:'album-1',version:3,name:'Private scene',visibility:'private',layout:{id:'grid',columns:2,gap:8,css:'.dc-album{padding:9px}',custom:{scene:'alpha'}},placements:[{copyId:copy.id,position:0,data:{crop:'left'}}]};
     x.model.albums=[doc];const view=x.mount(renderAlbums(x.model,x.context)),picker=view.querySelector('[aria-label="Your albums"]');picker.value=doc.id;picker.dispatchEvent(new x.window.Event('change'));
     const host=view.querySelector('.dc-album-host');assert(host.shadowRoot.querySelector('.dc-album'));assert(!document.querySelector('.dc-album-isolated'));
-    const imported={...doc,name:'Imported local scene',placements:[{copyId:copy.id,position:0,data:{crop:'right',custom:{offset:4}}}]};field(view,'Album document JSON').value=JSON.stringify(imported);click(view,'Load layout into editor');assert.equal(x.calls.length,0);
+    const imported={...doc,name:'Imported local scene',placements:[{copyId:copy.id,position:0,data:{crop:'right',custom:{offset:4}}}]};field(view,'Saved layout (JSON)').value=JSON.stringify(imported);click(view,'Load layout');assert.equal(x.calls.length,0);
     click(view,'Save album');await settle();const [,saved]=x.calls[0];assert.equal(saved.expectedVersion,3);assert.equal(saved.visibility,'private');assert.equal(saved.name,'Imported local scene');assert.deepEqual(saved.placements[0].data,imported.placements[0].data);assert.deepEqual(saved.layout.custom,{scene:'alpha'});
   }finally{x.close();}
 });
@@ -222,9 +263,9 @@ test('collection selection inspects actual copies together and supports stat sea
 test('album page reorder preserves card assignments and invalid imports leave the draft intact',async()=>{
   const x=setup();try{
     const copies=x.model.inventory,doc={name:'Book',layout:{pageSize:1,artwork:{pages:[{id:'a',title:'First'},{id:'b',title:'Second'}]}},placements:copies.map((c,position)=>({copyId:c.id,position,data:{custom:position}}))};
-    const mounted=renderAlbums(x.model,x.context),view=x.mount(mounted),input=field(view,'Album document JSON');input.value=JSON.stringify(doc);click(view,'Load layout into editor');click(view,'Move page 1 later');
-    click(view,'Remove page 1');assert.match(view.querySelector('.dc-error').textContent,/Move the 1 cards/);
-    input.value=JSON.stringify({...doc,name:'Invalid',placements:[{copyId:copies[0].id,data:{pageId:'missing'}}]});click(view,'Load layout into editor');assert.match(view.querySelector('.dc-error').textContent,/unknown page/);assert.equal(field(view,'Album name').value,'Book');
+    const mounted=renderAlbums(x.model,x.context),view=x.mount(mounted),input=field(view,'Saved layout (JSON)');input.value=JSON.stringify(doc);click(view,'Load layout');click(view,'Move page 1 later');
+    click(view,'Remove page 1');assert.match(view.querySelector('.dc-error').textContent,/Assigned cards: 1/);
+    input.value=JSON.stringify({...doc,name:'Invalid',placements:[{copyId:copies[0].id,data:{pageId:'missing'}}]});click(view,'Load layout');assert.match(view.querySelector('.dc-error').textContent,/unknown page/);assert.equal(field(view,'Album name').value,'Book');
     click(view,'Save album');await settle();const saved=x.calls[0][1];assert.deepEqual(saved.layout.artwork.pages.map(p=>p.id),['b','a']);assert.deepEqual(saved.placements.map(p=>p.data),[{custom:0,pageId:'a'},{custom:1,pageId:'b'}]);mounted.dispose();
   }finally{x.close();}
 });
@@ -237,8 +278,8 @@ test('public and draft album previews dispose custom renderers exactly once',asy
   }finally{x.close();}
 });
 
-test('studio ignores stale previews and invalidates review when content changes',async()=>{const x=setup();try{let finish;const base=x.core.previewImport({role:'admin'},{source:JSON.stringify({cards:[{...x.model.catalog.cards[0],description:'Changed description'}]}),expectedVersion:x.model.catalog.version});x.client.previewImport=()=>new Promise(r=>finish=r);const mounted=renderStudio(x.model,x.context),view=x.mount(mounted);click(view,'Validate & preview');const source=field(view,'Import content');source.value='changed';source.dispatchEvent(new x.window.Event('input'));finish(base);await settle();assert(!view.querySelector('.dc-import-preview').children.length);assert([...view.querySelectorAll('button')].find(b=>b.textContent==='Publish reviewed revision').disabled);
-    x.client.previewImport=async()=>base;click(view,'Validate & preview');await settle();assert.match(view.querySelector('.dc-change-grid').textContent,/1 updated/);const review=view.querySelector('.dc-review-check input');review.checked=true;review.dispatchEvent(new x.window.Event('change'));assert(![...view.querySelectorAll('button')].find(b=>b.textContent==='Publish reviewed revision').disabled);source.dispatchEvent(new x.window.Event('input'));assert.equal(review.checked,false);mounted.dispose();
+test('studio ignores stale previews and invalidates review when content changes',async()=>{const x=setup();try{let finish;const base=x.core.previewImport({role:'admin'},{source:JSON.stringify({cards:[{...x.model.catalog.cards[0],description:'Changed description'}]}),expectedVersion:x.model.catalog.version});x.client.previewImport=()=>new Promise(r=>finish=r);const mounted=renderStudio(x.model,x.context),view=x.mount(mounted);click(view,'Check and preview changes');const source=field(view,'Catalog data to import');source.value='changed';source.dispatchEvent(new x.window.Event('input'));finish(base);await settle();assert(!view.querySelector('.dc-import-preview').children.length);assert([...view.querySelectorAll('button')].find(b=>b.textContent==='Publish these catalog changes').disabled);
+    x.client.previewImport=async()=>base;click(view,'Check and preview changes');await settle();assert.match(view.querySelector('.dc-change-grid').textContent,/1 updated/);const review=view.querySelector('.dc-review-check input');review.checked=true;review.dispatchEvent(new x.window.Event('change'));assert(![...view.querySelectorAll('button')].find(b=>b.textContent==='Publish these catalog changes').disabled);source.dispatchEvent(new x.window.Event('input'));assert.equal(review.checked,false);mounted.dispose();
   }finally{x.close();}});
 
 test('custom views dispose across refresh, navigation and unmount; public inspector supports full orbit',async()=>{const x=setup();try{let disposed=0;const root=document.createElement('main');document.body.append(root);const mounted=mountFramework(root,{client:x.client,navigation:'tabs',sections:['one','two'],views:{one:()=>({node:document.createElement('section'),dispose:()=>disposed++}),two:()=>document.createElement('section')}});await mounted.ready;await mounted.refresh();assert.equal(disposed,1);root.querySelector('[data-view="two"]').click();assert.equal(disposed,2);root.querySelector('[data-view="one"]').click();mounted.dispose();assert.equal(disposed,3);
@@ -287,14 +328,14 @@ test('new card form previews without mutation and publishes a selectable artwork
   name.value='  ';submit();await settle();assert.equal(previews,0);
   name.value='New artwork';name.dispatchEvent(new x.window.Event('input',{bubbles:true}));
   const line=form.querySelector('[aria-label="Card line"]'),saved=line.value;line.value='';submit();await settle();assert.equal(previews,0);line.value=saved;
-  submit();await settle();assert.equal(previews,1);assert.equal(commits,0);assert.equal(x.core.catalog().cards.length,before);assert.equal(field(view,'Import content').value,'');
-  const publish=[...view.querySelectorAll('button')].find(b=>b.textContent==='Publish reviewed revision');assert(publish.disabled);
+  submit();await settle();assert.equal(previews,1);assert.equal(commits,0);assert.equal(x.core.catalog().cards.length,before);assert.equal(field(view,'Catalog data to import').value,'');
+  const publish=[...view.querySelectorAll('button')].find(b=>b.textContent==='Publish these catalog changes');assert(publish.disabled);
   name.value='Reviewed artwork';name.dispatchEvent(new x.window.Event('input',{bubbles:true}));assert(publish.disabled);assert.equal(view.querySelector('.dc-import-preview').children.length,0);
   submit();await settle();const review=view.querySelector('.dc-review-check input');review.checked=true;review.dispatchEvent(new x.window.Event('change'));assert(!publish.disabled,view.textContent);
   publish.click();publish.click();await settle();assert.equal(commits,1);
   const card=x.core.catalog().cards.find(c=>c.name==='Reviewed artwork');assert(card);assert.equal(x.core.catalog().cards.length,before+1);
   assert(x.core.catalog().variants.some(v=>v.cardId===card.id&&v.id===card.id+'.standard'));
-  assert.equal(view.querySelector('[aria-label="Destination card"]').value,card.id);assert(publish.disabled);
+  assert.equal(view.querySelector('[aria-label="Card to edit"]').value,card.id);assert(publish.disabled);
  }finally{mounted?.dispose();x.close();}
 });
 test('new card form explains missing line or rarity prerequisites',async()=>{
@@ -326,7 +367,7 @@ test('new card review cannot publish without catalog publication permission',asy
   field(form,'Card name').value='Review only';form.dispatchEvent(new x.window.Event('submit',{cancelable:true}));await settle();
   assert.equal(view.querySelector('.dc-import-preview .dc-collection-grid').children.length,1);
   const review=view.querySelector('.dc-review-check input');review.checked=true;review.dispatchEvent(new x.window.Event('change'));
-  const publish=[...view.querySelectorAll('button')].find(button=>button.textContent==='Publish reviewed revision');assert(publish.disabled);
+  const publish=[...view.querySelectorAll('button')].find(button=>button.textContent==='Publish these catalog changes');assert(publish.disabled);
   publish.dispatchEvent(new x.window.Event('click'));await settle();assert.equal(x.calls.length,0);
  }finally{mounted?.dispose();x.close();}
 });
@@ -339,8 +380,8 @@ test('new line form publishes into an empty catalog and refreshes card prerequis
   const view=x.mount(mounted),form=view.querySelector('.dc-new-line'),name=field(form,'Line name'),submit=()=>form.dispatchEvent(new x.window.Event('submit',{cancelable:true}));
   submit();await settle();assert.equal(previews,0);name.value='  ';submit();await settle();assert.equal(previews,0);
   name.value='  Moon garden  ';name.dispatchEvent(new x.window.Event('input',{bubbles:true}));field(form,'Line description (optional)').value='A quiet collection';submit();await settle();
-  assert.equal(previews,1);assert.equal(commits,0);assert.equal(core.catalog().lines.length,0);assert.equal(field(view,'Import content').value,'');
-  const publish=[...view.querySelectorAll('button')].find(button=>button.textContent==='Publish reviewed revision');assert(publish.disabled);
+  assert.equal(previews,1);assert.equal(commits,0);assert.equal(core.catalog().lines.length,0);assert.equal(field(view,'Catalog data to import').value,'');
+  const publish=[...view.querySelectorAll('button')].find(button=>button.textContent==='Publish these catalog changes');assert(publish.disabled);
   const review=view.querySelector('.dc-review-check input');review.checked=true;review.dispatchEvent(new x.window.Event('change'));publish.click();publish.click();await settle();
   assert.equal(commits,1);const line=core.catalog().lines[0];assert.equal(line.name,'Moon garden');assert.equal(line.description,'A quiet collection');
   const cardForm=view.querySelector('.dc-new-card');assert.equal(cardForm.querySelector('[aria-label="Card line"]').value,line.id);
@@ -368,7 +409,7 @@ test('new line form respects preview and publication permissions',async()=>{
   mounted=renderStudio(x.model,x.context);const view=x.mount(mounted),form=view.querySelector('.dc-new-line');assert.equal(form.querySelector('button').disabled,!canPreview);
   field(form,'Line name').value='Review only';form.dispatchEvent(new x.window.Event('submit',{cancelable:true}));await settle();assert.equal(previews,canPreview?1:0);
   const review=view.querySelector('.dc-review-check input');review.checked=true;review.dispatchEvent(new x.window.Event('change'));
-  const publish=[...view.querySelectorAll('button')].find(button=>button.textContent==='Publish reviewed revision');assert(publish.disabled);publish.dispatchEvent(new x.window.Event('click'));await settle();assert.equal(x.calls.length,0);
+  const publish=[...view.querySelectorAll('button')].find(button=>button.textContent==='Publish these catalog changes');assert(publish.disabled);publish.dispatchEvent(new x.window.Event('click'));await settle();assert.equal(x.calls.length,0);
  }finally{mounted?.dispose();x.close();}}
 });
 
@@ -377,15 +418,15 @@ test('new pack form publishes a buyable pack with the reviewed variants and coun
   const actor={role:'admin'},before=x.core.catalog(),balance=x.core.wallet(x.alice).credits;let commits=0;
   x.client.previewImport=async input=>x.core.previewImport(actor,input);
   mounted=renderStudio(x.model,{...x.context,mutate:async(name,input)=>{commits++;return x.core.commitImport(actor,{...input,key:'new-pack-test'});}});
-  const view=x.mount(mounted),form=view.querySelector('.dc-new-pack');field(form,'Pack name').value='Morning pair';field(form,'Cards per pack').value='2';field(form,'Price per pack (currency units)').value='7';
+  const view=x.mount(mounted),form=view.querySelector('.dc-new-pack');field(form,'Pack name').value='Morning pair';field(form,'Cards per pack').value='2';field(form,'Price for one pack').value='7';
   const selected=['dawn.standard','cloud.standard'];for(const id of selected)form.querySelector('input[value="'+id+'"]').checked=true;
   form.dispatchEvent(new x.window.Event('submit',{cancelable:true}));await settle();
-  assert.equal(x.core.catalog().products.length,before.products.length);assert.equal(commits,0);assert.equal(field(view,'Import content').value,'');
+  assert.equal(x.core.catalog().products.length,before.products.length);assert.equal(commits,0);assert.equal(field(view,'Catalog data to import').value,'');
   assert(view.querySelector('.dc-import-preview').textContent.includes('2 cards per pack · 7 Credits per pack'));
-  const publish=[...view.querySelectorAll('button')].find(button=>button.textContent==='Publish reviewed revision');assert(publish.disabled);
+  const publish=[...view.querySelectorAll('button')].find(button=>button.textContent==='Publish these catalog changes');assert(publish.disabled);
   const review=view.querySelector('.dc-review-check input');review.checked=true;review.dispatchEvent(new x.window.Event('change'));publish.click();publish.click();await settle();assert.equal(commits,1);
   const product=x.core.catalog().products.find(row=>row.name==='Morning pair');assert(product);assert.equal(product.revision,1);assert.deepEqual(product.slots[0].pool,selected.map(variantId=>({variantId,weight:1})));assert.deepEqual(product.duplicatePolicy,{scope:'none',fallback:'allow'});
-  assert.deepEqual(x.core.catalog().variants,before.variants);assert.equal(view.querySelector('[aria-label="Destination pack"]').value,product.id);
+  assert.deepEqual(x.core.catalog().variants,before.variants);assert.equal(view.querySelector('[aria-label="Pack to edit"]').value,product.id);
   const quote=x.core.quote(x.alice,{productId:product.id,quantity:1}),purchased=x.core.purchase(x.alice,{...quote,key:'buy-new-pack'});
   assert.equal(x.core.wallet(x.alice).credits,balance-7);const opened=x.core.openPack(x.alice,{packId:purchased.packs[0].id,key:'open-new-pack'});assert.equal(opened.cards.length,2);assert(opened.cards.every(card=>selected.includes(card.variantId)));
  }finally{mounted?.dispose();x.close();}
@@ -397,12 +438,12 @@ test('new pack form rejects missing fields, invalid numbers and unavailable prer
   mounted=renderStudio(x.model,x.context);const view=x.mount(mounted),form=view.querySelector('.dc-new-pack'),submit=async()=>{form.dispatchEvent(new x.window.Event('submit',{cancelable:true}));await settle();};
   await submit();assert.equal(previews,0);field(form,'Pack name').value='  ';await submit();assert.equal(previews,0);field(form,'Pack name').value='Valid';await submit();assert.equal(previews,0);assert(form.textContent.includes('Select at least one included variant'));
   form.querySelector('input[type="checkbox"]').checked=true;
-  for(const [label,values]of [['Price per pack (currency units)',['0','-1','1.5','9007199254740992','']],['Cards per pack',['0','101','1.5','']]]){const input=field(form,label);for(const value of values){input.value=value;await submit();assert.equal(previews,0);}input.value='1';}
-  const currency=form.querySelector('[aria-label="Pack currency"]');currency.value='';await submit();assert.equal(previews,0);
+  for(const [label,values]of [['Price for one pack',['0','-1','1.5','9007199254740992','']],['Cards per pack',['0','101','1.5','']]]){const input=field(form,label);for(const value of values){input.value=value;await submit();assert.equal(previews,0);}input.value='1';}
+  const currency=form.querySelector('[aria-label="Currency used to buy the pack"]');currency.value='';await submit();assert.equal(previews,0);
  }finally{mounted?.dispose();x.close();}
  for(const missing of ['lines','currencies','variants']){const x=setup();let mounted;try{
   x.model.catalog[missing]=[];mounted=renderStudio(x.model,x.context);const view=x.mount(mounted),form=view.querySelector('.dc-new-pack');assert(form.querySelector('button').disabled);
-  assert(form.textContent.includes(missing==='lines'?'Create a card line':missing==='currencies'?'Add a currency':'no enabled variants'));
+   assert(form.textContent.includes(missing==='lines'?'Create a card line':missing==='currencies'?'Add a currency':'no available card variants'));
  }finally{mounted?.dispose();x.close();}}
 });
 
@@ -426,6 +467,6 @@ test('new pack form respects preview and publication permissions',async()=>{
   x.client.previewImport=async input=>{previews++;return x.core.previewImport({role:'admin'},input);};
   mounted=renderStudio(x.model,x.context);const view=x.mount(mounted),form=view.querySelector('.dc-new-pack');assert.equal(form.querySelector('button').disabled,!canPreview);field(form,'Pack name').value='Review only';form.querySelector('input[type="checkbox"]').checked=true;
   form.dispatchEvent(new x.window.Event('submit',{cancelable:true}));await settle();assert.equal(previews,canPreview?1:0);
-  const review=view.querySelector('.dc-review-check input');review.checked=true;review.dispatchEvent(new x.window.Event('change'));const publish=[...view.querySelectorAll('button')].find(button=>button.textContent==='Publish reviewed revision');assert(publish.disabled);publish.dispatchEvent(new x.window.Event('click'));await settle();assert.equal(x.calls.length,0);
+  const review=view.querySelector('.dc-review-check input');review.checked=true;review.dispatchEvent(new x.window.Event('change'));const publish=[...view.querySelectorAll('button')].find(button=>button.textContent==='Publish these catalog changes');assert(publish.disabled);publish.dispatchEvent(new x.window.Event('click'));await settle();assert.equal(x.calls.length,0);
  }finally{mounted?.dispose();x.close();}}
 });

@@ -10,6 +10,7 @@ import {
 import { importPackage } from "../src/presentation/package.js";
 import { buildReport } from "../src/presentation/compiler.js";
 import { fixture, build } from "./presentation-fixtures.mjs";
+import { PresentationError } from "../src/presentation/data.js";
 
 const waitFor = async (predicate) => {
   const deadline = Date.now() + 10000;
@@ -129,6 +130,7 @@ test("closing the store cancels both active and queued imports", async () => {
     await Promise.all([store.close(), store.close()]);
     store = await createPresentationStore({ root, authorize: () => true });
     assert.equal((await store.get(a, first.id)).state, "cancelled");
+    assert.equal((await store.get(a, first.id)).error, "Import cancelled");
     assert.equal((await store.get(a, second.id)).state, "cancelled");
     assert.equal(started, 1);
   } finally {
@@ -145,7 +147,12 @@ test("process validator handles valid content, failures, timeout and pre-cancell
     assert.equal((await validateInWorker(file)).digest, pkg.digest);
     await assert.rejects(
       validateInWorker(file, { timeoutMs: 1 }),
-      /time limit/,
+      error => {
+        assert(error instanceof PresentationError);
+        assert.equal(error.code, "IMPORT");
+        assert.match(error.message, /time limit/);
+        return true;
+      },
     );
     const abort = new AbortController();
     abort.abort();

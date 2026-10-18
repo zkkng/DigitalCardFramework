@@ -41,6 +41,39 @@ test('reveal controller coalesces requests, retries with the same key and erases
   view.dispose();resolve({code:'DO-NOT-RETAIN'});assert.equal(await first,undefined);
   assert.deepEqual(keys,['stable','stable']);assert.equal(view.getState().code,null);
 });
+test('retryable reveal errors retain only the initiating live account button focus',async()=>{
+ for(const mode of ['restore','unfocused','other-control','other-control-then-blur','pointer','principal','logout','stale','dispose','success']){
+  const window=new Window();globalThis.document=window.document;let view,reject,resolve,restoreObservers=()=>{};
+  try{
+   let actor='collector-a',current=true,observerCalls=0;const attempts=[];
+   const client={principal:()=>actor,requestKey:()=> 'retained-reveal',codeHistory:async()=>({items:[{id:'reward-a',name:'Reward',title:'Synthetic game',status:'allocated',providerId:'example.game',canReveal:true,reveal:'scratch',reportedUsed:false}],next:null,total:1}),revealCode:input=>{attempts.push(input);if(attempts.length>1)return Promise.resolve({code:'SYNTHETIC-SECRET'});return new Promise((done,fail)=>{resolve=done;reject=fail;});}};
+   if(mode==='logout')delete client.principal;
+   view=renderCodeHistory({me:{userId:actor}},{client,getPrincipal:()=>actor,isCurrentModel:()=>current});document.body.append(view.node);await view.ready;
+   const button=view.node.querySelector('.dc-code-reveal button'),other=document.createElement('input');document.body.append(other);
+   // Model native focus loss when disabling a focused button; happy-dom retains it by default.
+   const disabled=Object.getOwnPropertyDescriptor(window.HTMLButtonElement.prototype,'disabled');Object.defineProperty(button,'disabled',{get(){return disabled.get.call(this);},set(value){if(value&&document.activeElement===this)this.blur();disabled.set.call(this,value);}});
+   if(mode==='dispose'||mode==='restore'){
+    const add=document.addEventListener,remove=document.removeEventListener,wrapped=new Map();
+    document.addEventListener=function(type,listener,options){if(['focusin','pointerdown'].includes(type)){const original=listener;listener=function(event){observerCalls++;return original.call(this,event);};wrapped.set(original,listener);}return add.call(this,type,listener,options);};
+    document.removeEventListener=function(type,listener,options){return remove.call(this,type,wrapped.get(listener)??listener,options);};restoreObservers=()=>{document.addEventListener=add;document.removeEventListener=remove;};
+   }
+   (mode==='unfocused'?other:button).focus();button.click();await Promise.resolve();await Promise.resolve();assert(reject);assert(button.disabled);assert(document.activeElement!==button);
+   if(mode==='other-control'||mode==='other-control-then-blur')other.focus();if(mode==='other-control-then-blur')other.blur();
+   if(mode==='pointer')other.dispatchEvent(new window.Event('pointerdown',{bubbles:true}));
+   if(mode==='principal')actor='collector-b';if(mode==='logout')actor=null;if(mode==='stale')current=false;
+   if(mode==='dispose'){view.dispose();const before=observerCalls;document.dispatchEvent(new window.Event('focusin'));document.dispatchEvent(new window.Event('pointerdown'));assert.equal(observerCalls,before,'Disposal removes pending reveal focus observers');}
+   if(mode==='success')resolve({code:'SYNTHETIC-SECRET'});else reject(new Error('Response interrupted'));
+   for(let i=0;i<5;i++)await new Promise(done=>setImmediate(done));
+   assert.equal(document.activeElement===button,mode==='restore',mode);
+   if(mode==='restore'){assert.equal(view.node.querySelector('.dc-code-reveal').dataset.state,'error');assert(!view.node.textContent.includes('SYNTHETIC-SECRET'));const before=observerCalls;document.dispatchEvent(new window.Event('focusin'));document.dispatchEvent(new window.Event('pointerdown'));assert.equal(observerCalls,before,'Settled reveal removes document focus observers');button.click();for(let i=0;i<5;i++)await new Promise(done=>setImmediate(done));assert.deepEqual(attempts[0],attempts[1]);assert(view.node.textContent.includes('SYNTHETIC-SECRET'));}
+   if(mode==='dispose')assert.equal(view.node.querySelector('.dc-code-history').textContent,'');
+  }finally{reject?.(new Error('Closed'));view?.dispose();restoreObservers();await window.happyDOM.abort();delete globalThis.document;}
+ }
+});
+test('standalone code history accepts null and undefined models without an account callback',async()=>{
+ const window=new Window();globalThis.document=window.document;
+ try{for(const model of [null,undefined]){const view=renderCodeHistory(model,{client:{codeHistory:async()=>({items:[],total:0,next:null})}});document.body.append(view.node);await view.ready;assert.equal(view.node.querySelectorAll('.dc-code-history > article').length,0);view.dispose();}}finally{await window.happyDOM.abort();delete globalThis.document;}
+});
 
 test('scratch and peel hold secrets on the server; open mode and keyboard button use the same contract', async()=>{
   const window=new Window();globalThis.document=window.document;

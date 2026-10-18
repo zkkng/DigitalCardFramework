@@ -12,6 +12,24 @@ import {createApiHandler} from '../src/http.js';
 import {serveReference} from '../src/static.js';
 import {programHeaders} from '../src/presentation/program.js';
 
+async function keyTo(page,target,direction='Tab'){
+  let steps=0;const visited=[];
+  try{
+  await target.waitFor({state:'visible'});
+  const deadline=Date.now()+15000;
+  while(!await target.evaluate(node=>node===document.activeElement)){
+    assert(Date.now()<deadline,'Keyboard traversal must reach the intended control');
+    await page.keyboard.press(direction);steps++;
+    visited.push(await target.evaluate(()=>({tag:document.activeElement?.tagName,label:document.activeElement?.getAttribute('aria-label'),text:['BUTTON','SUMMARY'].includes(document.activeElement?.tagName)?document.activeElement.textContent?.slice(0,60):undefined,documentFocus:document.hasFocus()})));if(visited.length>16)visited.shift();
+  }
+  assert(await target.evaluate(node=>{const r=node.getBoundingClientRect();return node.matches(':focus-visible')&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;}),'Keyboard target must have visible focus in the viewport');
+  return {direction,steps,visited};
+  }catch(error){error.albumKeyboard={direction,steps,visited,state:await keyboardState(target).catch(()=>null)};console.error('Album keyboard failure',JSON.stringify(error.albumKeyboard));throw error;}
+}
+async function keyboardState(target){return target.evaluate(node=>{const modal=document.querySelector('dialog:modal'),scope=modal??document,controls=[...scope.querySelectorAll('button,input,select,textarea,summary,a[href],iframe,[tabindex]')].filter(item=>!item.matches(':disabled')&&item.tabIndex>=0&&item.getClientRects().length),identify=item=>({tag:item?.tagName,label:item?.getAttribute('aria-label')??item?.labels?.[0]?.textContent,text:['BUTTON','SUMMARY'].includes(item?.tagName)?item.textContent?.slice(0,60):undefined});return {target:{...identify(node),connected:node.isConnected,disabled:node.matches(':disabled'),inert:!!node.closest('[inert]'),rect:node.getBoundingClientRect().toJSON()},active:identify(document.activeElement),documentFocus:document.hasFocus(),modal:!!modal,targetInModal:!!modal?.contains(node),rootBusy:document.querySelector('#root')?.hasAttribute('aria-busy'),controlCount:controls.length,targetPosition:controls.indexOf(node),activePosition:controls.indexOf(document.activeElement),scrollY};});}
+async function keyActivate(page,target,key='Enter'){await keyTo(page,target);await page.keyboard.press(key);}
+async function keyText(page,target,value,direction='Tab'){const route=await keyTo(page,target,direction);await page.keyboard.press('ControlOrMeta+A');await page.keyboard.type(value);return route;}
+
 const baseOutput=resolve(process.argv[2]??'test-results/program-album'),languages=(process.env.DC_PROGRAM_LANGUAGES??'python,go').split(',');
 if(languages.some(language=>!['python','go'].includes(language)))throw Error('Unsupported program generator');
 async function qualify(language){
@@ -53,7 +71,7 @@ try{
   const save=x.core.saveAlbum.bind(x.core);x.core.saveAlbum=(actor,input)=>{const result=save(actor,input);saves.push({input:structuredClone(input),result:structuredClone(result)});return result;};
   const actual=x.core.viewAlbum(x.alice,privateAlbum.id);assert(JSON.stringify(actual).includes('PRIVATE-DEMO-CODE'));
   try{browser=await pw[engine].launch({headless:process.env.HEADED!=='1'});}catch(error){if(engine!=='chromium')throw error;browser=await pw.chromium.launch({headless:true,channel:'msedge'});}
-  const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(20000);page.on('pageerror',error=>errors.push(error.message));await page.goto(hostOrigin+'/album-harness');
+  const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'});page.setDefaultTimeout(20000);page.on('pageerror',error=>errors.push(error.message));await page.goto(hostOrigin+'/album-harness');
   await page.evaluate(async programOrigin=>{
     const [{createClient},{mountFramework},{render3DInspector},{createProgramAlbumRenderer}]=await Promise.all([import('/src/client.js'),import('/src/ui.js'),import('/src/inspector-ui.js'),import('/src/presentation/program-album-view.js')]);
     window.albumTest={createClient,mountFramework,render3DInspector,createProgramAlbumRenderer,payloads:[],channels:[],inspected:[],diagnostics:[]};
@@ -64,7 +82,7 @@ try{
     window.albumTest.mount=async()=>{const client=window.albumTest.client=createClient();window.albumTest.view=mountFramework(document.querySelector('#root'),{client,sections:['albums'],layouts:{journal:window.albumTest.renderer},inspectorRenderer(copy,options){window.albumTest.inspected.push(copy.id);return render3DInspector(copy,options);}});await window.albumTest.view.ready;};await window.albumTest.mount();
   },programOrigin);
   const album=page.locator('.dc-album-preview dc-program-album'),frameOf=async node=>(await node.locator('iframe').elementHandle()).contentFrame();
-  await page.getByLabel('Your albums',{exact:true}).selectOption(privateAlbum.id);await album.scrollIntoViewIfNeeded();
+  await keyTo(page,page.getByLabel('Your albums',{exact:true}));await page.keyboard.press('Home');await page.keyboard.press('ArrowDown');await page.keyboard.press('Tab');assert.equal(await page.getByLabel('Your albums',{exact:true}).inputValue(),privateAlbum.id);await album.scrollIntoViewIfNeeded();
   await album.frameLocator('iframe').locator('html[data-dc-album-state="ready"]').waitFor();assert.equal(await album.frameLocator('iframe').locator('.album-item').count(),2);
   assert.equal(await album.frameLocator('iframe').locator('[data-dc-album-name]').textContent(),'Private <album>');assert.equal(await album.frameLocator('iframe').locator('.album-page').first().locator('[data-dc-page-name]').textContent(),'First <page>');
   await(await frameOf(album)).waitForFunction(()=>{const image=document.querySelector('img[src]');return image?.complete&&image.naturalWidth===2;});
@@ -73,7 +91,7 @@ try{
   await album.frameLocator('iframe').locator('.item-select').filter({hasText:'Dawn'}).click();await page.locator('.dc-inspector-dialog').waitFor();assert.equal(await page.evaluate(()=>window.albumTest.inspected.at(-1)),copies[0].id);await page.getByRole('button',{name:'Close inspection',exact:true}).click();
   await album.scrollIntoViewIfNeeded();await album.frameLocator('iframe').locator('html[data-dc-album-state="ready"]').waitFor();
   await page.evaluate(()=>{const channel=window.albumTest.channels.filter(channel=>channel.port1.onmessage&&channel.nonce).at(-1);window.albumTest.stale={handler:channel.port1.onmessage,nonce:channel.nonce,snapshot:window.albumTest.payloads.at(-1),inspections:window.albumTest.inspected.length};});
-  await page.getByRole('button',{name:'Move Dawn later',exact:true}).click();await page.getByRole('button',{name:'Preview album',exact:true}).click();await album.scrollIntoViewIfNeeded();await album.frameLocator('iframe').locator('html[data-dc-album-state="ready"]').waitFor();
+  await page.getByRole('button',{name:'Move Dawn later',exact:true}).click();await keyActivate(page,page.getByRole('button',{name:'Preview album',exact:true}));await album.scrollIntoViewIfNeeded();await album.frameLocator('iframe').locator('html[data-dc-album-state="ready"]').waitFor();
   const freshness=await page.evaluate(()=>{const old=window.albumTest.stale,current=window.albumTest.payloads.at(-1);old.handler({data:{version:1,type:'intent',intent:'select-item',nonce:old.nonce,snapshotId:old.snapshot.snapshotId,handle:old.snapshot.items[0].handle}});return {fresh:current.snapshotId!==old.snapshot.snapshotId&&current.items.every(item=>!old.snapshot.items.some(old=>old.handle===item.handle)),noSelection:window.albumTest.inspected.length===old.inspections,order:current.items.map(item=>item.name)};});assert(freshness.fresh&&freshness.noSelection);assert.deepEqual(freshness.order,['One Solstice','Dawn']);
   checks.push('Actual private album and unsaved reorder render current full contents/pages; granted pinned raster bytes display, private records/IDs/URLs stay parent-side, current handles inspect the correct copy and obsolete sessions cannot select');
 
@@ -84,18 +102,26 @@ try{
   await page.getByLabel('Page 1 title',{exact:true}).fill('Edited first page');
   await page.getByRole('button',{name:'Move page 1 later',exact:true}).click();
   await page.locator('.dc-arrange-tile').filter({has:page.getByRole('button',{name:'Move Dawn earlier',exact:true})}).getByRole('combobox').selectOption('second');
-  await page.getByLabel('Album name',{exact:true}).fill('Edited private album');
+  await writeFile(resolve(output,'album-name-keyboard-entry.json'),JSON.stringify({engine,language,state:await keyboardState(page.getByLabel('Album name',{exact:true}))},null,2));
+  const nameRoute=await keyText(page,page.getByLabel('Album name',{exact:true}),'Edited private album','Shift+Tab');await writeFile(resolve(output,'album-name-keyboard-route.json'),JSON.stringify(nameRoute,null,2));await page.keyboard.press('Tab');
   await page.getByRole('button',{name:'Preview album',exact:true}).click();await album.scrollIntoViewIfNeeded();await album.frameLocator('iframe').locator('html[data-dc-album-state="ready"]').waitFor();
-  await page.getByRole('button',{name:'Save album',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('#root').hasAttribute('aria-busy'));assert.equal(saves.length,1,await page.locator('.dc-status').textContent());
+  await keyActivate(page,page.getByRole('button',{name:'Save album',exact:true}));await page.waitForFunction(()=>!document.querySelector('#root').hasAttribute('aria-busy'));assert(await page.getByRole('button',{name:'Save album',exact:true}).evaluate(node=>node===document.activeElement&&node.matches(':focus-visible')),'Successful album refresh preserves visible keyboard focus on its replacement Save button');assert.equal(saves.length,1,await page.locator('.dc-status').textContent());
   const saved=saves[0];assert.equal(saved.result.id,privateAlbum.id);assert.equal(saved.input.visibility,'private');assert.equal(saved.input.layout.id,'journal');
   assert.deepEqual(saved.input.layout.artwork.pages,[{id:'second',title:'Second page'},{id:'first',title:'Edited first page'}]);
   assert.deepEqual(saved.input.placements,[{copyId:copies[1].id,position:0,data:{pageId:'second',privateNote:'PRIVATE-PLACEMENT'}},{copyId:copies[0].id,position:1,data:{pageId:'second',privateNote:'PRIVATE-PLACEMENT'}}]);
   const reloaded=await page.evaluate(async id=>window.albumTest.client.viewAlbum(id),privateAlbum.id);assert.deepEqual(reloaded.layout,saved.input.layout);assert.deepEqual(reloaded.cards.map(card=>({copyId:card.copy.id,position:card.placement.position,data:card.placement.data})),saved.input.placements);assert.equal(reloaded.name,'Edited private album');assert.deepEqual(x.core.viewAlbum(x.alice,privateAlbum.id).layout,saved.input.layout);
   const beforeInvalid=structuredClone(x.core.albums(x.alice));
   const invalid=await page.evaluate(async ({id,copyId,version})=>{try{await window.albumTest.client.saveAlbum({key:'invalid-page-assignment',albumId:id,expectedVersion:version,name:'Invalid assignment',visibility:'private',layout:{pageSize:1,artwork:{pages:[]}},placements:[{copyId,position:0,data:{pageId:'missing'}}]});return false;}catch(error){return error.code==='INVALID_INPUT';}},{id:privateAlbum.id,copyId:copies[0].id,version:saved.result.version});assert(invalid);assert.deepEqual(x.core.albums(x.alice),beforeInvalid);
-  await page.waitForFunction(()=>!document.querySelector('#root').hasAttribute('aria-busy'));await page.getByLabel('Your albums',{exact:true}).selectOption(publicAlbum.id);await page.getByLabel('Your albums',{exact:true}).selectOption(privateAlbum.id);
+  await page.waitForFunction(()=>!document.querySelector('#root').hasAttribute('aria-busy'));
+  // The selector precedes the restored Save button and the following Album name field.
+  const publicRoute=await keyTo(page,page.getByLabel('Your albums',{exact:true}),'Shift+Tab');
+  await page.keyboard.press('End');await page.keyboard.press('Tab');assert.equal(await page.getByLabel('Your albums',{exact:true}).inputValue(),publicAlbum.id);
+  const privateRoute=await keyTo(page,page.getByLabel('Your albums',{exact:true}),'Shift+Tab');
+  await page.keyboard.press('Home');await page.keyboard.press('ArrowDown');await page.keyboard.press('Tab');assert.equal(await page.getByLabel('Your albums',{exact:true}).inputValue(),privateAlbum.id);
+  await writeFile(resolve(output,'album-selection-keyboard-routes.json'),JSON.stringify({publicRoute,privateRoute},null,2));
   assert.equal(await page.getByLabel('Album name',{exact:true}).inputValue(),'Edited private album');assert.equal(await page.getByLabel('Page 2 title',{exact:true}).inputValue(),'Edited first page');
   await album.scrollIntoViewIfNeeded();await album.frameLocator('iframe').locator('html[data-dc-album-state="ready"]').waitFor();assert.equal(await album.frameLocator('iframe').locator('[data-dc-album-name]').textContent(),'Edited private album');
+  assert(await page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches));assert(await album.frameLocator('iframe').locator('html').evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches));checks.push('Keyboard album selection, name edit, preview/save and reload preserve the edited private album under reduced motion; artwork preparation remains separate');
   checks.push('Native card/page reorder and explicit assignment save through real HTTP; reload preserves exact layout/private placement data and current program display; invalid assignment rejects without mutation');
 
   await page.evaluate(()=>window.albumTest.renderer.setEnabled(false));assert.equal(await album.locator('iframe').count(),0);
@@ -107,7 +133,7 @@ try{
   const beforeDispose=structuredClone(x.core.albums(x.alice));await page.evaluate(()=>{window.albumTest.retainedSave=[...document.querySelectorAll('button')].find(button=>button.textContent==='Save album');window.albumTest.renderer.dispose();window.albumTest.view.dispose();window.albumTest.retainedSave.click();});assert.equal(await page.locator('#root iframe').count(),0);assert.deepEqual(x.core.albums(x.alice),beforeDispose);actor=x.bob;
   await page.evaluate(async()=>{const fields=['albumName','cardName','rarity','pageName','preview'],entry=window.albumTest.registry.get('example.album');window.albumTest.registry.set('example.album',{...entry,albumDisplay:{profile:'dc.album-display@1',fields}});window.albumTest.renderer=window.albumTest.createProgramAlbumRenderer({registry:window.albumTest.registry,programId:'example.album',displayFields:fields});await window.albumTest.mount();});
   const denied=await page.evaluate(async id=>{try{await window.albumTest.client.viewAlbum(id);return false;}catch(error){return error.code==='NOT_FOUND';}},privateAlbum.id);assert(denied);
-  await page.getByText('Visit public albums',{exact:true}).click();await page.getByRole('button',{name:'Explore',exact:true}).click();await page.getByRole('button',{name:'Public album · Alice',exact:true}).click();await album.scrollIntoViewIfNeeded();await album.frameLocator('iframe').locator('html[data-dc-album-state="ready"]').waitFor();assert.equal(await album.frameLocator('iframe').locator('.album-item').count(),2);
+  await page.getByText('Browse public albums',{exact:true}).click();await page.getByRole('button',{name:'Explore',exact:true}).click();await page.getByRole('button',{name:'Public album · Alice',exact:true}).click();await album.scrollIntoViewIfNeeded();await album.frameLocator('iframe').locator('html[data-dc-album-state="ready"]').waitFor();assert.equal(await album.frameLocator('iframe').locator('.album-item').count(),2);
   checks.push('Disabled and denied-profile native card clicks reach correct host inspection; actual public viewer can render public album while private album remains inaccessible');
 
   await page.evaluate(()=>{window.albumTest.view.dispose();window.albumTest.renderer.dispose();});actor=x.alice;
@@ -130,7 +156,7 @@ try{
   await page.screenshot({path:resolve(output,'album-program.png'),fullPage:true});await page.evaluate(()=>{window.albumTest.gateRenderer.dispose();window.albumTest.gateRenderer.setEnabled(true);});assert.equal(await page.locator('#probes iframe').count(),0);
   checks.push('All 1000 projected placements render without truncation; optional previews arrive once per bounded batch; disabled late preview cannot update an obsolete session, fresh remount works and final disposal is terminal');
   assert.deepEqual(errors,[]);await writeFile(resolve(output,'result.json'),JSON.stringify({engine,language,checks,errors},null,2));console.log(JSON.stringify({engine,language,checks,errors}));return {engine,language,checks,errors};
-}catch(error){const page=browser?.contexts()[0]?.pages()[0];if(page)await writeFile(resolve(output,'failure.json'),JSON.stringify({message:error.message,errors,status:await page.locator('.dc-status').allTextContents(),editorErrors:await page.locator('.dc-error').allTextContents()},null,2));throw error;
+}catch(error){const page=browser?.contexts()[0]?.pages()[0];if(page)await writeFile(resolve(output,'failure.json'),JSON.stringify({message:error.message,errors,keyboard:error.albumKeyboard,status:await page.locator('.dc-status').allTextContents(),editorErrors:await page.locator('.dc-error').allTextContents()},null,2));throw error;
 }finally{await browser?.close();for(const item of paused)if(!item.response.destroyed)item.response.end(item.bytes);for(const server of [hostServer,programServer]){server.closeAllConnections();if(server.listening)await new Promise(resolve=>server.close(resolve));}x.core.close();await rm(temp,{recursive:true,force:true});}
 
 }

@@ -80,7 +80,7 @@ export function createEditorContributions(manifests=[],{grants=defaults}={}){
               const selection=getSelection();fail(!selection.locked,'Unlock this layer to edit it');
               fail(Number.isFinite(value)&&value>=minimum&&value<=maximum&&valid,'Editor value is outside its granted range');
               await edit(()=>{if(!current()||!enabled.get(panel.id)||generation!==renderGeneration)return;fail(!getSelection().locked,'Unlock this layer to edit it');captured.node[control.field]=value;});
-            })).catch(()=>{if(current())report('Editor contribution could not apply this value.');});
+            })).catch(()=>{if(current())report('This value could not be applied. Check the layer and try again.');});
           },{signal:controlEvents.signal});
         }
         if(section.querySelector('input'))container.append(section);

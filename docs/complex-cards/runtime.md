@@ -49,10 +49,10 @@ The optional identity adapter verifies SIWE nonces and reads ERC-721/1155 owners
 ## Known limits
 
 - Display-RGB artistic compositing; no physically calibrated linear-light/HDR pipeline.
-- Groups inherit transform/opacity. Isolated group blend/mask surfaces are not implemented; layered import reports mismatches.
+- Groups inherit transforms and opacity by default. Explicit isolated groups require `dc.group-isolation@0.2`, local width and height, and sufficient graphics and stage memory; content outside their bounds is clipped.
 - One built-in material per node; stack nodes or install an adapter for combinations.
 - Custom flakes use alpha shapes. Their texture RGB does not define per-flake artwork.
-- Studio **Capture posters** renders both faces at neutral input and updates their previews. Headless callers use `project.setPosters({front, back})` with renderer-produced Blobs. Capture remains explicit so a chosen hero pose is not silently overwritten on export.
+- Studio **Capture preview images** renders both faces at neutral input and updates their previews. Headless callers use `project.setPosters({front, back})` with renderer-produced Blobs. Capture remains explicit so a chosen hero pose is not silently overwritten on export.
 - `.dcproject` preserves editable scenes and unused imported assets, not the undo history or original Photoshop feature model.
 - Physical iPhone testing remains necessary before claiming device-level performance. Desktop touch/DPR emulation is useful but not equivalent.
 
@@ -67,7 +67,7 @@ See [creator API](creator-api.md) for batch imports, effect controls, external c
 
 Each image node accepts `sampling: 'nearest' | 'linear'`. This controls GPU sampling per draw, even when nodes share a texture. Quality-tier image resizing still happens before sampling; choose a maxEdge large enough to retain every authored pixel when exact source pixels matter. `scene.background` accepts `transparent`, `#RRGGBB`, or `#RRGGBBAA`. A node mask uses one local alpha image or one local polygon; `invert` applies to either. Cropped atlas coordinates do not move its polygon mask.
 
-Groups support inherited transforms/opacity/brightness/saturation, not isolated compositing surfaces. Group masks, materials and non-normal blends now fail explicitly rather than being ignored. Prebake such groups or install a host adapter. An unavailable optional adapter with `omit-decorative` is removed by its adapter ID; `poster` and `static-pose` use the authored face poster. Required missing capabilities always select the poster.
+Groups inherit transforms, opacity, brightness and saturation. Enable explicit isolation to apply a group's mask, material or non-normal blend to its combined children. Isolation requires `dc.group-isolation@0.2` and explicit local width and height; content outside those bounds is clipped. If the required surfaces exceed graphics or stage-memory limits, the affected view uses its face poster with a diagnostic. An unavailable optional adapter with `omit-decorative` is removed by its adapter ID; `poster` and `static-pose` use the authored face poster. Required missing capabilities always select the poster.
 
 The import scanner receives an AbortSignal and has a configurable `scanTimeoutMs` (default 30 seconds). Cancellation/timeout settles the job even if a faulty callback never resolves. The host must still terminate its underlying decoder process; Promise cancellation cannot stop arbitrary native code. Failed store initialization releases its writer lock. After a process crash, operators must confirm no writer remains before removing a stale lock; automatic cross-process crash recovery is not implemented.
 

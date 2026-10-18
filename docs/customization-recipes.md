@@ -50,6 +50,20 @@ createRevealController({open,key}) provides getState, subscribe, load, reveal, s
 
 mountOpener(root,{controller,view}) subscribes to that controller. view returns a DOM node, or {node,dispose} for a custom view with external resources. Dispose runs before replacement and unmount. Subscribe returns an unsubscribe function; disposal is terminal and suppresses outstanding loads. Later load, reveal, replay or subscription calls cannot restart that instance. examples/alternate.js renders all results instantly in a host-owned dialog. This does not grant new cards.
 
+## Default collection controls
+
+These controls filter the native view; they do not authorize a transfer or reserve a card. **My copies** lists owned-copy identities; **Card catalog and wishlist** lists definitions. Favorites refer to copy IDs, while wishlist entries refer to card IDs. **Include code cards and inserts** changes visibility, not entitlement access.
+
+| Control | Default and interpretation |
+| --- | --- |
+| Search, Line, Rarity, Finish | Empty search/all choices; search matches card names/tags, definition stats and card/variant metadata without case distinction |
+| Sort | Newest first by creation time; name uses browser locale ordering, rarity uses descending rank |
+| Show | All cards; duplicates compare variant IDs, favorites use copy IDs, available-for-trade also requires the trading feature and the copy's tradable status |
+| Compare / Inspect together | At most 24 owned copies; selection and shared inspection do not merge ownership |
+| Show more | Extends the visible list from the supplied model; it does not create copies or change the server's query limits |
+
+Connected-card layouts and missing-piece behavior use the existing [combination contract](content-authoring.md#combinable-cards). A host can replace this renderer; these defaults do not impose controls on a custom view.
+
 ## Replace the album and all CSS
 
 saveAlbum stores layout:{id,columns,gap,...customData} plus ordered placements with per-placement data. The default renderer recognizes columns, gap and the bounded appearance fields described below. renderAlbum(model,{layouts:{journal:renderer}}) selects a trusted registered layout when layout.id is journal. Alternatively supply albumRenderer to replace the entire album, as the alternate example does.
@@ -139,7 +153,7 @@ go run examples/plugins/go-card-art/main.go celestial-go.dcard
 
 Both examples describe the same layered front and back, a masked foil material, and bounded tilt motion. They include posters, asset hashes and a package integrity descriptor. Each generator is deterministic; archives from different generators need not have identical bytes.
 
-In Creator studio, select the card and optional variant you want to update and open the visual card editor. Use **Open card** to load the archive, edit a layer, then select **Capture posters**. Select **Publish**, review the proposed change, and confirm with **Publish reviewed card**. Publication requires the host's normal authoring permission. Opening or editing the package alone does not update the catalog. Newly issued cards use the published presentation; existing copies retain their pinned presentation.
+In Creator studio, select the card and optional variant you want to update and open the visual card editor. Use **Open card** to load the archive, edit a layer, then select **Capture preview images**. Select **Publish**, review the proposed change, and confirm with **Publish card changes**. Publication requires the host's normal authoring permission. Opening or editing the package alone does not update the catalog. Newly issued cards use the published presentation; existing copies retain their pinned presentation.
 
 Use this route for portable artwork built from supported scene, material and motion primitives. It does not install custom executable renderers, editor tools or live-effect adapters. A developer can also load the archive through `importPackage` from `@digital-card/framework/presentation`.
 
@@ -375,9 +389,11 @@ The adapter uses native album fallback for denied grants or invalid content. Its
 
 ## Album appearance
 
+A new native album editor starts with **Private** visibility, **Card gallery**, three columns, an 18-pixel gap and **Cards per album page** 12. Existing albums load their saved values. Columns accept integers from 1 to 12; gap accepts 0 to 100 pixels. **Panorama** forces zero gap. The Public option requires the host's public-album feature. **Extra layout settings (JSON)** retains custom data, but artwork and page size must use their dedicated controls.
+
 The default album renderer accepts `layout.appearance` with solid `background`, text `color`, `borderColor`, `padding`, `radius` and `borderWidth`. Colors accept hexadecimal RGB/RGBA, comma-separated integer `rgb()`/`rgba()`, or transparent/black/white/red/green/blue/gray/grey/yellow/orange/purple/pink/brown/navy/teal. RGB channels range from 0 to 255 and alpha from 0 to 1. Padding and radius range from 0 to 100 pixels; border width ranges from 0 to 12 pixels. Omitted properties use the reference styles. Appearance applies to the album grid, without changing ownership or placements.
 
-In the album editor, open **Album appearance & layout JSON**, enter these fields in **Appearance JSON**, then choose **Preview album** and **Save album**. Invalid fields or values prevent saving through this editor. `validateAlbumAppearance` from `@digital-card/framework/ui` supplies the same checks to custom editors.
+In the album editor, open **Colors and layout (advanced)**, enter these fields in **Appearance JSON**, then choose **Preview album** and **Save album**. Invalid fields or values prevent saving through this editor. `validateAlbumAppearance` from `@digital-card/framework/ui` supplies the same checks to custom editors.
 
 ```json
 {"appearance":{"background":"#142321","color":"white","padding":24,"radius":8,"borderWidth":1,"borderColor":"#477766"}}
@@ -444,7 +460,7 @@ const editorProgramPanels = createProgramEditorPanels({
 const studio = mountStudio(root, {initialPackage, editorProgramPanels});
 ```
 
-Select a text layer, adjust its content or appearance, and submit the proposal. Review the proposed values in Studio's own controls before choosing **Apply layer changes**. Apply uses native project validation and creates an undoable edit. Save and reopen through the ordinary Studio workflow. The frame cannot apply or publish changes itself.
+Select a text layer, adjust its content or appearance, and submit the proposal. Review the proposed values in Studio's own controls before choosing **Apply changes**. Apply uses native project validation and creates an undoable edit. Save and reopen through the ordinary Studio workflow. The frame cannot apply or publish changes itself.
 
 The [selection schema](editor-display.schema.json) and [proposal schema](editor-proposal.schema.json) describe the messages. Runtime validation also enforces the selection identity, grants and a 32 KiB encoded bound. Grants control both the selected-layer fields disclosed to a panel and the fields it may propose. Layer identifiers, private metadata, material configuration and asset contents are not part of this projection. Locked selections cannot be edited. A proposal becomes stale when the project revision, selection or panel session changes. Disabling a panel invalidates its pending work; unavailable programs leave the ordinary layer editor usable.
 
