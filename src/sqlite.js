@@ -13,7 +13,7 @@ import {FrameworkError,check} from './catalog.js';
 import {initialState} from './store.js';
 import {cloneResult,completionBytes,querySnapshot} from './storage-query.js';
 import {copySnapshotFiles} from './storage-snapshot.js';
-import {STORAGE_SCHEMA,schemaSql,schemaSqlV2,schemaSqlV3,schemaSqlV4,schemaSqlV5,schemaSqlV6,schemaSqlV7,importedCodeSchemaSql,ownedCardSchemaSql,expirationSchemaSql,migrateExpirationWork,actionSchemaSql,migrateActionWork,notificationSchemaSql,codeHolderSchemaSql,migrateCodeHolders,encodeState,measureStateBytes,readState,writeDifference,sqliteQueries,storageRecordKey,decodeRecordEnvelope,encodedRecordBytes,encodeRecordPayload,encodeEntity} from './indexed-storage.js';
+import {STORAGE_SCHEMA,schemaSql,schemaSqlV2,schemaSqlV3,schemaSqlV4,schemaSqlV5,schemaSqlV6,schemaSqlV7,importedCodeSchemaSql,ownedCardSchemaSql,expirationSchemaSql,migrateExpirationWork,actionSchemaSql,migrateActionWork,notificationSchemaSql,codeHolderSchemaSql,migrateCodeHolders,encodeState,createTransactionStateEncoder,measureStateBytes,readState,writeDifference,sqliteQueries,storageRecordKey,decodeRecordEnvelope,encodedRecordBytes,encodeRecordPayload,encodeEntity} from './indexed-storage.js';
 
 const emptyRecords=()=>({fields:new Map(),entities:new Map(),usedBytes:0});
 const marker={format:'digital-card.indexed-state',version:STORAGE_SCHEMA,recordKeys:'blind-v1'};
@@ -216,8 +216,9 @@ export class SQLiteStore {
             +obligations.reduce((sum,row)=>sum+size('completionObligations',row.key,value.completionObligations[row.key])-row.bytes,0));
         }
         let beforeEncoding,afterEncoding;
+        const encode=createTransactionStateEncoder(this.#codec,this.#identity,this.#recordKey);
         this.#assertCapacity(state,before,value=>{
-          const encoded=encodeState(value,this.#codec,this.#identity,this.#recordKey);
+          const encoded=encode(value);
           if(value===state)afterEncoding=encoded;else beforeEncoding=encoded;
           return this.#measurement(value,encoded.usedBytes);
         });

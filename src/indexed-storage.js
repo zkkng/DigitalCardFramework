@@ -111,19 +111,31 @@ function walkState(state, codec, field, entity) {
 export const measureStateBytes = (state,codec) => walkState(state,codec);
 
 /** One authoritative record per entity; configuration fields retain their logical shapes. */
-export function encodeState(state, codec, identityHash, keyHash) {
+function encodeStateWithReuse(state, codec, identityHash, keyHash, prior) {
   const fields = new Map(), entities = new Map();
   const usedBytes = walkState(state,codec,
     (name,kind,value,bytes)=>fields.set(name,{kind,value,raw:kind==='scalar'?JSON.stringify(value):null,bytes}),
     (name,key,item,ordinal,bytes,reservation,holders)=>{
-      const projected = projection(name,key,item);
-      const identity = name === 'users' && typeof item?.provider === 'string' && typeof item?.subject === 'string'
+      const token=JSON.stringify([name,key]),raw=JSON.stringify(item),previous=prior?.entities.get(token),same=previous?.raw===raw;
+      const projected=same?previous.projected:projection(name,key,item);
+      const identity=same?previous.identity:name === 'users' && typeof item?.provider === 'string' && typeof item?.subject === 'string'
         ? identityHash(item.provider, item.subject) : null;
-      entities.set(JSON.stringify([name,key]), {collection:name,key,storageKey:recordKey(name,key,keyHash),value:item,ordinal,raw:JSON.stringify(item),
-        bytes,identity,projected,actionReservation:reservation?keyHash('completionObligations',reservation):null,
-        holders:holders?[...new Set(holders.filter(id=>typeof id==='string'))].map(id=>keyHash('code-holder',id)):[]});
+      entities.set(token, {collection:name,key,storageKey:same?previous.storageKey:recordKey(name,key,keyHash),value:item,ordinal,raw,
+        bytes,identity,projected,actionReservation:same?previous.actionReservation:reservation?keyHash('completionObligations',reservation):null,
+        holders:same?previous.holders:holders?[...new Set(holders.filter(id=>typeof id==='string'))].map(id=>keyHash('code-holder',id)):[]});
     });
   return {fields, entities, usedBytes, encode:(field,key,value)=>codec.encode(wrapper(field,key,value))};
+}
+export function encodeState(state, codec, identityHash, keyHash) {
+  return encodeStateWithReuse(state,codec,identityHash,keyHash);
+}
+export function createTransactionStateEncoder(codec,identityHash,keyHash) {
+  let prior;
+  return state=>{
+    const encoded=encodeStateWithReuse(state,codec,identityHash,keyHash,prior);
+    prior=encoded;
+    return encoded;
+  };
 }
 
 function decodeEnvelope(codec, payload, collection, key, keyHash) {

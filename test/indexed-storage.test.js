@@ -258,6 +258,40 @@ test('transaction tail retains the single-use revision growth completion allowan
   }finally{store.close();}
 });
 
+test('transaction encoder reuses only matching canonical row metadata across changed and reordered records',async t=>{
+  const {createTransactionStateEncoder}=await import('../src/indexed-storage.js');
+  const before=initialState();before.revision=3;
+  before.users={keep:{id:'keep',provider:'provider',subject:'keep'},change:{id:'change',provider:'provider',subject:'old'},removed:{id:'removed',provider:'provider',subject:'removed'}};
+  before.codes={keep:{id:'keep',holderId:'keep',holderHistory:['keep']},change:{id:'change',holderId:'change',holderHistory:['change']},removed:{id:'removed',holderId:'removed',holderHistory:['removed']}};
+  before.actionJobs={keep:{id:'keep',status:'completed',completionId:'keep'},change:{id:'change',status:'completed',completionId:'old'},removed:{id:'removed',status:'completed',completionId:'removed'}};
+  before.notifications=[{id:'keep',userId:'keep',at:'2026-01-01',type:'note'},{id:'change',userId:'change',at:'2026-01-01',type:'note'},{id:'removed',userId:'removed',at:'2026-01-01',type:'note'}];
+  const after=structuredClone(before);after.revision++;
+  after.users.change.subject='new';delete after.users.removed;after.users.added={id:'added',provider:'provider',subject:'added'};
+  after.codes.change.holderHistory.push('keep');delete after.codes.removed;after.codes.added={id:'added',holderId:'added',holderHistory:['added']};
+  after.actionJobs.change.completionId='new';delete after.actionJobs.removed;after.actionJobs.added={id:'added',status:'completed',completionId:'added'};
+  after.notifications=[{id:'added',userId:'added',at:'2026-01-01',type:'note'},after.notifications[1],after.notifications[0]];
+  after.notifications[1].type='changed';
+  for(const encryptionKey of [undefined,Buffer.alloc(32,13)]){
+    const codec=createStateCodec(encryptionKey),calls=[];
+    const identity=(provider,subject)=>{calls.push('identity/'+provider+'/'+subject);return digest(JSON.stringify([provider,subject]));};
+    const keyHash=(collection,key)=>{calls.push(collection+'/'+key);return digest(JSON.stringify([collection,key]));};
+    const encode=createTransactionStateEncoder?.(codec,identity,keyHash)??(state=>encodeState(state,codec,identity,keyHash));
+    const encodedAfter=encode(after);calls.length=0;
+    const encodedBefore=encode(before),beforeCalls=[...calls];
+    const freshAfter=encodeState(after,codec,identity,keyHash),freshBefore=encodeState(before,codec,identity,keyHash);
+    for(const [actual,expected]of [[encodedAfter,freshAfter],[encodedBefore,freshBefore]]){
+      assert.deepEqual(actual.fields,expected.fields);assert.deepEqual(actual.entities,expected.entities);assert.equal(actual.usedBytes,expected.usedBytes);
+    }
+    for(const token of ['identity/provider/keep','codes/keep','code-holder/keep','actionJobs/keep','completionObligations/keep','notifications/keep'])assert(!beforeCalls.includes(token),token+' must reuse final metadata');
+    for(const token of ['identity/provider/old','code-holder/change','code-holder/removed','actionJobs/change','notifications/change','notifications/removed'])assert(beforeCalls.includes(token),token+' must derive prior metadata');
+    const store=new SQLiteStore(':memory:',{encryptionKey});t.after(()=>store.close());
+    store.transact(state=>Object.assign(state,before));
+    store.transact(state=>{for(const name of ['users','codes','actionJobs','notifications'])state[name]=structuredClone(after[name]);});
+    const committed=store.read(state=>state);assert.deepEqual(committed.users,after.users);assert.deepEqual(committed.codes,after.codes);
+    assert.deepEqual(committed.actionJobs,after.actionJobs);assert.deepEqual(committed.notifications,after.notifications);
+  }
+});
+
 test('callback failure and nonserializable results cannot commit partial state',()=>{
   for(const store of [new MemoryStore(),new SQLiteStore()]){try{const before=store.read(s=>s);assert.throws(()=>store.transact(s=>{s.users.changed={id:'changed'};return ()=>{};}));assert.throws(()=>store.transact(async s=>{s.users.changed={id:'changed'};}),/Async/);assert.deepEqual(store.read(s=>s),before);assert.throws(()=>store.query(async()=>1),/Async/);}finally{store.close();}}
 });
