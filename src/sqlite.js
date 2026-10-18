@@ -4,7 +4,6 @@ import {createRecordTransaction,validateRecordPlan} from './record-transaction.j
 import {validRecordAccounting,recordAccountingField,summarizeRecords,finalizeRecordAccounting,refreshTradeAccounting,recordPreparationMarker,updateListingCreationRecords} from './record-accounting.js';
 import {DatabaseSync,backup} from 'node:sqlite';
 import {existsSync,mkdtempSync,chmodSync,rmSync,statSync} from 'node:fs';
-import {createHash,createHmac} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -77,10 +76,7 @@ export class SQLiteStore {
     if(!Number.isSafeInteger(maxStateBytes)||maxStateBytes<1)throw new Error('Invalid storage capacity');
     if(!Number.isSafeInteger(maxCompletionBytes)||maxCompletionBytes<1)throw new Error('Invalid completion capacity');this.#maxCompletionBytes=maxCompletionBytes;
     this.#codec=createStateCodec(encryptionKey);this.#maxBytes=maxStateBytes;this.#readOnly=readOnly;
-    const digest=value=>{
-      const text=JSON.stringify(value);
-      return encryptionKey?createHmac('sha256',encryptionKey).update(text).digest('hex'):createHash('sha256').update(text).digest('hex');
-    };
+    const digest=value=>this.#codec.digest(value);
     this.#identity=(provider,subject)=>digest(['digital-card.identity.v1',provider,subject]);
     this.#recordKey=(collection,key)=>digest(['digital-card.record-key.v1',collection,key]);
     // Inspect schema and key before journal-mode changes or writable migration access.

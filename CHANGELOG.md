@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Import storage encryption keys once per instance and keep active keys stable if the caller changes its input buffer.
+
 - Avoid unused index work when measuring storage capacity and reuse final transaction encodings, preserving exact capacity limits and rollback behavior.
 
 - Keep marketplace listing actions available after acknowledged edits; explain when pending edits prevent an action without discarding the draft.

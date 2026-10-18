@@ -157,6 +157,34 @@ test('catalog activation process loss at WAL commit recovers one original-key ou
   }
 });
 
+test('encryption key is snapshotted for authenticated codec and indexed store operations',t=>{
+  const dir=directory(t),path=join(dir,'key-snapshot.sqlite'),key=Buffer.alloc(32,17),original=Buffer.from(key);
+  assert.throws(()=>createStateCodec(Buffer.alloc(31)),/32-byte key/);
+  assert.throws(()=>createStateCodec(new Uint8Array(32)),/32-byte key/);
+  const codec=createStateCodec(key),value={collection:'users',key:'u1',value:{provider:'provider',subject:'subject'}};
+  const payload=codec.encode(value);
+  key.fill(18);
+  assert.deepEqual(codec.decode(payload),value);
+  assert.deepEqual(createStateCodec(original).decode(payload),value);
+  assert.throws(()=>createStateCodec(key).decode(payload),/authentication failed/);
+  const storeKey=Buffer.from(original),store=new SQLiteStore(path,{encryptionKey:storeKey});
+  store.transact(state=>{state.users.u1={id:'u1',provider:'provider',subject:'subject'};});
+  storeKey.fill(19);
+  assert.equal(store.query(query=>query.userByIdentity('provider','subject')).id,'u1');
+  store.transact(state=>{state.users.u1.displayName='Retained';});
+  store.close();
+  const reopened=new SQLiteStore(path,{encryptionKey:original});
+  assert.equal(reopened.read(state=>state.users.u1.displayName),'Retained');reopened.close();
+  assert.throws(()=>new SQLiteStore(path,{encryptionKey:storeKey}),/authentication failed/);
+  const db=new DatabaseSync(path),row=db.prepare("SELECT payload FROM framework_entities WHERE collection='users' AND entity_key='u1'").get(),tampered=JSON.parse(row.payload);
+  tampered.data=Buffer.from(tampered.data,'base64').map((byte,index)=>index===0?byte^1:byte).toString('base64');
+  db.prepare("UPDATE framework_entities SET payload=? WHERE collection='users' AND entity_key='u1'").run(JSON.stringify(tampered));db.close();
+  const damaged=new SQLiteStore(path,{encryptionKey:original});
+  assert.throws(()=>damaged.read(state=>state),/authentication failed/);damaged.close();
+  const plain=createStateCodec(),plainPayload=plain.encode(value);
+  assert.equal(plainPayload,JSON.stringify(value));assert.deepEqual(plain.decode(plainPayload),value);
+});
+
 test('simultaneous migration openers converge without partial records',async t=>{
   const dir=directory(t),path=join(dir,'race.sqlite'),state=populated();legacy(path,state);
   const run=()=>new Promise(resolve=>{const messages=[],errors=[];const w=new Worker(`import {parentPort,workerData} from 'node:worker_threads';const {SQLiteStore}=await import(workerData.moduleUrl);const store=new SQLiteStore(workerData.path);parentPort.postMessage(store.read(s=>s));store.close();`,{eval:true,workerData:{moduleUrl,path}});w.on('message',message=>messages.push(message));w.on('error',error=>errors.push(error));w.once('exit',code=>resolve({code,messages,errors}));});
