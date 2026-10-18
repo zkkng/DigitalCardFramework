@@ -3,8 +3,16 @@ const events=new AbortController(),records=new Map(),edits=new Map();let current
 const text=(node,selector,value)=>{for(const target of node.querySelectorAll(selector))target.textContent=value??'';};
 const labels=node=>{for(const target of node.querySelectorAll('[data-dc-marketplace-label]'))target.textContent=current.labels[target.dataset.dcMarketplaceLabel]??'';};
 function rememberModalFocus(button){modalInvoker=button;modalAway=false;button.focus();}
+function restoreModalFocus(){
+ const invoker=modalInvoker;if(!modalAway)return;
+ const clear=()=>{modalInvoker=undefined;modalAway=false;};
+ if(disposed||!invoker?.isConnected||![document.body,document.documentElement,invoker].includes(document.activeElement)){clear();return;}
+ if(!document.hasFocus()||current?.busy)return;
+ if(invoker.disabled||invoker.hidden){clear();return;}
+ invoker.focus();if(modalInvoker===invoker&&document.activeElement===invoker)clear();
+}
 window.addEventListener('blur',()=>{if(modalInvoker)modalAway=true;},{signal:events.signal});
-window.addEventListener('focus',()=>{const invoker=modalInvoker;if(!modalAway)return;modalInvoker=undefined;modalAway=false;queueMicrotask(()=>{if(!disposed&&invoker?.isConnected&&!invoker.disabled&&[document.body,document.documentElement,invoker].includes(document.activeElement))invoker.focus();});},{signal:events.signal,capture:true});
+window.addEventListener('focus',()=>{if(modalAway)queueMicrotask(restoreModalFocus);},{signal:events.signal,capture:true});
 document.addEventListener('focusin',event=>{if(modalInvoker&&![document.body,document.documentElement,modalInvoker].includes(event.target))modalInvoker=undefined;},{signal:events.signal});
 function post(intent,details={}){if(!disposed&&current&&!current.busy)bridge?.marketplaceIntent({intent,snapshotId:current.snapshotId,...details});}
 function matches(edit){if(edit.intent==='marketplace-edit')return current.seller.draft?.[edit.details.field]===edit.details.value;if(edit.intent==='marketplace-kind')return current.seller.draft?.kind===edit.details.kind;if(edit.intent==='marketplace-option')return current.seller[edit.details.option].items.some(item=>item.position===edit.position&&item.selected);return false;}
@@ -26,6 +34,7 @@ connectProgram({onMarketplaceDisplay(snapshot){if(disposed)return;current=snapsh
  for(const button of document.querySelectorAll('[data-dc-marketplace-request]')){const action=button.dataset.dcMarketplaceRequest,allowed=action==='recover'?snapshot.recoverable:action==='shop'?snapshot.seller.canCreateShop&&!!snapshot.seller.draft:action==='stock'?snapshot.seller.canList||snapshot.seller.stock.retryable:action==='settings'?snapshot.seller.admin:action==='action'?snapshot.seller.canEditAction:true;button.disabled=snapshot.busy||!allowed;button.hidden=!allowed;}
  document.documentElement.dataset.dcMarketplaceSnapshot=snapshot.snapshotId;
  for(const key of ['disclosure','review','attempt'])text(document,'[data-dc-stock-'+key+']',snapshot.seller.stock[key]);for(const section of document.querySelectorAll('[data-dc-marketplace-seller]'))section.hidden=!snapshot.seller.draft;
+ if(modalAway)queueMicrotask(restoreModalFocus);
 }}).then(value=>{if(disposed)value.dispose();else bridge=value;});
 document.addEventListener('input',event=>{const input=event.target;if(input.disabled)return;if(input.dataset.dcMarketplaceField&&input.tagName!=='SELECT')send('marketplace-edit',{field:input.dataset.dcMarketplaceField,value:input.value});},{signal:events.signal});
 document.addEventListener('change',event=>{const input=event.target;if(input.disabled)return;if(input.dataset.dcMarketplaceField)send('marketplace-edit',{field:input.dataset.dcMarketplaceField,value:input.value});if(Object.hasOwn(input.dataset,'dcMarketplaceKind'))send('marketplace-kind',{kind:input.value});if(input.dataset.dcMarketplaceOption&&input.value)send('marketplace-option',{option:input.dataset.dcMarketplaceOption,handle:input.value});},{signal:events.signal});

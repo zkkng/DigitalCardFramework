@@ -14,7 +14,7 @@
 - Allow the default artwork editor to load its generated image URLs so local image imports can render and capture posters under the reference host's security policy.
 - Preserve keyboard focus when a shop quote becomes ready for purchase, without overriding deliberate focus movement or a changed account, view or quantity.
 - Hide internal filesystem and provider exception details in presentation responses and import-job results, including retained jobs from earlier versions; preserve safe validation diagnostics and return 404 for missing content.
-- Restore keyboard focus to the original marketplace control after closing a review, while respecting account changes, disposal and deliberate focus movement.
+- Restore keyboard focus to the original marketplace control after closing a review, including when a busy update temporarily disables it, while respecting account changes, disposal and deliberate focus movement.
 - Measure embedded-font letter spacing consistently across styled spans so overflow and drawing agree.
 - Add a runnable complete card-line example covering artwork, packs, albums, publication and purchase/opening replay.
 
