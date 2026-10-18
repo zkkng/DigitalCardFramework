@@ -37,7 +37,7 @@ async function compareAdminNativeControl(page){
   if(supplied.styles.length>0&&supplied.styles.length<=32&&result.stylesMatch&&result.setup.geometryValid&&!result.setup.modal&&result.setup.active.tag==='BODY'&&result.setup.documentFocus){
    await comparison.keyboard.press('Tab');result.tab=await observe();
    if(result.tab.active.id==='recover'&&result.tab.documentFocus&&result.tab.geometryValid){
-    await comparison.getByRole('button',{name:'Administration',exact:true}).click();result.pointer=await observe();
+    await comparison.locator('#admin').click();result.pointer=await observe();
     if(result.pointer.active.id==='admin'&&result.pointer.documentFocus&&result.pointer.geometryValid){
      await comparison.keyboard.press('Shift+Tab');result.reverse=await observe();result.status=!result.reverse.documentFocus||!result.reverse.geometryValid?'prerequisite-inconclusive':result.reverse.active.id==='collection'?'moved':result.reverse.active.id==='admin'?'stuck':'unexpected';
     }else result.reason='Pointer entry did not establish focused Administration with valid geometry';
