@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep alternate journal cards compact and inspector surfaces readable with light themes.
+
 - Render explicit snapshots of ready offscreen views while retaining normal offscreen frame culling.
 - Match the artwork editor's rendering area to the project canvas so narrow album spines and landscape artwork capture complete posters.
 
