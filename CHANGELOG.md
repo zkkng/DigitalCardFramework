@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Render explicit snapshots of ready offscreen views while retaining normal offscreen frame culling.
 - Match the artwork editor's rendering area to the project canvas so narrow album spines and landscape artwork capture complete posters.
 
 - Restore keyboard focus to the original Reveal code button after a failed request so it can be retried, without overriding account changes or deliberate focus movement.
