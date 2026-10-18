@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {randomBytes,createHash,createHmac} from 'node:crypto';
+import {randomBytes,createHash,createHmac,Hmac} from 'node:crypto';
 import {mkdtempSync,rmSync,readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -193,6 +193,71 @@ test('capacity measures encrypted records exactly and reserves space before new 
   store.transact(s=>{s.externalPurchases.pending.completionBytes=0;s.externalPurchases.pending.state='committed';s.completedReceipt='x'.repeat(3000);});assert(store.measure(store.read(s=>s)).totalBytes<measurement.totalBytes);
 });
 
+test('transaction tail walks each final snapshot once and public measurements stay fresh',t=>{
+  for(const encryptionKey of [undefined,Buffer.alloc(32,9)]){
+    const store=new SQLiteStore(':memory:',{encryptionKey});
+    try{
+      store.transact(s=>{s.tailProbe='snapshot-walk';s.note='before';});
+      const previous=store.read(s=>s),walks=[],stringify=JSON.stringify;
+      const spy=t.mock.method(JSON,'stringify',function(value,...args){
+        if(value?.schemaVersion===1&&value.tailProbe==='snapshot-walk')walks.push(value.revision);
+        return stringify.call(this,value,...args);
+      });
+      try{
+        store.transact(s=>{s.note='after';});
+        assert.deepEqual(walks,[previous.revision+1,previous.revision],'capacity and writer must share the two final snapshot encodings');
+        walks.length=0;
+        const writes=store.diagnostics().recordWrites;
+        store.transact(()=>{});
+        assert.deepEqual(walks,[]);assert.equal(store.diagnostics().recordWrites,writes);
+        const state=store.read(s=>s),first=store.measure(state);
+        state.note+=' fresh change';const second=store.measure(state);
+        assert(second.usedBytes>first.usedBytes);
+        assert.deepEqual(walks,[state.revision,state.revision]);
+      }finally{spy.mock.restore();}
+    }finally{store.close();}
+  }
+});
+
+test('transaction tail retains exact capacity refusal, rollback and revision boundaries',t=>{
+  const dir=directory(t);
+  for(const [name,encryptionKey]of [['plain',undefined],['encrypted',Buffer.alloc(32,11)]]){
+    const path=join(dir,name+'-tail.sqlite');let store=new SQLiteStore(path,{encryptionKey});
+    try{
+      store.transact(s=>{s.revision=8;s.note='before';});
+      const before=store.read(s=>s),after=structuredClone(before);after.note='雪🃏'.repeat(25);after.revision++;
+      const exact=store.measure(after).totalBytes;store.close();
+      store=new SQLiteStore(path,{encryptionKey,maxStateBytes:exact-1});
+      const writes=store.diagnostics().recordWrites;
+      assert.throws(()=>store.assertCapacity(after,{previous:before,usedBytes:0,measured:{totalBytes:0}}),error=>error.code==='STORAGE_CAPACITY');
+      assert.throws(()=>store.transact(s=>{s.note=after.note;}),error=>error.code==='STORAGE_CAPACITY');
+      assert.deepEqual(store.read(s=>s),before);assert.equal(store.diagnostics().recordWrites,writes);store.close();
+      store=new SQLiteStore(path,{encryptionKey,maxStateBytes:exact});
+      store.transact(s=>{s.note=after.note;});
+      assert.deepEqual(store.read(s=>s),after);assert.equal(store.measure(after).totalBytes,exact);
+      store.transact(()=>{});assert.equal(store.read(s=>s.revision),10);
+    }finally{store.close();}
+  }
+});
+
+test('transaction tail retains the single-use revision growth completion allowance',t=>{
+  const path=join(directory(t),'tail-completion.sqlite');let store=new SQLiteStore(path);
+  try{
+    store.transact(s=>{s.revision=8;s.completionObligations={work:{id:'work',status:'reserved',bytes:1000,usedBytes:0}};});
+    const before=store.read(s=>s),after=structuredClone(before);after.revision++;after.completionObligations.work.status='completed';after.completionObligations.work.usedBytes=1;
+    const capacity=store.measure(before).totalBytes;
+    assert.equal(store.measure(after).totalBytes,capacity+2);
+    assert.equal(store.measure({...after,revision:before.revision}).totalBytes,capacity+1);
+    store.close();store=new SQLiteStore(path,{maxStateBytes:capacity});
+    assert.doesNotThrow(()=>store.assertCapacity(after,{previous:before}));
+    store.transact(s=>{s.completionObligations.work.status='completed';s.completionObligations.work.usedBytes=1;});
+    assert.deepEqual(store.read(s=>s),after);
+    const writes=store.diagnostics().recordWrites;
+    assert.throws(()=>store.transact(s=>{s.ordinaryData='x';}),error=>error.code==='STORAGE_CAPACITY');
+    assert.deepEqual(store.read(s=>s),after);assert.equal(store.diagnostics().recordWrites,writes);
+  }finally{store.close();}
+});
+
 test('callback failure and nonserializable results cannot commit partial state',()=>{
   for(const store of [new MemoryStore(),new SQLiteStore()]){try{const before=store.read(s=>s);assert.throws(()=>store.transact(s=>{s.users.changed={id:'changed'};return ()=>{};}));assert.throws(()=>store.transact(async s=>{s.users.changed={id:'changed'};}),/Async/);assert.deepEqual(store.read(s=>s),before);assert.throws(()=>store.query(async()=>1),/Async/);}finally{store.close();}}
 });
@@ -231,6 +296,69 @@ test('inventory free-text and locale-name compatibility uses account records and
   const store=new SQLiteStore(),x=fixture({store});t.after(()=>store.close());x.open('common',x.alice,3);x.open('common',x.bob,2);
   store.transact(s=>{Object.values(s.copies).filter(c=>c.ownerId===x.alice.userId).forEach((copy,i)=>{copy.definition.name=['Zeta','äster','Alpha'][i];copy.definition.description=i===1?'visible-description-needle':'Example';});});
   const inventory=x.core.inventory(x.alice),before=store.diagnostics();for(const options of [{sort:'name',limit:2},{search:'visible-description-needle',limit:1},{search:'alpha',sort:'name'}])assert.deepEqual(x.core.inventoryPage(x.alice,options),page(inventory,options));assert.equal(store.diagnostics().compatibilityMaterializations,before.compatibilityMaterializations);
+});
+
+test('size measurement preserves exact record envelopes without building maps or hashing indexes',t=>{
+  const state=populated(),text='雪🃏\u0000\n"\\';
+  state.notifications=[{id:'notice-雪',userId:'u1',data:{text}},{id:'notice-🃏',userId:'u2'}];
+  state.extension=[null,text,{optional:undefined,nested:[true,false,3.25]}];
+  state.extension.length=5;
+  state.deleted=undefined;
+  state.actionJobs={finished:{completionId:'completion-雪',status:'completed'}};
+  state.completionObligations={'completion-雪':{id:'completion-雪',status:'completed',bytes:4096,usedBytes:512}};
+  state.externalPurchases={pending:{completionBytes:8192,state:'prepared'}};
+  for(let i=0;i<128;i++){
+    state.users['user-'+i]={provider:'provider',subject:'subject-'+i};
+    state.copies['copy-'+i]={ownerId:'u1',cardId:'card-'+i,definition:{name:text+i,lineId:'line'},variant:{id:'variant',rarityId:'common'}};
+    state.codes['code-'+i]={holderId:'u1',holderHistory:['u1','u2',null],metadata:{text}};
+  }
+  const removed=state.codes['code-1'];delete state.codes['code-1'];
+  const original=JSON.stringify(state),update=Hmac.prototype.update;
+  let hashes=0;t.mock.method(Hmac.prototype,'update',function(...args){hashes++;return update.apply(this,args);});
+  for(const encryptionKey of [Buffer.alloc(32,7),undefined]){
+    const store=new SQLiteStore(':memory:',{encryptionKey}),codec=createStateCodec(encryptionKey);
+    try{
+      for(const changed of [false,true]){
+        if(changed){state.codes['code-1']=removed;state.notifications.reverse();state.extension[0]=text+'new';}
+        const encoded=encodeState(state,codec,(provider,subject)=>digest(JSON.stringify([provider,subject])),(collection,key)=>digest(JSON.stringify([collection,key])));
+        const physical=[...encoded.fields].reduce((sum,[name,row])=>sum+(row.kind==='scalar'?Buffer.byteLength(encoded.encode(name,null,row.value)):0),0)
+          +[...encoded.entities.values()].reduce((sum,row)=>sum+Buffer.byteLength(encoded.encode(row.collection,row.key,row.value)),0);
+        assert.equal(encoded.usedBytes,physical);
+        const beforeMeasurement=JSON.stringify(state),MapConstructor=globalThis.Map;let maps=0,measured;hashes=0;
+        globalThis.Map=class extends MapConstructor{constructor(...args){super(...args);maps++;}};
+        try{measured=store.measure(state);}finally{globalThis.Map=MapConstructor;}
+        assert.equal(JSON.stringify(state),beforeMeasurement,'measurement must preserve its input');
+        assert.equal(measured.usedBytes,physical);
+        assert.equal(measured.reservedBytes,8192);assert.equal(measured.totalBytes,physical+8192);
+        assert.equal(measured.completionStoredBytes,512);assert.equal(measured.completionReservedBytes,0);
+        assert.equal(hashes,0,'size-only measurement must not derive blind keys, identities or holder hashes');
+        assert.equal(maps,0,'size-only measurement must not build field or entity maps');
+      }
+    }finally{store.close();}
+  }
+  assert.notEqual(JSON.stringify(state),original);
+});
+
+test('size measurement retains encoder rejection and canonical projection behavior',()=>{
+  const codec=createStateCodec(),hash=(...values)=>digest(JSON.stringify(values)),store=new SQLiteStore();
+  const signature=fn=>{try{fn();return null;}catch(error){return {name:error.name,code:error.code,status:error.status};}};
+  try{
+    const invalid=[null,[],{}, {...initialState(),revision:-1},{...initialState(),revision:1.5},{...initialState(),schemaVersion:2}];
+    for(const field of ['constructor','prototype','__proto__','x'.repeat(201)]){
+      const state=initialState();Object.defineProperty(state,field,{value:{},enumerable:true});invalid.push(state);
+    }
+    for(const notifications of [[{id:'same'},{id:'same'}],[{}],[{id:1}],[null]])invalid.push({...initialState(),notifications});
+    invalid.push({...initialState(),codes:{bad:null}},{...initialState(),codes:{bad:{holderHistory:42}}},{...initialState(),actionJobs:{bad:null}});
+    const cycle=initialState();cycle.circular=cycle;invalid.push(cycle,{...initialState(),extension:1n});
+    for(const state of invalid){
+      const encoded=signature(()=>encodeState(state,codec,hash,hash));assert(encoded,'fixture must be rejected by the encoder');
+      assert.deepEqual(signature(()=>store.measure(state)),encoded);
+    }
+    for(const row of [null,17,'text',[],{definition:{name:17},variant:{id:[]},ownerId:{},createdAt:false}]){
+      const state={...initialState(),copies:{record:row},_codeStock:{record:{importOrdinal:42}}};
+      assert.equal(store.measure(state).usedBytes,encodeState(state,codec,hash,hash).usedBytes);
+    }
+  }finally{store.close();}
 });
 
 test('encrypted inventory pages omit catalog reads while retaining fresh private projections',t=>{

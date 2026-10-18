@@ -13,7 +13,7 @@ import {FrameworkError,check} from './catalog.js';
 import {initialState} from './store.js';
 import {cloneResult,completionBytes,querySnapshot} from './storage-query.js';
 import {copySnapshotFiles} from './storage-snapshot.js';
-import {STORAGE_SCHEMA,schemaSql,schemaSqlV2,schemaSqlV3,schemaSqlV4,schemaSqlV5,schemaSqlV6,schemaSqlV7,importedCodeSchemaSql,ownedCardSchemaSql,expirationSchemaSql,migrateExpirationWork,actionSchemaSql,migrateActionWork,notificationSchemaSql,codeHolderSchemaSql,migrateCodeHolders,encodeState,readState,writeDifference,sqliteQueries,storageRecordKey,decodeRecordEnvelope,encodedRecordBytes,encodeRecordPayload,encodeEntity} from './indexed-storage.js';
+import {STORAGE_SCHEMA,schemaSql,schemaSqlV2,schemaSqlV3,schemaSqlV4,schemaSqlV5,schemaSqlV6,schemaSqlV7,importedCodeSchemaSql,ownedCardSchemaSql,expirationSchemaSql,migrateExpirationWork,actionSchemaSql,migrateActionWork,notificationSchemaSql,codeHolderSchemaSql,migrateCodeHolders,encodeState,measureStateBytes,readState,writeDifference,sqliteQueries,storageRecordKey,decodeRecordEnvelope,encodedRecordBytes,encodeRecordPayload,encodeEntity} from './indexed-storage.js';
 
 const emptyRecords=()=>({fields:new Map(),entities:new Map(),usedBytes:0});
 const marker={format:'digital-card.indexed-state',version:STORAGE_SCHEMA,recordKeys:'blind-v1'};
@@ -182,11 +182,13 @@ export class SQLiteStore {
     check(Number.isFinite(Date.parse(at))&&Number.isSafeInteger(limit)&&limit>=1&&limit<=100,'INVALID_INPUT','Invalid action selection');
     return this.#snapshot(()=>this.#db.prepare("SELECT e.entity_key,e.payload FROM framework_action_work AS w INDEXED BY framework_action_due JOIN framework_entities AS e ON e.collection=w.collection AND e.entity_key=w.job_key WHERE w.due_at IS NOT NULL AND w.due_at<=? ORDER BY w.due_at,w.ordinal,w.job_key LIMIT ?").all(Date.parse(at),limit).map(row=>{this.#decoded++;return decodeRecordEnvelope(this.#codec,row.payload,'actionJobs',row.entity_key,this.#recordKey).key;}));
   }
-  measure(state) {const usedBytes=encodeState(state,this.#codec,this.#identity,this.#recordKey).usedBytes,reservedBytes=completionBytes(state);const pool=completionPool(state);return {usedBytes,reservedBytes,totalBytes:usedBytes+reservedBytes,limitBytes:this.#maxBytes,completionStoredBytes:pool.storedBytes,completionReservedBytes:pool.reservedBytes,completionLimitBytes:this.#maxCompletionBytes};}
-  assertCapacity(state,{previous}={}) {
-    const measured=this.measure(state);
+  #measurement(state,usedBytes) {const reservedBytes=completionBytes(state);const pool=completionPool(state);return {usedBytes,reservedBytes,totalBytes:usedBytes+reservedBytes,limitBytes:this.#maxBytes,completionStoredBytes:pool.storedBytes,completionReservedBytes:pool.reservedBytes,completionLimitBytes:this.#maxCompletionBytes};}
+  measure(state) {return this.#measurement(state,measureStateBytes(state,this.#codec));}
+  assertCapacity(state,{previous}={}) {return this.#assertCapacity(state,previous,value=>this.measure(value));}
+  #assertCapacity(state,previous,measure) {
+    const measured=measure(state);
     if(measured.completionStoredBytes+measured.completionReservedBytes>this.#maxCompletionBytes)throw new FrameworkError('COMPLETION_CAPACITY','Completion storage capacity reached',507);
-    const prior=previous===undefined?null:this.measure(previous);
+    const prior=previous===undefined?null:measure(previous);
     const completionGrowth=prior?Math.max(0,measured.completionStoredBytes-prior.completionStoredBytes):0;
     const revisionGrowth=completionGrowth>0?Math.max(0,measured.usedBytes-this.measure({...state,revision:previous.revision}).usedBytes):0;
     // Completion allowance is consumed only by this transaction. Retained receipts
@@ -206,15 +208,20 @@ export class SQLiteStore {
       if(!isDeepStrictEqual(state,before)){
         state.revision++;
         if(Object.hasOwn(state,recordAccountingField)&&refreshTradeAccounting(state)){
-          const baseline=encodeState(state,this.#codec,this.#identity,this.#recordKey).usedBytes;
+          const baseline=measureStateBytes(state,this.#codec);
           const size=(field,key,value)=>value===undefined?0:encodedRecordBytes(this.#codec,field,key,value);
           const originalAccounting=size(recordAccountingField,null,state[recordAccountingField]);
           const obligations=Object.entries(state.completionObligations??{}).map(([key,row])=>({key,bytes:size('completionObligations',key,row)}));
           finalizeRecordAccounting(state,before,value=>baseline+size(recordAccountingField,null,value[recordAccountingField])-originalAccounting
             +obligations.reduce((sum,row)=>sum+size('completionObligations',row.key,value.completionObligations[row.key])-row.bytes,0));
         }
-        this.assertCapacity(state,{previous:before});
-        this.#writes+=writeDifference(this.#db,encodeState(before,this.#codec,this.#identity,this.#recordKey),encodeState(state,this.#codec,this.#identity,this.#recordKey));
+        let beforeEncoding,afterEncoding;
+        this.#assertCapacity(state,before,value=>{
+          const encoded=encodeState(value,this.#codec,this.#identity,this.#recordKey);
+          if(value===state)afterEncoding=encoded;else beforeEncoding=encoded;
+          return this.#measurement(value,encoded.usedBytes);
+        });
+        this.#writes+=writeDifference(this.#db,beforeEncoding,afterEncoding);
       }
       this.#db.exec('COMMIT');return result;
     }catch(error){try{this.#db.exec('ROLLBACK');}catch{}throw error;}

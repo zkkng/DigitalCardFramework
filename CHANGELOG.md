@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Avoid unused index work when measuring storage capacity and reuse final transaction encodings, preserving exact capacity limits and rollback behavior.
+
 - Keep marketplace listing actions available after acknowledged edits; explain when pending edits prevent an action without discarding the draft.
 
 - Simplify menus, artwork tools, account activity and recovery messages, with matching guide instructions and clearer labels in the supplied examples.
