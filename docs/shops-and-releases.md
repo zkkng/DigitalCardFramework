@@ -47,6 +47,8 @@ Stocked packs are preallocated using pack-level draw rules. They **do not apply 
 
 `previewAt` controls listing visibility to buyers; omitted preview defaults to release time. `startsAt` gates purchases on server time, and `endsAt` closes the sale. Public card catalog entries and existing media are separate: hiding a listing is not a content embargo. Titles, descriptions and metadata are public. Completed listing terms are immutable; cancel remaining stock and create a new listing to change them.
 
+For ticket-allocated **Issue sealed packs** stock, the native Marketplace requires **Review stock allocation** before **Reserve stock and publish listing**. Its quote quantity must be a whole number from 1 to 100 packs, even if the configured listing-stock ceiling is higher; other stock and transaction limits still apply. Editing the listing requires another review. **Check stock allocation attempt** inspects the original attempt without creating stock. **Acknowledge stock allocation attempt** is available for a prepared or stale listing attempt in its original shop; acknowledgement alone creates no stock or fresh entropy. **Retry original listing** recovers an unresolved listing with its original input and key. Resolve the originating purchase or shop operation before requesting new stock. See [allocation for minted pack stock](production.md#allocation-for-minted-pack-stock) for the authority and recovery contract.
+
 ## Review and purchase exact stock
 
 ```js
